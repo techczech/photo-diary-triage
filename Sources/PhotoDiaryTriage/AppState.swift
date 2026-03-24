@@ -19,7 +19,11 @@ final class AppState: ObservableObject {
             rebuildBrowserCaches()
         }
     }
-    @Published var selectedSidebarNodeID: String?
+    @Published var selectedSidebarNodeID: String? {
+        didSet {
+            invalidateInlineSectionCaches()
+        }
+    }
     @Published var selectedFolderNodeIDs: Set<String> = []
     @Published var selectedMediaItemIDs: Set<UUID> = []
     @Published var focusedReviewItemID: UUID?
@@ -30,7 +34,11 @@ final class AppState: ObservableObject {
     @Published var reviewGridHasFocus = false
     @Published var isDetailsInspectorVisible = true
     @Published var isWalkDetailsExpanded = true
-    @Published var dayOrganizationMode: DayOrganizationMode = .days
+    @Published var dayOrganizationMode: DayOrganizationMode = .days {
+        didSet {
+            invalidateOrganizedInlineSectionCache()
+        }
+    }
     @Published var dayDetailDisplayMode: DayDetailDisplayMode = .review
     @Published var expandedInlineSectionIDs: Set<String> = []
     @Published var pendingInlineScrollTargetID: UUID?
@@ -41,7 +49,11 @@ final class AppState: ObservableObject {
     @Published var reviewGridColumnCount: Int = 1
     @Published var statusMessage: String = "Choose a source folder on the SSD to begin."
     @Published var thumbnailFailures: Set<UUID> = []
-    @Published var archiveMediaCache: [String: [MediaItem]] = [:]
+    @Published var archiveMediaCache: [String: [MediaItem]] = [:] {
+        didSet {
+            invalidateInlineSectionCaches()
+        }
+    }
     @Published var startupAlert: AppStartupAlert?
     @Published var importProgress: ImportProgress?
 
@@ -74,6 +86,13 @@ final class AppState: ObservableObject {
     private var volumeMountObserver: NSObjectProtocol?
     private var hasAttemptedInitialAutoLoad = false
     private var lastMeasuredReviewPaneWidth: Double = 0
+    private var inlineSectionCacheGeneration: Int = 0
+    private var cachedInlineDaySectionsGeneration: Int = -1
+    private var cachedInlineDaySectionsNodeID: String?
+    private var cachedInlineDaySections: [InlineDaySection] = []
+    private var cachedOrganizedInlineSectionsGeneration: Int = -1
+    private var cachedOrganizedInlineSectionsMode: DayOrganizationMode = .days
+    private var cachedOrganizedInlineSections: [InlineSection] = []
 
     init() {
         self.fileManager = .default
@@ -181,7 +200,17 @@ final class AppState: ObservableObject {
     }
 
     var inlineDaySections: [InlineDaySection] {
-        inlineSectionOrganizer.inlineDaySections(from: selectedBrowserNode, visibleItems: visibleMediaItems)
+        let nodeID = selectedBrowserNode?.id
+        if cachedInlineDaySectionsGeneration == inlineSectionCacheGeneration,
+           cachedInlineDaySectionsNodeID == nodeID {
+            return cachedInlineDaySections
+        }
+
+        let sections = inlineSectionOrganizer.inlineDaySections(from: selectedBrowserNode, visibleItems: visibleMediaItems)
+        cachedInlineDaySectionsGeneration = inlineSectionCacheGeneration
+        cachedInlineDaySectionsNodeID = nodeID
+        cachedInlineDaySections = sections
+        return sections
     }
 
     var shouldShowInlineDaySections: Bool {
@@ -197,7 +226,16 @@ final class AppState: ObservableObject {
     }
 
     var organizedInlineSections: [InlineSection] {
-        inlineSectionOrganizer.organizedInlineSections(from: inlineDaySections, mode: dayOrganizationMode)
+        if cachedOrganizedInlineSectionsGeneration == inlineSectionCacheGeneration,
+           cachedOrganizedInlineSectionsMode == dayOrganizationMode {
+            return cachedOrganizedInlineSections
+        }
+
+        let sections = inlineSectionOrganizer.organizedInlineSections(from: inlineDaySections, mode: dayOrganizationMode)
+        cachedOrganizedInlineSectionsGeneration = inlineSectionCacheGeneration
+        cachedOrganizedInlineSectionsMode = dayOrganizationMode
+        cachedOrganizedInlineSections = sections
+        return sections
     }
 
     var groupedReviewSections: [GroupedReviewSection] {
@@ -1179,6 +1217,21 @@ final class AppState: ObservableObject {
         )
         cachedBrowserNodeMap = browserViewModel.nodeMap(for: cachedBrowserRoots)
         sessionVisibleMediaCacheByNodeID.removeAll()
+        invalidateInlineSectionCaches()
+    }
+
+    private func invalidateInlineSectionCaches() {
+        inlineSectionCacheGeneration &+= 1
+        cachedInlineDaySectionsGeneration = -1
+        cachedInlineDaySectionsNodeID = nil
+        cachedInlineDaySections = []
+        invalidateOrganizedInlineSectionCache()
+    }
+
+    private func invalidateOrganizedInlineSectionCache() {
+        cachedOrganizedInlineSectionsGeneration = -1
+        cachedOrganizedInlineSectionsMode = dayOrganizationMode
+        cachedOrganizedInlineSections = []
     }
 
     private func visibleMediaItems(for node: BrowserNode) -> [MediaItem] {
