@@ -70,9 +70,9 @@ enum DayDetailDisplayMode: String, CaseIterable, Sendable {
     var title: String {
         switch self {
         case .review:
-            return "Review Grid"
+            return "Flat Review"
         case .sections:
-            return "Sections"
+            return "Grouped Review"
         }
     }
 }
@@ -103,4 +103,12 @@ struct InlineSection: Identifiable, Hashable, Sendable {
     let mediaItemIDs: [UUID]
     let photoItemIDs: [UUID]
     let children: [InlineSection]
+}
+
+struct GroupedReviewSection: Identifiable, Hashable, Sendable {
+    let id: String
+    let title: String
+    let kind: InlineSectionKind
+    let depth: Int
+    let mediaItemIDs: [UUID]
 }

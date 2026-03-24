@@ -22,6 +22,14 @@ struct InlineSectionOrganizer {
         sections.flatMap { [$0.id] + flattenSectionIDs(from: $0.children) }
     }
 
+    func groupedReviewSections(from sections: [InlineSection]) -> [GroupedReviewSection] {
+        flattenGroupedReviewSections(from: sections, depth: 0)
+    }
+
+    func visibleMediaItemIDs(from sections: [InlineSection], expandedSectionIDs: Set<String>) -> [UUID] {
+        sections.flatMap { visibleMediaItemIDs(in: $0, expandedSectionIDs: expandedSectionIDs) }
+    }
+
     func previewItemIDs(
         for section: InlineSection,
         availableItems: [UUID: MediaItem],
@@ -232,5 +240,35 @@ struct InlineSectionOrganizer {
             let index = Int((fraction * Double(lastIndex)).rounded())
             return ids[index]
         }
+    }
+
+    private func flattenGroupedReviewSections(from sections: [InlineSection], depth: Int) -> [GroupedReviewSection] {
+        sections.flatMap { section in
+            let directItemIDs = section.photoItemIDs.isEmpty && section.children.isEmpty ? section.mediaItemIDs : section.photoItemIDs
+
+            var flattened: [GroupedReviewSection] = [
+                GroupedReviewSection(
+                    id: section.id,
+                    title: section.title,
+                    kind: section.kind,
+                    depth: depth,
+                    mediaItemIDs: directItemIDs
+                )
+            ]
+
+            flattened.append(contentsOf: flattenGroupedReviewSections(from: section.children, depth: depth + 1))
+            return flattened
+        }
+    }
+
+    private func visibleMediaItemIDs(in section: InlineSection, expandedSectionIDs: Set<String>) -> [UUID] {
+        let isExpanded = section.children.isEmpty || expandedSectionIDs.contains(section.id)
+        guard isExpanded else { return [] }
+
+        var ids = section.photoItemIDs
+        for child in section.children {
+            ids.append(contentsOf: visibleMediaItemIDs(in: child, expandedSectionIDs: expandedSectionIDs))
+        }
+        return ids
     }
 }

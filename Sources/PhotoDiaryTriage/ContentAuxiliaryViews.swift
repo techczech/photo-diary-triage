@@ -22,7 +22,8 @@ struct KeyboardHelpSheet: View {
             shortcut("Return", "Open focused photo preview")
             shortcut("C", "Open side-by-side compare for the current photo selection")
             shortcut("Escape", "Exit review-grid keyboard focus before using parent navigation")
-            shortcut("+ / - / 0", "Resize review cards when the grid is focused, or zoom inside full-photo and compare views")
+            shortcut("+ / - / 0", "Resize review cards when the grid is focused, or change compare layout density when compare is open")
+            shortcut("Option + / - / 0", "Zoom images inside compare without changing the compare card layout")
             shortcut("Cmd-O", "Choose source folder")
             shortcut("Cmd-I", "Mark current selection for import")
             shortcut("Cmd-Shift-I", "Remove current selection from import")
@@ -238,7 +239,8 @@ struct CompareSheet: View {
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    ZoomToolbar(zoom: $zoom)
+                    compareLayoutControls
+                    ZoomToolbar(zoom: $zoom, keyboardModifiers: [.option])
                     Button("Close") {
                         onClose()
                     }
@@ -249,23 +251,34 @@ struct CompareSheet: View {
                     ContentUnavailableView("No Images Selected", systemImage: "rectangle.on.rectangle", description: Text("Select at least two images in the grid and use Compare."))
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    let cardWidth = compareCardWidth(for: proxy.size.width, count: items.count)
-                    let imageHeight = max(520, proxy.size.height - 170)
+                    let metrics = CompareGridMetrics(
+                        availableWidth: proxy.size.width,
+                        targetCardWidth: appState.compareGridCardWidth,
+                        itemCount: items.count
+                    )
+                    let columns = Array(
+                        repeating: GridItem(
+                            .fixed(CGFloat(metrics.cardWidth)),
+                            spacing: CGFloat(CompareGridMetrics.gridSpacing),
+                            alignment: .top
+                        ),
+                        count: max(metrics.columnCount, 1)
+                    )
 
-                    ScrollView([.horizontal, .vertical]) {
-                        HStack(alignment: .top, spacing: 24) {
+                    ScrollView {
+                        LazyVGrid(columns: columns, alignment: .leading, spacing: CGFloat(CompareGridMetrics.gridSpacing)) {
                             ForEach(items) { item in
                                 CompareItemCard(
                                     appState: appState,
                                     item: item,
                                     zoom: zoom,
-                                    cardWidth: cardWidth,
-                                    imageHeight: imageHeight
+                                    cardWidth: CGFloat(metrics.cardWidth),
+                                    imageHeight: CGFloat(metrics.imageHeight)
                                 )
-                                .frame(width: cardWidth, alignment: .topLeading)
+                                .frame(width: CGFloat(metrics.cardWidth), alignment: .topLeading)
                             }
                         }
-                        .padding(.vertical, 6)
+                        .padding(CGFloat(CompareGridMetrics.gridPadding))
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
@@ -277,11 +290,37 @@ struct CompareSheet: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func compareCardWidth(for availableWidth: CGFloat, count: Int) -> CGFloat {
-        let visibleColumns = max(1, min(count, availableWidth >= 2_300 ? 3 : 2))
-        let spacing = CGFloat(24 * max(visibleColumns - 1, 0))
-        let candidate = (availableWidth - spacing - 48) / CGFloat(visibleColumns)
-        return max(560, candidate)
+    private var compareLayoutControls: some View {
+        HStack(spacing: 6) {
+            Button {
+                appState.decreaseCompareGridCardWidth()
+            } label: {
+                Image(systemName: "minus.rectangle.on.rectangle")
+            }
+            .help("Fit more compare items on screen")
+            .disabled(appState.compareGridCardWidth <= CompareGridMetrics.minCardWidth)
+
+            Text("\(Int(appState.compareGridCardWidth))")
+                .font(.caption.monospacedDigit())
+                .frame(width: 40)
+
+            Button {
+                appState.increaseCompareGridCardWidth()
+            } label: {
+                Image(systemName: "plus.rectangle.on.rectangle")
+            }
+            .help("Make compare items larger")
+            .disabled(appState.compareGridCardWidth >= CompareGridMetrics.maxCardWidth)
+
+            Button {
+                appState.resetCompareGridCardWidth()
+            } label: {
+                Image(systemName: "arrow.counterclockwise")
+            }
+            .help("Reset compare layout size")
+            .disabled(appState.compareGridCardWidth == CompareGridMetrics.defaultCardWidth)
+        }
+        .buttonStyle(.bordered)
     }
 }
 
@@ -393,23 +432,24 @@ struct CompareItemCard: View {
 
 struct ZoomToolbar: View {
     @Binding var zoom: CGFloat
+    var keyboardModifiers: EventModifiers = []
 
     var body: some View {
         HStack(spacing: 8) {
             Button("−") {
                 zoom = max(0.25, zoom - 0.25)
             }
-            .keyboardShortcut("-", modifiers: [])
+            .keyboardShortcut("-", modifiers: keyboardModifiers)
 
             Button("100%") {
                 zoom = 1
             }
-            .keyboardShortcut("0", modifiers: [])
+            .keyboardShortcut("0", modifiers: keyboardModifiers)
 
             Button("+") {
                 zoom = min(4, zoom + 0.25)
             }
-            .keyboardShortcut("+", modifiers: [])
+            .keyboardShortcut("+", modifiers: keyboardModifiers)
 
             Text("\(Int(zoom * 100))%")
                 .font(.caption.monospacedDigit())

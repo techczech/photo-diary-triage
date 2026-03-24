@@ -23,7 +23,7 @@ struct ContentView: View {
                     title: appState.compareSheetTitle,
                     items: appState.comparingMediaItems,
                     onClose: {
-                        appState.comparingMediaItemIDs.removeAll()
+                        appState.closeComparison()
                     }
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -75,7 +75,7 @@ struct ReviewGridCard: View {
     private var selectionSurface: some View {
         VStack(alignment: .leading, spacing: 10) {
             thumbnail
-                .frame(height: 180)
+                .frame(height: CGFloat(ReviewGridMetrics.thumbnailHeight(for: cardWidth)))
                 .clipShape(RoundedRectangle(cornerRadius: 12))
 
             HStack {
