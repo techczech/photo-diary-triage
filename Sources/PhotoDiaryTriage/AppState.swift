@@ -32,6 +32,7 @@ final class AppState: ObservableObject {
     private let scanner: FileScanner
     private let groupingService: GroupingService
     private let importCoordinator: ImportCoordinator
+    private let sessionLifecycleCoordinator: SessionLifecycleCoordinator
     private var sessionStore: SessionPersisting
     private var previewStore: PreviewCaching
     private let settingsStore: SettingsPersisting
@@ -56,6 +57,13 @@ final class AppState: ObservableObject {
         self.scanner = FileScanner()
         self.groupingService = GroupingService()
         self.importCoordinator = ImportCoordinator()
+        self.sessionLifecycleCoordinator = SessionLifecycleCoordinator(
+            scanner: self.scanner,
+            groupingService: self.groupingService,
+            importCoordinator: self.importCoordinator,
+            fileManager: self.fileManager,
+            supportRoot: self.supportRoot
+        )
         self.sessionStore = InMemorySessionStore()
         self.previewStore = NoCachePreviewStore(cacheRoot: settings.cacheRoot)
         self.sessionManager = SessionManager(scanner: self.scanner, groupingService: self.groupingService)
@@ -81,9 +89,7 @@ final class AppState: ObservableObject {
         }
 
         do {
-            if fileManager.fileExists(atPath: supportRoot.path) {
-                try fileManager.removeItem(at: supportRoot)
-            }
+            try sessionLifecycleCoordinator.resetSupportData()
             settings = settingsStore.load(defaults: AppSettings.default())
             configurePersistence()
             archiveYearFolders = ArchiveLibraryInspector.existingYearFolders(in: settings.archiveRoot)
@@ -311,7 +317,12 @@ final class AppState: ObservableObject {
     func openSession(for folder: URL) async {
         do {
             statusMessage = "Scanning source folder..."
-            let opened = try sessionManager.openSession(for: folder, settings: settings)
+            let opened = try sessionLifecycleCoordinator.openSession(
+                for: folder,
+                settings: settings,
+                using: sessionManager,
+                store: sessionStore
+            )
             currentSession = opened.session
             burstGroups = opened.bursts
             timeClusters = opened.clusters
@@ -319,7 +330,6 @@ final class AppState: ObservableObject {
             clearDetailSelections()
             archiveMediaCache.removeAll()
             resetInlineExpansionState()
-            try sessionManager.save(opened.session, bursts: opened.bursts, clusters: opened.clusters, to: sessionStore)
 
             statusMessage = "Loaded \(opened.session.mediaItems.count) visible items from \(folder.lastPathComponent)."
 
@@ -890,7 +900,10 @@ final class AppState: ObservableObject {
 
     private func loadMostRecentSession() {
         do {
-            guard let latest = try sessionManager.loadMostRecentSession(from: sessionStore) else { return }
+            guard let latest = try sessionLifecycleCoordinator.loadMostRecentSession(
+                from: sessionStore,
+                using: sessionManager
+            ) else { return }
             currentSession = latest.session
             burstGroups = latest.bursts
             timeClusters = latest.clusters
@@ -910,7 +923,13 @@ final class AppState: ObservableObject {
     private func persistCurrentSession() {
         guard let currentSession else { return }
         do {
-            try sessionManager.save(currentSession, bursts: burstGroups, clusters: timeClusters, to: sessionStore)
+            try sessionLifecycleCoordinator.persistCurrentSession(
+                currentSession,
+                bursts: burstGroups,
+                clusters: timeClusters,
+                using: sessionManager,
+                to: sessionStore
+            )
         } catch {
             logger.error("Failed to persist current session: \(error.localizedDescription, privacy: .public)")
             statusMessage = "Session save failed: \(error.localizedDescription)"
@@ -919,7 +938,7 @@ final class AppState: ObservableObject {
 
     private func persistSettings() {
         do {
-            try settingsStore.save(settings)
+            try sessionLifecycleCoordinator.persistSettings(settings, to: settingsStore)
         } catch {
             logger.error("Failed to persist settings: \(error.localizedDescription, privacy: .public)")
             statusMessage = "Settings save failed: \(error.localizedDescription)"
@@ -940,46 +959,13 @@ final class AppState: ObservableObject {
     }
 
     private func configurePersistence() {
-        do {
-            try AppDirectories.ensureExists(supportRoot)
-        } catch {
-            logger.error("Failed to create support directory \(self.supportRoot.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
-            startupAlert = AppStartupAlert(
-                title: "Local Storage Setup Failed",
-                message: "The app support directory could not be created. The app will continue with in-memory session storage until you reset local support data.\n\n\(error.localizedDescription)",
-                recoveryAction: .resetSupportData
-            )
-        }
-
-        do {
-            sessionStore = try SessionStore(databaseURL: supportRoot.appendingPathComponent("sessions.sqlite"))
-        } catch {
-            logger.error("Failed to initialize session store: \(error.localizedDescription, privacy: .public)")
-            sessionStore = InMemorySessionStore()
-            startupAlert = AppStartupAlert(
-                title: "Session Database Unavailable",
-                message: "Persistent session storage could not be opened. The app is using in-memory sessions until local support data is reset.\n\n\(error.localizedDescription)",
-                recoveryAction: .resetSupportData
-            )
-        }
-
-        do {
-            previewStore = try PreviewStore(cacheRoot: settings.cacheRoot)
-        } catch {
-            logger.error("Failed to initialize preview cache: \(error.localizedDescription, privacy: .public)")
-            previewStore = NoCachePreviewStore(cacheRoot: settings.cacheRoot)
-            if startupAlert == nil {
-                startupAlert = AppStartupAlert(
-                    title: "Preview Cache Unavailable",
-                    message: "Thumbnail caching could not be initialized. The app will continue without a persistent preview cache.\n\n\(error.localizedDescription)",
-                    recoveryAction: nil
-                )
-            }
-        }
-
-        sessionManager = SessionManager(scanner: scanner, groupingService: groupingService)
-        importWorkflow = ImportWorkflow(coordinator: importCoordinator)
-        browserViewModel = BrowserViewModel(scanner: scanner)
+        let configuration = sessionLifecycleCoordinator.configurePersistence(settings: settings)
+        sessionStore = configuration.sessionStore
+        previewStore = configuration.previewStore
+        sessionManager = configuration.sessionManager
+        importWorkflow = configuration.importWorkflow
+        browserViewModel = configuration.browserViewModel
+        startupAlert = configuration.startupAlert
         importProgress = importWorkflow.importProgress
     }
 
@@ -1035,76 +1021,32 @@ final class AppState: ObservableObject {
     }
 
     private func handleVolumeMounted(_ mountedURL: URL?) async {
-        guard let mountedURL else { return }
-        let defaultRoot = settings.defaultSourceRoot.standardizedFileURL
-        let mounted = mountedURL.standardizedFileURL
-
-        let matchesDefaultRoot = defaultRoot.path == mounted.path || defaultRoot.path.hasPrefix(mounted.path + "/")
-        guard matchesDefaultRoot else { return }
+        guard sessionLifecycleCoordinator.matchesDefaultSourceMount(mountedURL, defaultSourceRoot: settings.defaultSourceRoot) else { return }
 
         await attemptAutoLoadFromDefaultSource(reason: .mounted)
     }
 
     private func attemptAutoLoadFromDefaultSource(reason: AutoLoadReason) async {
-        guard let folder = resolvedDefaultSourceFolder() else {
-            if reason == .launch {
-                statusMessage = "Waiting for default SSD at \(settings.defaultSourceRoot.path)."
+        switch sessionLifecycleCoordinator.autoLoadPlan(reason: reason, settings: settings, currentSession: currentSession) {
+        case .waitForDefaultSource(let statusMessage):
+            if let statusMessage {
+                self.statusMessage = statusMessage
             }
-            return
-        }
-
-        if shouldAutoLoadSession(from: folder) == false {
-            if reason == .mounted {
-                statusMessage = "Default SSD mounted at \(folder.path), keeping the current session."
+        case .keepCurrentSession(let statusMessage, let refreshCurrentSelection):
+            if refreshCurrentSelection {
+                selectedSidebarNodeID = browserViewModel.preferredInitialSidebarNodeID(for: currentSession, bursts: burstGroups, clusters: timeClusters)
+                clearDetailSelections()
+                archiveMediaCache.removeAll()
+                resetInlineExpansionState()
             }
-            return
-        }
-
-        await openSession(for: folder)
-        if reason == .mounted {
-            statusMessage = "Default SSD mounted and loaded from \(folder.lastPathComponent)."
+            if let statusMessage {
+                self.statusMessage = statusMessage
+            }
+        case .openSession(let folder, let statusMessage):
+            await openSession(for: folder)
+            if let statusMessage {
+                self.statusMessage = statusMessage
+            }
         }
     }
-
-    private func resolvedDefaultSourceFolder() -> URL? {
-        let root = settings.defaultSourceRoot.standardizedFileURL
-        guard fileManager.fileExists(atPath: root.path) else { return nil }
-
-        let dcimURL = root.appendingPathComponent("DCIM", isDirectory: true)
-        if fileManager.fileExists(atPath: dcimURL.path) {
-            return dcimURL
-        }
-
-        return root
-    }
-
-    private func shouldAutoLoadSession(from folder: URL) -> Bool {
-        let candidate = folder.standardizedFileURL
-
-        guard let session = currentSession else {
-            return true
-        }
-
-        let currentSource = session.sourceFolder.standardizedFileURL
-        if currentSource.path == candidate.path {
-            selectedSidebarNodeID = browserViewModel.preferredInitialSidebarNodeID(for: currentSession, bursts: burstGroups, clusters: timeClusters)
-            clearDetailSelections()
-            archiveMediaCache.removeAll()
-            resetInlineExpansionState()
-            return false
-        }
-
-        let currentIsMissing = fileManager.fileExists(atPath: currentSource.path) == false
-        if currentIsMissing {
-            return true
-        }
-
-        let currentIsFromDefaultRoot = currentSource.path.hasPrefix(settings.defaultSourceRoot.standardizedFileURL.path)
-        return currentIsFromDefaultRoot
-    }
-}
-
-private enum AutoLoadReason {
-    case launch
-    case mounted
 }
