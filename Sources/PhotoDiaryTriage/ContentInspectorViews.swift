@@ -102,13 +102,19 @@ struct DetailsInspectorView: View {
         GroupBox("Selected Photo") {
             VStack(alignment: .leading, spacing: 8) {
                 if let item = appState.inspectorMediaItem {
-                    if let image = NSImage(contentsOf: appState.thumbnailURL(for: item)) {
+                    if let image = appState.thumbnailImage(for: item) {
                         Image(nsImage: image)
                             .resizable()
                             .scaledToFit()
                             .frame(maxWidth: .infinity)
                             .frame(height: 180)
                             .clipShape(RoundedRectangle(cornerRadius: 12))
+                    } else {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(.quaternary)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 180)
+                            .overlay(ProgressView())
                     }
 
                     inspectorRow("File", item.fileName)
@@ -141,6 +147,11 @@ struct DetailsInspectorView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .task(id: appState.inspectorMediaItem?.id) {
+                if let item = appState.inspectorMediaItem {
+                    appState.requestThumbnail(for: item)
+                }
+            }
         }
     }
 

@@ -16,6 +16,21 @@ struct ContentView: View {
         } detail: {
             detailPane
         }
+        .overlay {
+            if !appState.comparingMediaItemIDs.isEmpty {
+                CompareSheet(
+                    appState: appState,
+                    title: appState.compareSheetTitle,
+                    items: appState.comparingMediaItems,
+                    onClose: {
+                        appState.comparingMediaItemIDs.removeAll()
+                    }
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(nsColor: .windowBackgroundColor))
+                .zIndex(1)
+            }
+        }
     }
 
     private var detailPane: some View {
@@ -75,16 +90,6 @@ struct ContentView: View {
             set: { _ in appState.previewingMediaItemID = nil }
         )) { item in
             FullPhotoSheet(appState: appState, item: item)
-        }
-        .sheet(isPresented: Binding(
-            get: { !appState.comparingMediaItemIDs.isEmpty },
-            set: { isPresented in
-                if !isPresented {
-                    appState.comparingMediaItemIDs.removeAll()
-                }
-            }
-        )) {
-            CompareSheet(appState: appState, title: appState.compareSheetTitle, items: appState.comparingMediaItems)
         }
         .onAppear(perform: hydrateForm)
         .onChange(of: appState.currentSession?.id) { _, _ in

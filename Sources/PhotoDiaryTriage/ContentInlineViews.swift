@@ -99,6 +99,9 @@ struct TinyPreviewStrip: View {
                         tinyThumb(for: item)
                     }
                     .buttonStyle(.plain)
+                    .onAppear {
+                        appState.requestThumbnail(for: item)
+                    }
                 }
             }
             .padding(.vertical, 2)
@@ -107,7 +110,7 @@ struct TinyPreviewStrip: View {
 
     @ViewBuilder
     private func tinyThumb(for item: MediaItem) -> some View {
-        if let image = NSImage(contentsOf: appState.thumbnailURL(for: item)) {
+        if let image = appState.thumbnailImage(for: item) {
             Image(nsImage: image)
                 .resizable()
                 .scaledToFill()
@@ -129,7 +132,7 @@ struct InlinePhotoGrid: View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 10)], spacing: 10) {
             ForEach(items) { item in
                 VStack(alignment: .leading, spacing: 4) {
-                    if let image = NSImage(contentsOf: appState.thumbnailURL(for: item)) {
+                    if let image = appState.thumbnailImage(for: item) {
                         Image(nsImage: image)
                             .resizable()
                             .scaledToFill()
@@ -166,6 +169,9 @@ struct InlinePhotoGrid: View {
                     )
                 )
                 .id(item.id)
+                .onAppear {
+                    appState.requestThumbnail(for: item)
+                }
             }
         }
     }

@@ -220,57 +220,68 @@ struct FullPhotoSheet: View {
 }
 
 struct CompareSheet: View {
-    @Environment(\.dismiss) private var dismiss
     @ObservedObject var appState: AppState
     let title: String
     let items: [MediaItem]
+    let onClose: () -> Void
     @State private var zoom: CGFloat = 1
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .font(.title3.weight(.semibold))
-                    Text("\(items.count) selected image(s)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+        GeometryReader { proxy in
+            VStack(alignment: .leading, spacing: 18) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(title)
+                            .font(.title2.weight(.semibold))
+                        Text("\(items.count) selected image(s)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    ZoomToolbar(zoom: $zoom)
+                    Button("Close") {
+                        onClose()
+                    }
+                    .keyboardShortcut(.cancelAction)
                 }
-                Spacer()
-                ZoomToolbar(zoom: $zoom)
-                Button("Close") {
-                    dismiss()
-                }
-                .keyboardShortcut(.cancelAction)
-            }
 
-            if items.isEmpty {
-                ContentUnavailableView("No Images Selected", systemImage: "rectangle.on.rectangle", description: Text("Select at least two images in the grid and use Compare."))
-            } else {
-                GeometryReader { proxy in
+                if items.isEmpty {
+                    ContentUnavailableView("No Images Selected", systemImage: "rectangle.on.rectangle", description: Text("Select at least two images in the grid and use Compare."))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
                     let cardWidth = compareCardWidth(for: proxy.size.width, count: items.count)
+                    let imageHeight = max(520, proxy.size.height - 170)
 
                     ScrollView([.horizontal, .vertical]) {
-                        HStack(alignment: .top, spacing: 18) {
+                        HStack(alignment: .top, spacing: 24) {
                             ForEach(items) { item in
-                                CompareItemCard(appState: appState, item: item, zoom: zoom, cardWidth: cardWidth)
-                                    .frame(width: cardWidth, alignment: .topLeading)
+                                CompareItemCard(
+                                    appState: appState,
+                                    item: item,
+                                    zoom: zoom,
+                                    cardWidth: cardWidth,
+                                    imageHeight: imageHeight
+                                )
+                                .frame(width: cardWidth, alignment: .topLeading)
                             }
                         }
                         .padding(.vertical, 6)
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
             }
+            .padding(24)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(Color(nsColor: .windowBackgroundColor))
         }
-        .padding(20)
-        .frame(minWidth: 1_140, minHeight: 760)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func compareCardWidth(for availableWidth: CGFloat, count: Int) -> CGFloat {
-        let visibleColumns = max(1, min(count, 3))
-        let spacing = CGFloat(18 * max(visibleColumns - 1, 0))
-        let candidate = (availableWidth - spacing - 24) / CGFloat(visibleColumns)
-        return max(420, candidate)
+        let visibleColumns = max(1, min(count, availableWidth >= 2_300 ? 3 : 2))
+        let spacing = CGFloat(24 * max(visibleColumns - 1, 0))
+        let candidate = (availableWidth - spacing - 48) / CGFloat(visibleColumns)
+        return max(560, candidate)
     }
 }
 
@@ -279,6 +290,7 @@ struct CompareItemCard: View {
     let item: MediaItem
     let zoom: CGFloat
     let cardWidth: CGFloat
+    let imageHeight: CGFloat
 
     private var isSelected: Bool {
         appState.selectedMediaItemIDs.contains(item.id)
@@ -310,7 +322,7 @@ struct CompareItemCard: View {
             }
 
             ZoomableImageCanvas(imageURL: item.sourceURL, zoom: zoom)
-                .frame(width: cardWidth - 22, height: 620)
+                .frame(width: cardWidth - 22, height: imageHeight)
                 .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
                 .overlay {
                     ReviewGridClickTarget { click in
