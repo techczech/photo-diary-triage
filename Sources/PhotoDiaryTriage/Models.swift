@@ -1,0 +1,359 @@
+import Foundation
+
+enum LifecycleState: String, Codable, CaseIterable, Sendable {
+    case discovered
+    case selectedForImport = "selected_for_import"
+    case imported
+    case verified
+    case sourceCleanupPending = "source_cleanup_pending"
+    case sourceCleaned = "source_cleaned"
+
+    func canTransition(to newState: LifecycleState) -> Bool {
+        if self == newState {
+            return true
+        }
+
+        switch (self, newState) {
+        case (.discovered, .selectedForImport),
+             (.selectedForImport, .discovered),
+             (.selectedForImport, .imported),
+             (.imported, .verified),
+             (.verified, .sourceCleanupPending),
+             (.sourceCleanupPending, .sourceCleaned):
+            return true
+        default:
+            return false
+        }
+    }
+
+    func transition(to newState: LifecycleState) throws -> LifecycleState {
+        guard canTransition(to: newState) else {
+            throw LifecycleTransitionError.invalidTransition(from: self, to: newState)
+        }
+        return newState
+    }
+}
+
+enum LifecycleTransitionError: LocalizedError, Sendable {
+    case invalidTransition(from: LifecycleState, to: LifecycleState)
+
+    var errorDescription: String? {
+        switch self {
+        case let .invalidTransition(from, to):
+            return "Invalid lifecycle transition from \(from.rawValue) to \(to.rawValue)."
+        }
+    }
+}
+
+enum SelectionState: String, Codable, CaseIterable, Sendable {
+    case skipped
+    case selected
+}
+
+enum MediaKind: String, Codable, CaseIterable, Sendable {
+    case jpeg
+    case raw
+    case other
+}
+
+struct CompanionFile: Identifiable, Codable, Hashable, Sendable {
+    let id: UUID
+    var sourceURL: URL
+    var relativePath: String
+    var fileName: String
+    var fileSizeBytes: Int64
+    var kind: MediaKind
+    var destinationURL: URL?
+    var importedAt: Date?
+    var verifiedAt: Date?
+    var sourceCleanedAt: Date?
+
+    init(
+        id: UUID = UUID(),
+        sourceURL: URL,
+        relativePath: String,
+        fileName: String,
+        fileSizeBytes: Int64,
+        kind: MediaKind,
+        destinationURL: URL? = nil,
+        importedAt: Date? = nil,
+        verifiedAt: Date? = nil,
+        sourceCleanedAt: Date? = nil
+    ) {
+        self.id = id
+        self.sourceURL = sourceURL
+        self.relativePath = relativePath
+        self.fileName = fileName
+        self.fileSizeBytes = fileSizeBytes
+        self.kind = kind
+        self.destinationURL = destinationURL
+        self.importedAt = importedAt
+        self.verifiedAt = verifiedAt
+        self.sourceCleanedAt = sourceCleanedAt
+    }
+}
+
+struct WalkMetadata: Codable, Hashable, Sendable {
+    var title: String
+    var location: String
+    var notes: String
+    var backupConfirmedAt: Date?
+
+    static let empty = WalkMetadata(title: "", location: "", notes: "", backupConfirmedAt: nil)
+}
+
+struct AppSettings: Codable, Hashable, Sendable {
+    var defaultSourceRoot: URL
+    var archiveRoot: URL
+    var cacheRoot: URL
+    var supportedExtensions: Set<String>
+    var burstThresholdSeconds: TimeInterval
+    var proximityThresholdSeconds: TimeInterval
+    var cleanupRequiresBackupConfirmation: Bool
+    var reviewPresentationMode: ReviewPresentationMode
+
+    static func `default`(fileManager: FileManager = .default) -> AppSettings {
+        let libraryRoot = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        let supportRoot = libraryRoot.appendingPathComponent("PhotoDiaryTriage", isDirectory: true)
+        let defaultSourceRoot = URL(fileURLWithPath: "/Volumes/EOS_DIGITAL/", isDirectory: true)
+        let archiveRoot = URL(fileURLWithPath: "/Users/dominiklukes/Library/CloudStorage/OneDrive-Personal/Pictures/", isDirectory: true)
+        let cacheRoot = supportRoot.appendingPathComponent("Cache", isDirectory: true)
+
+        return AppSettings(
+            defaultSourceRoot: defaultSourceRoot,
+            archiveRoot: archiveRoot,
+            cacheRoot: cacheRoot,
+            supportedExtensions: ["jpg", "jpeg", "png", "heic", "tif", "tiff", "dng", "raf", "cr2", "cr3", "nef"],
+            burstThresholdSeconds: 2,
+            proximityThresholdSeconds: 600,
+            cleanupRequiresBackupConfirmation: true,
+            reviewPresentationMode: .grid
+        )
+    }
+
+    var archiveRootDisplayPath: String {
+        archiveRoot.path
+    }
+
+    var defaultSourceRootDisplayPath: String {
+        defaultSourceRoot.path
+    }
+
+    init(
+        defaultSourceRoot: URL,
+        archiveRoot: URL,
+        cacheRoot: URL,
+        supportedExtensions: Set<String>,
+        burstThresholdSeconds: TimeInterval,
+        proximityThresholdSeconds: TimeInterval,
+        cleanupRequiresBackupConfirmation: Bool,
+        reviewPresentationMode: ReviewPresentationMode
+    ) {
+        self.defaultSourceRoot = defaultSourceRoot
+        self.archiveRoot = archiveRoot
+        self.cacheRoot = cacheRoot
+        self.supportedExtensions = supportedExtensions
+        self.burstThresholdSeconds = burstThresholdSeconds
+        self.proximityThresholdSeconds = proximityThresholdSeconds
+        self.cleanupRequiresBackupConfirmation = cleanupRequiresBackupConfirmation
+        self.reviewPresentationMode = reviewPresentationMode
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = AppSettings.default()
+        defaultSourceRoot = try container.decodeIfPresent(URL.self, forKey: .defaultSourceRoot) ?? defaults.defaultSourceRoot
+        archiveRoot = try container.decodeIfPresent(URL.self, forKey: .archiveRoot) ?? defaults.archiveRoot
+        cacheRoot = try container.decodeIfPresent(URL.self, forKey: .cacheRoot) ?? defaults.cacheRoot
+        supportedExtensions = try container.decodeIfPresent(Set<String>.self, forKey: .supportedExtensions) ?? defaults.supportedExtensions
+        burstThresholdSeconds = try container.decodeIfPresent(TimeInterval.self, forKey: .burstThresholdSeconds) ?? defaults.burstThresholdSeconds
+        proximityThresholdSeconds = try container.decodeIfPresent(TimeInterval.self, forKey: .proximityThresholdSeconds) ?? defaults.proximityThresholdSeconds
+        cleanupRequiresBackupConfirmation = try container.decodeIfPresent(Bool.self, forKey: .cleanupRequiresBackupConfirmation) ?? defaults.cleanupRequiresBackupConfirmation
+        reviewPresentationMode = try container.decodeIfPresent(ReviewPresentationMode.self, forKey: .reviewPresentationMode) ?? defaults.reviewPresentationMode
+    }
+}
+
+struct ImportSession: Identifiable, Codable, Hashable, Sendable {
+    let id: UUID
+    var sourceFolder: URL
+    var startedAt: Date
+    var lastUpdatedAt: Date
+    var walkMetadata: WalkMetadata
+    var archiveRoot: URL
+    var status: String
+    var mediaItems: [MediaItem]
+
+    init(
+        id: UUID = UUID(),
+        sourceFolder: URL,
+        startedAt: Date = Date(),
+        lastUpdatedAt: Date = Date(),
+        walkMetadata: WalkMetadata = .empty,
+        archiveRoot: URL,
+        status: String = "draft",
+        mediaItems: [MediaItem] = []
+    ) {
+        self.id = id
+        self.sourceFolder = sourceFolder
+        self.startedAt = startedAt
+        self.lastUpdatedAt = lastUpdatedAt
+        self.walkMetadata = walkMetadata
+        self.archiveRoot = archiveRoot
+        self.status = status
+        self.mediaItems = mediaItems
+    }
+}
+
+struct MediaMetadata: Codable, Hashable, Sendable {
+    var capturedAt: Date?
+    var pixelWidth: Int?
+    var pixelHeight: Int?
+    var cameraModel: String?
+    var lensModel: String?
+    var latitude: Double?
+    var longitude: Double?
+    var raw: [String: String]
+}
+
+struct MediaItem: Identifiable, Codable, Hashable, Sendable {
+    let id: UUID
+    var sourceURL: URL
+    var relativePath: String
+    var fileName: String
+    var baseName: String
+    var mediaKind: MediaKind
+    var fileSizeBytes: Int64
+    var capturedAt: Date?
+    var metadata: MediaMetadata
+    var thumbnailCacheKey: String
+    var selectionState: SelectionState
+    var importRawCompanions: Bool
+    var companionFiles: [CompanionFile]
+    var lifecycleState: LifecycleState
+    var burstGroupID: UUID?
+    var timeClusterID: UUID?
+    var destinationURL: URL?
+    var importedAt: Date?
+    var verifiedAt: Date?
+    var sourceCleanedAt: Date?
+
+    init(
+        id: UUID = UUID(),
+        sourceURL: URL,
+        relativePath: String,
+        fileName: String,
+        baseName: String,
+        mediaKind: MediaKind,
+        fileSizeBytes: Int64,
+        capturedAt: Date?,
+        metadata: MediaMetadata,
+        thumbnailCacheKey: String,
+        selectionState: SelectionState = .skipped,
+        importRawCompanions: Bool = false,
+        companionFiles: [CompanionFile] = [],
+        lifecycleState: LifecycleState = .discovered,
+        burstGroupID: UUID? = nil,
+        timeClusterID: UUID? = nil,
+        destinationURL: URL? = nil,
+        importedAt: Date? = nil,
+        verifiedAt: Date? = nil,
+        sourceCleanedAt: Date? = nil
+    ) {
+        self.id = id
+        self.sourceURL = sourceURL
+        self.relativePath = relativePath
+        self.fileName = fileName
+        self.baseName = baseName
+        self.mediaKind = mediaKind
+        self.fileSizeBytes = fileSizeBytes
+        self.capturedAt = capturedAt
+        self.metadata = metadata
+        self.thumbnailCacheKey = thumbnailCacheKey
+        self.selectionState = selectionState
+        self.importRawCompanions = importRawCompanions
+        self.companionFiles = companionFiles
+        self.lifecycleState = lifecycleState
+        self.burstGroupID = burstGroupID
+        self.timeClusterID = timeClusterID
+        self.destinationURL = destinationURL
+        self.importedAt = importedAt
+        self.verifiedAt = verifiedAt
+        self.sourceCleanedAt = sourceCleanedAt
+    }
+}
+
+struct BurstGroup: Identifiable, Codable, Hashable, Sendable {
+    let id: UUID
+    var mediaItemIDs: [UUID]
+    var startedAt: Date?
+    var endedAt: Date?
+}
+
+struct TimeCluster: Identifiable, Codable, Hashable, Sendable {
+    let id: UUID
+    var mediaItemIDs: [UUID]
+    var startedAt: Date?
+    var endedAt: Date?
+}
+
+struct ArchiveEntry: Codable, Hashable, Sendable {
+    var mediaItemID: UUID
+    var companionFileID: UUID?
+    var sourceURL: URL
+    var destinationURL: URL
+    var isCompanion: Bool
+}
+
+struct ArchiveCommitPlan: Codable, Hashable, Sendable {
+    var archiveFolder: URL
+    var entries: [ArchiveEntry]
+    var totalSourceFiles: Int
+    var selectedCount: Int
+    var skippedCount: Int
+}
+
+struct WalkManifest: Codable, Hashable, Sendable {
+    struct Summary: Codable, Hashable, Sendable {
+        var totalSourceFiles: Int
+        var visibleItems: Int
+        var importedFiles: Int
+        var skippedFiles: Int
+        var cleanupPendingFiles: Int
+        var cleanedSourceFiles: Int
+    }
+
+    var sessionID: UUID
+    var walkDate: Date?
+    var sourceFolder: URL
+    var archiveFolder: URL
+    var title: String
+    var location: String
+    var notes: String
+    var summary: Summary
+    var importedFiles: [FileManifest]
+}
+
+struct FileManifest: Codable, Hashable, Sendable {
+    var mediaItemID: UUID
+    var archivePath: String
+    var sourceFileName: String
+    var companionArchivePaths: [String]
+    var capturedAt: Date?
+    var cameraModel: String?
+    var lensModel: String?
+    var pixelWidth: Int?
+    var pixelHeight: Int?
+    var latitude: Double?
+    var longitude: Double?
+    var walkTitle: String
+    var walkLocation: String
+    var notes: String
+}
+
+struct SessionLogEvent: Codable, Hashable, Sendable {
+    var timestamp: Date
+    var event: String
+    var mediaItemID: UUID?
+    var details: [String: String]
+}
