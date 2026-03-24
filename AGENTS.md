@@ -11,6 +11,7 @@ Read this file before planning, implementing, reviewing, or reporting status.
 - Every implemented change needs a report in [changelog/changelog/](/Volumes/BigData/gitrepos/14_apps-and-utilities/photo-diary-triage/changelog/changelog/) plus matching JSONL updates before it is presented as done.
 - Every implemented change must update [APP_RELEASE.env](/Volumes/BigData/gitrepos/14_apps-and-utilities/photo-diary-triage/APP_RELEASE.env).
 - If code, backlog, and changelog disagree, surface the mismatch and fix tracking before continuing.
+- Every implementation handoff must name the exact `APP_VERSION` to test, describe the intended user-visible behavior in that version, and explicitly ask the user to test that version.
 
 ## Product Priorities
 
