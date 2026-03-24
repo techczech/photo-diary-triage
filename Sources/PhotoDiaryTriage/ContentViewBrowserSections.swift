@@ -126,39 +126,59 @@ struct ReviewPaneView: View {
         VStack(alignment: .leading, spacing: 10) {
             reviewToolbar
 
-            ZStack(alignment: .topLeading) {
-                ReviewKeyInputView(
-                    isFocused: appState.reviewGridHasFocus,
-                    onArrow: { dx, dy, extending in
-                        let columns = reviewColumnCount
-                        if dx != 0 {
-                            appState.moveGridSelection(by: dx, extending: extending)
-                        } else if dy != 0 {
-                            appState.moveGridSelection(by: dy * columns, extending: extending)
+            GeometryReader { proxy in
+                ZStack(alignment: .topLeading) {
+                    ReviewKeyInputView(
+                        isFocused: appState.reviewGridHasFocus,
+                        onArrow: { dx, dy, extending in
+                            let columns = max(1, appState.reviewPresentationMode == .grid ? appState.reviewGridColumnCount : 1)
+                            if dx != 0 {
+                                appState.moveGridSelection(by: dx, extending: extending)
+                            } else if dy != 0 {
+                                appState.moveGridSelection(by: dy * columns, extending: extending)
+                            }
+                        },
+                        onSingleKey: { key in
+                            appState.performReviewShortcut(key)
+                        },
+                        onSpace: {
+                            appState.toggleFocusedReviewItemSelection()
+                        },
+                        onOpen: {
+                            appState.openFocusedReviewItem()
+                        },
+                        onEscape: {
+                            appState.deactivateReviewGridFocus()
+                        },
+                        onSelectAll: {
+                            appState.selectAllVisibleMedia()
+                        },
+                        onDeselectAll: {
+                            appState.deselectAllVisibleMedia()
+                        },
+                        onZoomIn: {
+                            appState.increaseReviewGridCardWidth()
+                        },
+                        onZoomOut: {
+                            appState.decreaseReviewGridCardWidth()
+                        },
+                        onZoomReset: {
+                            appState.resetReviewGridCardWidth()
                         }
-                    },
-                    onSingleKey: { key in
-                        appState.performReviewShortcut(key)
-                    },
-                    onSpace: {
-                        appState.toggleFocusedReviewItemSelection()
-                    },
-                    onOpen: {
-                        appState.openFocusedReviewItem()
-                    },
-                    onSelectAll: {
-                        appState.selectAllVisibleMedia()
-                    },
-                    onDeselectAll: {
-                        appState.deselectAllVisibleMedia()
-                    }
-                )
-                .frame(width: 1, height: 1)
+                    )
+                    .frame(width: 1, height: 1)
 
-                if appState.reviewPresentationMode == .grid {
-                    reviewGrid
-                } else {
-                    reviewList
+                    if appState.reviewPresentationMode == .grid {
+                        reviewGrid(availableWidth: proxy.size.width)
+                    } else {
+                        reviewList
+                    }
+                }
+                .onAppear {
+                    appState.updateReviewGridMetrics(availableWidth: proxy.size.width)
+                }
+                .onChange(of: proxy.size.width) { _, width in
+                    appState.updateReviewGridMetrics(availableWidth: width)
                 }
             }
             .contentShape(Rectangle())
@@ -179,6 +199,27 @@ struct ReviewPaneView: View {
             }
             .pickerStyle(.segmented)
             .frame(width: 180)
+
+            Divider()
+
+            Button("Smaller") {
+                appState.decreaseReviewGridCardWidth()
+            }
+            .disabled(appState.reviewGridCardWidth <= ReviewGridMetrics.minCardWidth)
+
+            Text("\(Int(appState.reviewGridCardWidth)) pt")
+                .font(.caption.monospacedDigit())
+                .frame(width: 56, alignment: .center)
+
+            Button("Larger") {
+                appState.increaseReviewGridCardWidth()
+            }
+            .disabled(appState.reviewGridCardWidth >= ReviewGridMetrics.maxCardWidth)
+
+            Button("Reset Size") {
+                appState.resetReviewGridCardWidth()
+            }
+            .disabled(appState.reviewGridCardWidth == ReviewGridMetrics.defaultCardWidth)
 
             Spacer()
 
@@ -220,24 +261,24 @@ struct ReviewPaneView: View {
         }
     }
 
-    private var reviewGrid: some View {
-        ScrollView {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 16)], spacing: 16) {
+    private func reviewGrid(availableWidth: CGFloat) -> some View {
+        let cardWidth = CGFloat(appState.reviewGridCardWidth)
+        let spacing = CGFloat(ReviewGridMetrics.gridSpacing)
+
+        return ScrollView {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: cardWidth, maximum: cardWidth), spacing: spacing, alignment: .top)], alignment: .leading, spacing: spacing) {
                 ForEach(appState.visibleMediaItems) { item in
                     ReviewGridCard(
                         item: item,
                         thumbnailURL: appState.thumbnailURL(for: item),
                         archivePreview: appState.archivePreview(for: item),
+                        cardWidth: cardWidth,
                         canMutateImportSelection: appState.canMutateImportSelection,
                         isSelected: appState.selectedMediaItemIDs.contains(item.id),
                         isFocused: appState.focusedReviewItemID == item.id,
                         thumbnailFailed: appState.thumbnailFailures.contains(item.id),
-                        onTap: {
-                            appState.handleGridSelection(for: item.id, modifiers: NSEvent.modifierFlags)
-                        },
-                        onDoubleTap: {
-                            appState.handleGridSelection(for: item.id, modifiers: [])
-                            appState.openFocusedReviewItem()
+                        onClick: { click in
+                            appState.handleGridSelection(for: item.id, click: click)
                         },
                         retryThumbnail: {
                             appState.requestThumbnail(for: item)
@@ -259,13 +300,11 @@ struct ReviewPaneView: View {
                     )
                 }
             }
-            .padding(6)
+            .padding(CGFloat(ReviewGridMetrics.gridPadding))
         }
-    }
-
-    private var reviewColumnCount: Int {
-        let width = NSScreen.main?.visibleFrame.width ?? 1200
-        return max(1, Int((width - 380) / 236))
+        .onAppear {
+            appState.updateReviewGridMetrics(availableWidth: availableWidth)
+        }
     }
 
     private var reviewList: some View {

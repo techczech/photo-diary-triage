@@ -77,7 +77,8 @@ import Testing
         burstThresholdSeconds: 2,
         proximityThresholdSeconds: 600,
         cleanupRequiresBackupConfirmation: true,
-        reviewPresentationMode: .grid
+        reviewPresentationMode: .grid,
+        reviewGridCardWidth: ReviewGridMetrics.defaultCardWidth
     )
 
     let items = [
@@ -111,7 +112,8 @@ import Testing
         burstThresholdSeconds: 2,
         proximityThresholdSeconds: 300,
         cleanupRequiresBackupConfirmation: true,
-        reviewPresentationMode: .grid
+        reviewPresentationMode: .grid,
+        reviewGridCardWidth: ReviewGridMetrics.defaultCardWidth
     )
 
     let looseSettings = AppSettings(
@@ -122,7 +124,8 @@ import Testing
         burstThresholdSeconds: 5,
         proximityThresholdSeconds: 600,
         cleanupRequiresBackupConfirmation: true,
-        reviewPresentationMode: .grid
+        reviewPresentationMode: .grid,
+        reviewGridCardWidth: ReviewGridMetrics.defaultCardWidth
     )
 
     let tightResult = GroupingService().group(items: items, settings: tightSettings)
@@ -152,7 +155,8 @@ import Testing
         burstThresholdSeconds: 2,
         proximityThresholdSeconds: 2,
         cleanupRequiresBackupConfirmation: true,
-        reviewPresentationMode: .grid
+        reviewPresentationMode: .grid,
+        reviewGridCardWidth: ReviewGridMetrics.defaultCardWidth
     )
 
     let ungroupedSettings = AppSettings(
@@ -163,7 +167,8 @@ import Testing
         burstThresholdSeconds: 0.5,
         proximityThresholdSeconds: 0.5,
         cleanupRequiresBackupConfirmation: true,
-        reviewPresentationMode: .grid
+        reviewPresentationMode: .grid,
+        reviewGridCardWidth: ReviewGridMetrics.defaultCardWidth
     )
 
     let grouped = GroupingService().group(items: items, settings: groupedSettings)

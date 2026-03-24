@@ -8,22 +8,32 @@ struct InlineSectionNodeView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Button {
-                appState.toggleInlineSectionExpansion(section.id)
-            } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: appState.isInlineSectionExpanded(section.id) ? "chevron.down" : "chevron.right")
-                        .font(.caption.weight(.semibold))
-                    Text(section.title)
-                        .font(headerFont)
-                    Text("\(section.mediaItemIDs.count) photo(s)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
+            HStack(spacing: 10) {
+                Button {
+                    appState.toggleInlineSectionExpansion(section.id)
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: appState.isInlineSectionExpanded(section.id) ? "chevron.down" : "chevron.right")
+                            .font(.caption.weight(.semibold))
+                        Text(section.title)
+                            .font(headerFont)
+                        Text("\(section.mediaItemIDs.count) photo(s)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .contentShape(Rectangle())
                 }
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                if canCompareSection {
+                    Button("Compare") {
+                        appState.openComparison(for: section.mediaItemIDs, title: "Compare \(section.title)")
+                    }
+                    .buttonStyle(.bordered)
+                }
             }
-            .buttonStyle(.plain)
 
             TinyPreviewStrip(
                 items: appState.previewItems(for: section),
@@ -61,6 +71,15 @@ struct InlineSectionNodeView: View {
             return .headline
         case .cluster, .burst, .remainder:
             return .subheadline.weight(.semibold)
+        }
+    }
+
+    private var canCompareSection: Bool {
+        switch section.kind {
+        case .cluster, .burst:
+            return section.mediaItemIDs.count >= 2
+        case .day, .remainder:
+            return false
         }
     }
 }

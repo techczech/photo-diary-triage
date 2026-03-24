@@ -74,7 +74,7 @@ struct ContentView: View {
             get: { appState.previewingMediaItem },
             set: { _ in appState.previewingMediaItemID = nil }
         )) { item in
-            FullPhotoSheet(item: item)
+            FullPhotoSheet(appState: appState, item: item)
         }
         .sheet(isPresented: Binding(
             get: { !appState.comparingMediaItemIDs.isEmpty },
@@ -84,7 +84,7 @@ struct ContentView: View {
                 }
             }
         )) {
-            CompareSheet(items: appState.comparingMediaItems)
+            CompareSheet(appState: appState, title: appState.compareSheetTitle, items: appState.comparingMediaItems)
         }
         .onAppear(perform: hydrateForm)
         .onChange(of: appState.currentSession?.id) { _, _ in

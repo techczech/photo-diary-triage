@@ -111,6 +111,7 @@ struct AppSettings: Codable, Hashable, Sendable {
     var proximityThresholdSeconds: TimeInterval
     var cleanupRequiresBackupConfirmation: Bool
     var reviewPresentationMode: ReviewPresentationMode
+    var reviewGridCardWidth: Double
 
     static func `default`(fileManager: FileManager = .default) -> AppSettings {
         let libraryRoot = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -128,7 +129,8 @@ struct AppSettings: Codable, Hashable, Sendable {
             burstThresholdSeconds: 2,
             proximityThresholdSeconds: 600,
             cleanupRequiresBackupConfirmation: true,
-            reviewPresentationMode: .grid
+            reviewPresentationMode: .grid,
+            reviewGridCardWidth: ReviewGridMetrics.defaultCardWidth
         )
     }
 
@@ -148,7 +150,8 @@ struct AppSettings: Codable, Hashable, Sendable {
         burstThresholdSeconds: TimeInterval,
         proximityThresholdSeconds: TimeInterval,
         cleanupRequiresBackupConfirmation: Bool,
-        reviewPresentationMode: ReviewPresentationMode
+        reviewPresentationMode: ReviewPresentationMode,
+        reviewGridCardWidth: Double
     ) {
         self.defaultSourceRoot = defaultSourceRoot
         self.archiveRoot = archiveRoot
@@ -158,6 +161,7 @@ struct AppSettings: Codable, Hashable, Sendable {
         self.proximityThresholdSeconds = proximityThresholdSeconds
         self.cleanupRequiresBackupConfirmation = cleanupRequiresBackupConfirmation
         self.reviewPresentationMode = reviewPresentationMode
+        self.reviewGridCardWidth = reviewGridCardWidth
     }
 
     init(from decoder: Decoder) throws {
@@ -171,6 +175,7 @@ struct AppSettings: Codable, Hashable, Sendable {
         proximityThresholdSeconds = try container.decodeIfPresent(TimeInterval.self, forKey: .proximityThresholdSeconds) ?? defaults.proximityThresholdSeconds
         cleanupRequiresBackupConfirmation = try container.decodeIfPresent(Bool.self, forKey: .cleanupRequiresBackupConfirmation) ?? defaults.cleanupRequiresBackupConfirmation
         reviewPresentationMode = try container.decodeIfPresent(ReviewPresentationMode.self, forKey: .reviewPresentationMode) ?? defaults.reviewPresentationMode
+        reviewGridCardWidth = try container.decodeIfPresent(Double.self, forKey: .reviewGridCardWidth) ?? defaults.reviewGridCardWidth
     }
 }
 

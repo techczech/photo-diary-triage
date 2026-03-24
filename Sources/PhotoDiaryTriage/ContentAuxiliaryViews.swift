@@ -21,7 +21,8 @@ struct KeyboardHelpSheet: View {
             shortcut("Arrow Keys", "Move grid focus; hold Shift to extend selection")
             shortcut("Return", "Open focused photo preview")
             shortcut("C", "Open side-by-side compare for the current photo selection")
-            shortcut("+ / - / 0", "Zoom in, zoom out, or reset zoom inside full-photo and compare views")
+            shortcut("Escape", "Exit review-grid keyboard focus before using parent navigation")
+            shortcut("+ / - / 0", "Resize review cards when the grid is focused, or zoom inside full-photo and compare views")
             shortcut("Cmd-O", "Choose source folder")
             shortcut("Cmd-I", "Mark current selection for import")
             shortcut("Cmd-Shift-I", "Remove current selection from import")
@@ -57,8 +58,12 @@ struct ReviewKeyInputView: NSViewRepresentable {
     let onSingleKey: (_ key: String) -> Void
     let onSpace: () -> Void
     let onOpen: () -> Void
+    let onEscape: () -> Void
     let onSelectAll: () -> Void
     let onDeselectAll: () -> Void
+    let onZoomIn: () -> Void
+    let onZoomOut: () -> Void
+    let onZoomReset: () -> Void
 
     func makeNSView(context: Context) -> ReviewKeyResponderView {
         let view = ReviewKeyResponderView()
@@ -66,8 +71,12 @@ struct ReviewKeyInputView: NSViewRepresentable {
         view.onSingleKey = onSingleKey
         view.onSpace = onSpace
         view.onOpen = onOpen
+        view.onEscape = onEscape
         view.onSelectAll = onSelectAll
         view.onDeselectAll = onDeselectAll
+        view.onZoomIn = onZoomIn
+        view.onZoomOut = onZoomOut
+        view.onZoomReset = onZoomReset
         return view
     }
 
@@ -76,34 +85,54 @@ struct ReviewKeyInputView: NSViewRepresentable {
         nsView.onSingleKey = onSingleKey
         nsView.onSpace = onSpace
         nsView.onOpen = onOpen
+        nsView.onEscape = onEscape
         nsView.onSelectAll = onSelectAll
         nsView.onDeselectAll = onDeselectAll
-        if isFocused, nsView.window?.firstResponder !== nsView {
-            nsView.window?.makeFirstResponder(nsView)
+        nsView.onZoomIn = onZoomIn
+        nsView.onZoomOut = onZoomOut
+        nsView.onZoomReset = onZoomReset
+
+        if isFocused != nsView.isHandlingKeys {
+            nsView.isHandlingKeys = isFocused
+            if isFocused, nsView.window?.firstResponder !== nsView {
+                DispatchQueue.main.async {
+                    nsView.window?.makeFirstResponder(nsView)
+                }
+            }
         }
     }
 }
 
 final class ReviewKeyResponderView: NSView {
+    var isHandlingKeys = false
     var onArrow: ((_ dx: Int, _ dy: Int, _ extending: Bool) -> Void)?
     var onSingleKey: ((_ key: String) -> Void)?
     var onSpace: (() -> Void)?
     var onOpen: (() -> Void)?
+    var onEscape: (() -> Void)?
     var onSelectAll: (() -> Void)?
     var onDeselectAll: (() -> Void)?
+    var onZoomIn: (() -> Void)?
+    var onZoomOut: (() -> Void)?
+    var onZoomReset: (() -> Void)?
 
     override var acceptsFirstResponder: Bool { true }
 
     override func keyDown(with event: NSEvent) {
+        guard isHandlingKeys else {
+            super.keyDown(with: event)
+            return
+        }
+
         let extending = event.modifierFlags.contains(.shift)
         if event.modifierFlags.contains(.command),
            let chars = event.charactersIgnoringModifiers?.uppercased() {
             if chars == "A" {
-                onSelectAll?()
-                return
-            }
-            if chars == "\u{1B}" {
-                onDeselectAll?()
+                if event.modifierFlags.contains(.shift) {
+                    onDeselectAll?()
+                } else {
+                    onSelectAll?()
+                }
                 return
             }
         }
@@ -122,9 +151,23 @@ final class ReviewKeyResponderView: NSView {
         case 36:
             onOpen?()
         case 53:
-            onDeselectAll?()
+            onEscape?()
         default:
-            if let text = event.charactersIgnoringModifiers?.uppercased(), ["I", "D", "R", "A", "S", "C"].contains(text) {
+            guard let rawText = event.charactersIgnoringModifiers else {
+                super.keyDown(with: event)
+                return
+            }
+
+            let text = rawText.uppercased()
+            if !event.modifierFlags.intersection([.command, .control, .option]).isEmpty {
+                super.keyDown(with: event)
+            } else if rawText == "=" || rawText == "+" {
+                onZoomIn?()
+            } else if rawText == "-" || rawText == "_" {
+                onZoomOut?()
+            } else if rawText == "0" {
+                onZoomReset?()
+            } else if ["I", "D", "R", "A", "S", "C"].contains(text) {
                 onSingleKey?(text)
             } else {
                 super.keyDown(with: event)
@@ -135,6 +178,7 @@ final class ReviewKeyResponderView: NSView {
 
 struct FullPhotoSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject var appState: AppState
     let item: MediaItem
     @State private var zoom: CGFloat = 1
 
@@ -149,6 +193,18 @@ struct FullPhotoSheet: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+                Button("Previous") {
+                    appState.navigatePreview(by: -1)
+                }
+                .disabled(!appState.canNavigatePreviewBackward)
+                .keyboardShortcut(.leftArrow, modifiers: [])
+
+                Button("Next") {
+                    appState.navigatePreview(by: 1)
+                }
+                .disabled(!appState.canNavigatePreviewForward)
+                .keyboardShortcut(.rightArrow, modifiers: [])
+
                 ZoomToolbar(zoom: $zoom)
                 Button("Close") {
                     dismiss()
@@ -165,6 +221,8 @@ struct FullPhotoSheet: View {
 
 struct CompareSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject var appState: AppState
+    let title: String
     let items: [MediaItem]
     @State private var zoom: CGFloat = 1
 
@@ -172,7 +230,7 @@ struct CompareSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Compare Selection")
+                    Text(title)
                         .font(.title3.weight(.semibold))
                     Text("\(items.count) selected image(s)")
                         .font(.caption)
@@ -192,19 +250,8 @@ struct CompareSheet: View {
                 ScrollView([.horizontal, .vertical]) {
                     HStack(alignment: .top, spacing: 18) {
                         ForEach(items) { item in
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text(item.fileName)
-                                    .font(.headline)
-                                    .lineLimit(1)
-                                Text(item.relativePath)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
-                                ZoomableImageCanvas(imageURL: item.sourceURL, zoom: zoom)
-                                    .frame(width: 420, height: 520)
-                                    .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
-                            }
-                            .frame(width: 440, alignment: .topLeading)
+                            CompareItemCard(appState: appState, item: item, zoom: zoom)
+                                .frame(width: 452, alignment: .topLeading)
                         }
                     }
                     .padding(.vertical, 6)
@@ -213,6 +260,110 @@ struct CompareSheet: View {
         }
         .padding(20)
         .frame(minWidth: 980, minHeight: 680)
+    }
+}
+
+struct CompareItemCard: View {
+    @ObservedObject var appState: AppState
+    let item: MediaItem
+    let zoom: CGFloat
+
+    private var isSelected: Bool {
+        appState.selectedMediaItemIDs.contains(item.id)
+    }
+
+    private var isFocused: Bool {
+        appState.focusedReviewItemID == item.id
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.fileName)
+                        .font(.headline)
+                        .lineLimit(1)
+                    Text(item.relativePath)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                Spacer()
+                Text(item.selectionState == .selected ? "Marked" : "Not Marked")
+                    .font(.caption2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(item.selectionState == .selected ? Color.accentColor.opacity(0.15) : Color.secondary.opacity(0.12))
+                    .clipShape(Capsule())
+            }
+
+            ZoomableImageCanvas(imageURL: item.sourceURL, zoom: zoom)
+                .frame(width: 430, height: 520)
+                .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+                .overlay {
+                    ReviewGridClickTarget { click in
+                        appState.handleGridSelection(for: item.id, click: click)
+                    }
+                }
+
+            HStack {
+                Button("Select Only") {
+                    appState.selectMediaItems([item.id])
+                }
+
+                Button("Toggle Selection") {
+                    appState.toggleSelectionForComparisonItem(item.id)
+                }
+
+                Button("Preview") {
+                    appState.selectMediaItems([item.id])
+                    appState.openFocusedReviewItem()
+                }
+            }
+            .buttonStyle(.bordered)
+
+            if appState.canMutateImportSelection {
+                HStack {
+                    Button(item.selectionState == .selected ? "Unmark" : "Mark") {
+                        appState.selectMediaItems([item.id])
+                        if item.selectionState == .selected {
+                            appState.unmarkCurrentSelectionForImport()
+                        } else {
+                            appState.markCurrentSelectionForImport()
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    if !item.companionFiles.isEmpty {
+                        Toggle("RAW", isOn: Binding(
+                            get: { item.importRawCompanions },
+                            set: { appState.setImportRawCompanions(for: item, enabled: $0) }
+                        ))
+                        .toggleStyle(.switch)
+                    }
+
+                    Spacer()
+                }
+            }
+        }
+        .padding(14)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 16))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.secondary.opacity(0.16), lineWidth: 1)
+        }
+        .overlay {
+            if isSelected {
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color.accentColor.opacity(0.07))
+            }
+        }
+        .overlay {
+            if isSelected || isFocused {
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color.accentColor, lineWidth: isSelected ? 3 : 2)
+            }
+        }
     }
 }
 
@@ -273,5 +424,31 @@ struct ZoomableImageCanvas: View {
                     .overlay(Text("Unable to load full photo"))
             }
         }
+    }
+}
+
+struct ReviewGridClickTarget: NSViewRepresentable {
+    let onClick: (ReviewGridClickContext) -> Void
+
+    func makeNSView(context: Context) -> ReviewGridClickView {
+        let view = ReviewGridClickView()
+        view.onClick = onClick
+        return view
+    }
+
+    func updateNSView(_ nsView: ReviewGridClickView, context: Context) {
+        nsView.onClick = onClick
+    }
+}
+
+final class ReviewGridClickView: NSView {
+    var onClick: ((ReviewGridClickContext) -> Void)?
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        self
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        onClick?(ReviewGridClickContext(modifiers: event.modifierFlags, clickCount: event.clickCount))
     }
 }

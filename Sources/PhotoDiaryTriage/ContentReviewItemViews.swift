@@ -5,17 +5,74 @@ struct ReviewGridCard: View {
     let item: MediaItem
     let thumbnailURL: URL
     let archivePreview: String
+    let cardWidth: CGFloat
     let canMutateImportSelection: Bool
     let isSelected: Bool
     let isFocused: Bool
     let thumbnailFailed: Bool
-    let onTap: () -> Void
-    let onDoubleTap: () -> Void
+    let onClick: (ReviewGridClickContext) -> Void
     let retryThumbnail: () -> Void
     let setIncludeRaw: (Bool) -> Void
     let toggleImport: () -> Void
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            selectionSurface
+
+            if canMutateImportSelection && !item.companionFiles.isEmpty {
+                Toggle("Import RAW sidecar\(item.companionFiles.count == 1 ? "" : "s") too", isOn: Binding(
+                    get: { item.importRawCompanions },
+                    set: setIncludeRaw
+                ))
+                .toggleStyle(.checkbox)
+            }
+
+            HStack {
+                if canMutateImportSelection {
+                    Button(item.selectionState == .selected ? "Unmark (D)" : "Mark (I)", action: toggleImport)
+                        .buttonStyle(.borderedProminent)
+                }
+                Spacer()
+            }
+        }
+        .frame(width: cardWidth, alignment: .topLeading)
+        .padding()
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 16))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.secondary.opacity(0.16), lineWidth: 1)
+        }
+        .overlay {
+            if isSelected {
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color.accentColor.opacity(0.08))
+            }
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(selectionStrokeColor, lineWidth: selectionStrokeWidth)
+        }
+        .overlay {
+            if isFocused {
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.accentColor.opacity(0.3), style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
+                    .padding(6)
+            }
+        }
+    }
+
+    private var selectionStrokeColor: Color {
+        if isSelected || isFocused {
+            return Color.accentColor
+        }
+        return Color.clear
+    }
+
+    private var selectionStrokeWidth: CGFloat {
+        isSelected ? 4 : (isFocused ? 3 : 0)
+    }
+
+    private var selectionSurface: some View {
         VStack(alignment: .leading, spacing: 10) {
             thumbnail
                 .frame(height: 180)
@@ -45,22 +102,6 @@ struct ReviewGridCard: View {
                     .foregroundStyle(.secondary)
             }
 
-            if canMutateImportSelection && !item.companionFiles.isEmpty {
-                Toggle("Import RAW sidecar\(item.companionFiles.count == 1 ? "" : "s") too", isOn: Binding(
-                    get: { item.importRawCompanions },
-                    set: setIncludeRaw
-                ))
-                .toggleStyle(.checkbox)
-            }
-
-            HStack {
-                if canMutateImportSelection {
-                    Button(item.selectionState == .selected ? "Unmark (D)" : "Mark (I)", action: toggleImport)
-                        .buttonStyle(.borderedProminent)
-                }
-                Spacer()
-            }
-
             if item.selectionState == .selected, !archivePreview.isEmpty {
                 Text(archivePreview)
                     .font(.caption2)
@@ -68,39 +109,10 @@ struct ReviewGridCard: View {
                     .lineLimit(4)
             }
         }
-        .padding()
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 16))
+        .contentShape(RoundedRectangle(cornerRadius: 12))
         .overlay {
-            if isSelected {
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(Color.accentColor.opacity(0.08))
-            }
+            ReviewGridClickTarget(onClick: onClick)
         }
-        .overlay {
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(selectionStrokeColor, lineWidth: selectionStrokeWidth)
-        }
-        .overlay {
-            if isFocused {
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.accentColor.opacity(0.3), style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
-                    .padding(6)
-            }
-        }
-        .contentShape(RoundedRectangle(cornerRadius: 16))
-        .onTapGesture(perform: onTap)
-        .onTapGesture(count: 2, perform: onDoubleTap)
-    }
-
-    private var selectionStrokeColor: Color {
-        if isSelected || isFocused {
-            return Color.accentColor
-        }
-        return Color.clear
-    }
-
-    private var selectionStrokeWidth: CGFloat {
-        isSelected ? 4 : (isFocused ? 3 : 0)
     }
 
     @ViewBuilder
@@ -198,6 +210,10 @@ struct MediaItemRow: View {
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
         .background(rowBackground, in: RoundedRectangle(cornerRadius: 12))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.secondary.opacity(0.14), lineWidth: 1)
+        }
         .overlay {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(isSelected || isFocused ? Color.accentColor : Color.clear, lineWidth: isSelected ? 3 : (isFocused ? 2 : 0))

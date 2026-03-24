@@ -2,7 +2,7 @@
 
 ## Status
 
-- Current status: `approved_for_implementation`
+- Current status: `awaiting_user_review`
 - Priority: P0
 - Target release version: `0.1.28`
 - Target feature slug: `review-interaction-rescue`
