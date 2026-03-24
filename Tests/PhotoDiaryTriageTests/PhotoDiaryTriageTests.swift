@@ -130,8 +130,10 @@ import Testing
 
     #expect(tightResult.burstGroups.isEmpty)
     #expect(looseResult.burstGroups.count == 1)
-    #expect(tightResult.timeClusters.isEmpty)
+    #expect(tightResult.timeClusters.count == 1)
     #expect(looseResult.timeClusters.count == 1)
+    #expect(tightResult.timeClusters.first?.mediaItemIDs.count == 2)
+    #expect(looseResult.timeClusters.first?.mediaItemIDs.count == 3)
 }
 
 @Test func regroupingClearsStaleGroupAssignments() {
