@@ -33,3 +33,4 @@
 {"ts":"2026-03-24T09:18:00Z","item_id":"PDT-2026-03-23-005","event":"review_feedback_fix_applied","status":"implemented","title":"Right-hand details inspector","file":"changelog/changelog/PDT-2026-03-23-005-right-hand-details-inspector-report.md"}
 {"ts":"2026-03-24T09:30:00Z","item_id":"PDT-2026-03-23-005","event":"user_approved","status":"approved_done","title":"Right-hand details inspector","file":"changelog/changelog/PDT-2026-03-23-005-right-hand-details-inspector-report.md"}
 {"ts":"2026-03-24T07:55:41Z","item_id":"PDT-2026-03-24-016","event":"report_created","status":"implemented","title":"Wave 1 workflow hardening","file":"changelog/changelog/PDT-2026-03-24-016-wave-1-workflow-hardening-report.md"}
+{"ts":"2026-03-24T08:23:01Z","item_id":"PDT-2026-03-24-017","event":"report_created","status":"implemented","title":"ContentView decomposition phase 1","file":"changelog/changelog/PDT-2026-03-24-017-contentview-decomposition-phase-1-report.md"}
