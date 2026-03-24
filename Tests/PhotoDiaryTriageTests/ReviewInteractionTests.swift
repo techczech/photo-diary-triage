@@ -10,6 +10,15 @@ import Testing
     #expect(wide.columnCount == 4)
 }
 
+@Test func compareGridMetricsReflowMoreItemsWhenTargetCardWidthShrinks() {
+    let roomy = CompareGridMetrics(availableWidth: 1_600, targetCardWidth: 520, itemCount: 4)
+    let dense = CompareGridMetrics(availableWidth: 1_600, targetCardWidth: 320, itemCount: 4)
+
+    #expect(roomy.columnCount == 2)
+    #expect(dense.columnCount == 4)
+    #expect(dense.cardWidth < roomy.cardWidth)
+}
+
 @Test func reviewGridClickContextTracksModifiersAndDoubleClick() {
     let shiftDoubleClick = ReviewGridClickContext(modifiers: [.shift], clickCount: 2)
     let commandClick = ReviewGridClickContext(modifiers: [.command], clickCount: 1)
@@ -50,6 +59,21 @@ import Testing
 }
 
 @MainActor
+@Test func reviewGridResizeUsesLastMeasuredWidthInsteadOfFallingBackToSingleStrip() {
+    let items = makeSelectionItems(count: 6)
+    let state = makeReviewAppState(items: items)
+
+    state.updateReviewGridMetrics(availableWidth: 1_100)
+    #expect(state.reviewGridColumnCount == 3)
+
+    state.setReviewGridCardWidth(220)
+    #expect(state.reviewGridColumnCount == 4)
+
+    state.resetReviewGridCardWidth()
+    #expect(state.reviewGridColumnCount == 3)
+}
+
+@MainActor
 @Test func previewNavigationMovesThroughVisibleOrder() {
     let items = makeSelectionItems(count: 3)
     let state = makeReviewAppState(items: items)
@@ -80,6 +104,29 @@ import Testing
     #expect(containerNode != nil)
     state.selectedSidebarNodeID = containerNode?.id
     #expect(state.visibleMediaItems.count == items.count)
+}
+
+@MainActor
+@Test func groupedReviewInteractionItemsFollowExpandedSections() {
+    let items = makeSelectionItems(count: 4)
+    let state = AppState()
+    let root = URL(fileURLWithPath: "/tmp/grouped-review-state", isDirectory: true)
+    state.currentSession = makeTestSession(sourceRoot: root, archiveRoot: root.appendingPathComponent("archive", isDirectory: true), items: items)
+    state.burstGroups = []
+    state.timeClusters = []
+
+    let containerNode = state.browserNodeMap.values.first {
+        !($0.children?.isEmpty ?? true) && $0.mediaItemIDs.count == items.count
+    }
+
+    #expect(containerNode != nil)
+    state.selectedSidebarNodeID = containerNode?.id
+    state.setDayOrganizationMode(.daysAndBursts)
+    state.setDayDetailDisplayMode(.sections)
+    state.expandAllInlineSections()
+
+    #expect(state.reviewInteractionItems.count == items.count)
+    #expect(Set(state.reviewInteractionItems.map(\.id)) == Set(items.map(\.id)))
 }
 
 @MainActor

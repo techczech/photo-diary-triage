@@ -37,6 +37,7 @@ final class AppState: ObservableObject {
     @Published var previewingMediaItemID: UUID?
     @Published var comparingMediaItemIDs: [UUID] = []
     @Published var compareSheetTitle: String = "Compare Selection"
+    @Published var compareGridCardWidth: Double = CompareGridMetrics.defaultCardWidth
     @Published var reviewGridColumnCount: Int = 1
     @Published var statusMessage: String = "Choose a source folder on the SSD to begin."
     @Published var thumbnailFailures: Set<UUID> = []
@@ -72,6 +73,7 @@ final class AppState: ObservableObject {
     private var thumbnailTasks: [UUID: Task<Void, Never>] = [:]
     private var volumeMountObserver: NSObjectProtocol?
     private var hasAttemptedInitialAutoLoad = false
+    private var lastMeasuredReviewPaneWidth: Double = 0
 
     init() {
         self.fileManager = .default
@@ -190,12 +192,32 @@ final class AppState: ObservableObject {
         inlineSectionOrganizer.organizedInlineSections(from: inlineDaySections, mode: dayOrganizationMode)
     }
 
+    var groupedReviewSections: [GroupedReviewSection] {
+        inlineSectionOrganizer.groupedReviewSections(from: organizedInlineSections)
+    }
+
+    var reviewInteractionItems: [MediaItem] {
+        guard shouldShowInlineDaySections, dayDetailDisplayMode == .sections else {
+            return visibleMediaItems
+        }
+
+        var seen: Set<UUID> = []
+        let orderedIDs = inlineSectionOrganizer
+            .visibleMediaItemIDs(from: organizedInlineSections, expandedSectionIDs: expandedInlineSectionIDs)
+            .filter { seen.insert($0).inserted }
+        return orderedMediaItems(for: orderedIDs)
+    }
+
     func mediaItems(for ids: [UUID]) -> [MediaItem] {
         let idSet = Set(ids)
         if let node = selectedBrowserNode, let cached = archiveMediaCache[node.id] {
             return cached.filter { idSet.contains($0.id) }
         }
         return ids.compactMap { sessionMediaByID[$0] }.sorted(by: Self.mediaSort)
+    }
+
+    func orderedMediaItems(for ids: [UUID]) -> [MediaItem] {
+        ids.compactMap { sessionMediaByID[$0] }
     }
 
     var reviewPresentationMode: ReviewPresentationMode {
@@ -244,8 +266,8 @@ final class AppState: ObservableObject {
     }
 
     var focusedReviewItem: MediaItem? {
-        guard let focusedReviewItemID else { return visibleMediaItems.first }
-        return visibleMediaItems.first(where: { $0.id == focusedReviewItemID }) ?? visibleMediaItems.first
+        guard let focusedReviewItemID else { return reviewInteractionItems.first }
+        return reviewInteractionItems.first(where: { $0.id == focusedReviewItemID }) ?? reviewInteractionItems.first
     }
 
     var inspectorMediaItem: MediaItem? {
@@ -262,7 +284,7 @@ final class AppState: ObservableObject {
 
     var comparingMediaItems: [MediaItem] {
         let selectedIDs = Set(comparingMediaItemIDs)
-        let orderedVisible = visibleMediaItems.filter { selectedIDs.contains($0.id) }
+        let orderedVisible = reviewInteractionItems.filter { selectedIDs.contains($0.id) }
         if orderedVisible.count == comparingMediaItemIDs.count {
             return orderedVisible
         }
@@ -496,6 +518,7 @@ final class AppState: ObservableObject {
 
     func setReviewPresentationMode(_ mode: ReviewPresentationMode) {
         settings.reviewPresentationMode = mode
+        updateReviewGridMetrics(availableWidth: nil)
         persistSettings()
     }
 
@@ -517,6 +540,18 @@ final class AppState: ObservableObject {
 
     func resetReviewGridCardWidth() {
         setReviewGridCardWidth(ReviewGridMetrics.defaultCardWidth)
+    }
+
+    func increaseCompareGridCardWidth() {
+        compareGridCardWidth = min(compareGridCardWidth + CompareGridMetrics.cardWidthStep, CompareGridMetrics.maxCardWidth)
+    }
+
+    func decreaseCompareGridCardWidth() {
+        compareGridCardWidth = max(compareGridCardWidth - CompareGridMetrics.cardWidthStep, CompareGridMetrics.minCardWidth)
+    }
+
+    func resetCompareGridCardWidth() {
+        compareGridCardWidth = CompareGridMetrics.defaultCardWidth
     }
 
     func setBurstThresholdSeconds(_ threshold: TimeInterval) {
@@ -542,13 +577,15 @@ final class AppState: ObservableObject {
 
     func setDayDetailDisplayMode(_ mode: DayDetailDisplayMode) {
         dayDetailDisplayMode = mode
-        if mode == .review {
-            activateReviewGridFocus()
-        }
+        activateReviewGridFocus()
     }
 
     func updateReviewGridMetrics(availableWidth: CGFloat?) {
-        let width = Double(availableWidth ?? 0)
+        if let availableWidth, availableWidth > 0 {
+            lastMeasuredReviewPaneWidth = Double(availableWidth)
+        }
+
+        let width = max(lastMeasuredReviewPaneWidth, 0)
         let metrics = ReviewGridMetrics(availableWidth: width, cardWidth: reviewGridCardWidth)
         reviewGridColumnCount = reviewPresentationMode == .grid ? metrics.columnCount : 1
     }
@@ -626,7 +663,7 @@ final class AppState: ObservableObject {
 
     func activateReviewGridFocus() {
         var state = reviewSelectionState()
-        selectionManager.activateReviewGridFocus(visibleItems: visibleMediaItems, state: &state)
+        selectionManager.activateReviewGridFocus(visibleItems: reviewInteractionItems, state: &state)
         applyReviewSelectionState(state)
     }
 
@@ -643,7 +680,7 @@ final class AppState: ObservableObject {
         var state = reviewSelectionState()
         selectionManager.handleGridSelection(
             for: itemID,
-            visibleItems: visibleMediaItems,
+            visibleItems: reviewInteractionItems,
             isShiftPressed: click.isShiftPressed,
             isCommandPressed: click.isCommandPressed,
             state: &state
@@ -656,7 +693,7 @@ final class AppState: ObservableObject {
 
     func moveGridSelection(by offset: Int, extending: Bool) {
         var state = reviewSelectionState()
-        selectionManager.moveSelection(by: offset, visibleItems: visibleMediaItems, extending: extending, state: &state)
+        selectionManager.moveSelection(by: offset, visibleItems: reviewInteractionItems, extending: extending, state: &state)
         applyReviewSelectionState(state)
     }
 
@@ -684,25 +721,25 @@ final class AppState: ObservableObject {
 
     func selectAllVisibleMedia() {
         var state = reviewSelectionState()
-        selectionManager.selectAllVisibleMedia(visibleMediaItems, state: &state)
+        selectionManager.selectAllVisibleMedia(reviewInteractionItems, state: &state)
         applyReviewSelectionState(state)
     }
 
     func deselectAllVisibleMedia() {
         var state = reviewSelectionState()
-        selectionManager.deselectAllVisibleMedia(visibleMediaItems, state: &state)
+        selectionManager.deselectAllVisibleMedia(reviewInteractionItems, state: &state)
         applyReviewSelectionState(state)
     }
 
     func toggleFocusedReviewItemSelection() {
         var state = reviewSelectionState()
-        selectionManager.toggleFocusedReviewItemSelection(visibleMediaItems, state: &state)
+        selectionManager.toggleFocusedReviewItemSelection(reviewInteractionItems, state: &state)
         applyReviewSelectionState(state)
     }
 
     func selectFocusedReviewItemOnly() {
         var state = reviewSelectionState()
-        selectionManager.selectFocusedReviewItemOnly(visibleMediaItems, state: &state)
+        selectionManager.selectFocusedReviewItemOnly(reviewInteractionItems, state: &state)
         applyReviewSelectionState(state)
     }
 
@@ -721,7 +758,7 @@ final class AppState: ObservableObject {
     }
 
     func openComparisonForCurrentSelection() {
-        let ids = visibleMediaItems
+        let ids = reviewInteractionItems
             .map(\.id)
             .filter { currentSelectionMediaIDs().contains($0) }
         openComparison(for: ids, title: "Compare Selection")
@@ -735,9 +772,15 @@ final class AppState: ObservableObject {
         }
         guard deduplicatedIDs.count >= 2 else { return }
         reviewGridHasFocus = false
+        compareGridCardWidth = CompareGridMetrics.defaultCardWidth
         compareSheetTitle = title
         comparingMediaItemIDs = deduplicatedIDs
         statusMessage = "Opened compare view for \(deduplicatedIDs.count) item(s)."
+    }
+
+    func closeComparison() {
+        comparingMediaItemIDs.removeAll()
+        compareGridCardWidth = CompareGridMetrics.defaultCardWidth
     }
 
     func focusComparisonItem(_ itemID: UUID, extendingSelection: Bool = false) {
@@ -1076,7 +1119,7 @@ final class AppState: ObservableObject {
     }
 
     private func previewNavigationOffset(_ offset: Int) -> UUID? {
-        let navigationItems = visibleMediaItems.isEmpty ? (currentSession?.mediaItems ?? []) : visibleMediaItems
+        let navigationItems = reviewInteractionItems.isEmpty ? (currentSession?.mediaItems ?? []) : reviewInteractionItems
         guard let currentID = previewingMediaItemID ?? focusedReviewItemID ?? selectedMediaItemIDs.first,
               let currentIndex = navigationItems.firstIndex(where: { $0.id == currentID }) else {
             return nil
