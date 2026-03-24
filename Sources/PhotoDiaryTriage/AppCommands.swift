@@ -26,6 +26,110 @@ struct PhotoDiaryCommands: Commands {
         }
 
         CommandMenu("Triage") {
+            Button("Focus Sidebar Navigation") {
+                appState.focusSidebarNavigation()
+            }
+            .keyboardShortcut("1", modifiers: [.command])
+
+            Button("Focus Review Grid") {
+                appState.focusReviewSurface()
+            }
+            .keyboardShortcut("2", modifiers: [.command])
+            .disabled(!appState.canFocusReviewSurface)
+
+            Button(appState.isDetailsInspectorVisible ? "Hide Inspector" : "Show Inspector") {
+                appState.toggleDetailsInspector()
+            }
+            .keyboardShortcut("i", modifiers: [.command, .option])
+
+            Divider()
+
+            Button("Flat Review") {
+                appState.showFlatReview()
+            }
+            .keyboardShortcut("3", modifiers: [.command])
+            .disabled(!appState.canFocusReviewSurface)
+
+            Button("Grouped Review") {
+                appState.showGroupedReview()
+            }
+            .keyboardShortcut("4", modifiers: [.command])
+            .disabled(!appState.canUseGroupedReviewMode)
+
+            Button("Grid Layout") {
+                appState.setReviewPresentationMode(.grid)
+            }
+            .keyboardShortcut("g", modifiers: [.command, .option])
+
+            Button("List Layout") {
+                appState.setReviewPresentationMode(.list)
+            }
+            .keyboardShortcut("l", modifiers: [.command, .option])
+
+            Divider()
+
+            Button("Days Grouping") {
+                appState.setDayOrganizationMode(.days)
+            }
+            .keyboardShortcut("1", modifiers: [.command, .control])
+            .disabled(!appState.canUseGroupedReviewMode)
+
+            Button("Days + Bursts Grouping") {
+                appState.setDayOrganizationMode(.daysAndBursts)
+            }
+            .keyboardShortcut("2", modifiers: [.command, .control])
+            .disabled(!appState.canUseGroupedReviewMode)
+
+            Button("Days + Clusters Grouping") {
+                appState.setDayOrganizationMode(.daysAndClusters)
+            }
+            .keyboardShortcut("3", modifiers: [.command, .control])
+            .disabled(!appState.canUseGroupedReviewMode)
+
+            Button("Days + Clusters + Bursts Grouping") {
+                appState.setDayOrganizationMode(.daysClustersAndBursts)
+            }
+            .keyboardShortcut("4", modifiers: [.command, .control])
+            .disabled(!appState.canUseGroupedReviewMode)
+
+            Button("Expand All Groups") {
+                appState.expandAllInlineSections()
+            }
+            .keyboardShortcut("]", modifiers: [.command, .option])
+            .disabled(!appState.canExpandAllGroupedSections)
+
+            Button("Collapse All Groups") {
+                appState.collapseAllInlineSections()
+            }
+            .keyboardShortcut("[", modifiers: [.command, .option])
+            .disabled(!appState.canCollapseAllGroupedSections)
+
+            Button("Previous Group") {
+                appState.focusPreviousInlineSection()
+            }
+            .keyboardShortcut(.upArrow, modifiers: [.command, .option])
+            .disabled(!appState.canUseGroupedSectionNavigation)
+
+            Button("Next Group") {
+                appState.focusNextInlineSection()
+            }
+            .keyboardShortcut(.downArrow, modifiers: [.command, .option])
+            .disabled(!appState.canUseGroupedSectionNavigation)
+
+            Button("Expand Focused Group") {
+                appState.expandFocusedInlineSection()
+            }
+            .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
+            .disabled(!appState.canUseGroupedSectionNavigation)
+
+            Button("Collapse Focused Group") {
+                appState.collapseFocusedInlineSection()
+            }
+            .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
+            .disabled(!appState.canUseGroupedSectionNavigation)
+
+            Divider()
+
             Button("Mark Selection For Import") {
                 appState.markCurrentSelectionForImport()
             }
@@ -55,7 +159,7 @@ struct PhotoDiaryCommands: Commands {
             Button("Open") {
                 appState.openCurrentSelection()
             }
-            .keyboardShortcut(.return, modifiers: [])
+            .keyboardShortcut(.return, modifiers: [.command])
             .disabled(!appState.canOpenCurrentSelection)
 
             Button("Go Up") {
@@ -72,13 +176,23 @@ struct PhotoDiaryCommands: Commands {
 
             Divider()
 
-            Button("Grid Review") {
-                appState.setReviewPresentationMode(.grid)
+            Button("Copy Marked Files Into Archive") {
+                appState.commitImport()
             }
+            .keyboardShortcut("m", modifiers: [.command, .shift])
+            .disabled(!appState.canCommitImport)
 
-            Button("List Review") {
-                appState.setReviewPresentationMode(.list)
+            Button("Confirm Backup And Enable Cleanup") {
+                appState.markBackupConfirmed()
             }
+            .keyboardShortcut("b", modifiers: [.command, .shift])
+            .disabled(!appState.canConfirmBackup)
+
+            Button("Clean Imported Files From Source SSD") {
+                appState.cleanupImportedSources()
+            }
+            .keyboardShortcut("k", modifiers: [.command, .shift])
+            .disabled(!appState.canCleanupImportedSources)
         }
 
         CommandGroup(after: .help) {

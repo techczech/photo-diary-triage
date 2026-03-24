@@ -19,16 +19,31 @@ struct KeyboardHelpSheet: View {
             shortcut("A", "Select all visible photos when the review grid is focused")
             shortcut("Space", "Toggle focused photo selection")
             shortcut("Arrow Keys", "Move grid focus; hold Shift to extend selection")
+            shortcut("Option + Up / Down", "Move between grouped sections when grouped review is active")
+            shortcut("Option + Left / Right", "Collapse or expand the focused grouped section")
             shortcut("Return", "Open focused photo preview")
             shortcut("C", "Open side-by-side compare for the current photo selection")
             shortcut("Escape", "Exit review-grid keyboard focus before using parent navigation")
             shortcut("+ / - / 0", "Resize review cards when the grid is focused, or change compare layout density when compare is open")
             shortcut("Option + / - / 0", "Zoom images inside compare without changing the compare card layout")
             shortcut("Cmd-O", "Choose source folder")
+            shortcut("Cmd-1 / Cmd-2", "Focus sidebar navigation or jump straight into the review grid")
+            shortcut("Cmd-3 / Cmd-4", "Switch flat review or grouped review")
+            shortcut("Cmd-Option-G / Cmd-Option-L", "Switch grid or list layout")
+            shortcut("Cmd-Option-[ / ]", "Collapse or expand all grouped sections")
+            shortcut("Cmd-Option-Up / Down", "Move grouped-section focus from anywhere")
+            shortcut("Cmd-Option-Left / Right", "Collapse or expand the focused grouped section from the menu shortcut path")
+            shortcut("Cmd-Control-1...4", "Switch grouped review organization mode")
+            shortcut("Cmd-Option-I", "Toggle the right-side inspector")
             shortcut("Cmd-I", "Mark current selection for import")
             shortcut("Cmd-Shift-I", "Remove current selection from import")
+            shortcut("Cmd-Shift-M", "Copy marked files into the archive")
+            shortcut("Cmd-Shift-B", "Confirm backup and enable cleanup")
+            shortcut("Cmd-Shift-K", "Clean imported files from the SSD")
             shortcut("Cmd-Option-R", "Toggle RAW companion import for selected photos")
             shortcut("Cmd-Shift-C", "Open compare from the menu command path")
+            shortcut("Cmd-Return", "Open the current focused item or jump from the sidebar into the review surface")
+            shortcut("Cmd-Option-S", "Toggle the left sidebar")
             shortcut("Cmd-Shift-/", "Show this shortcuts panel")
 
             HStack {
@@ -39,7 +54,7 @@ struct KeyboardHelpSheet: View {
             }
         }
         .padding(24)
-        .frame(width: 520, height: 320)
+        .frame(width: 620, height: 520)
     }
 
     private func shortcut(_ key: String, _ description: String) -> some View {
@@ -56,6 +71,8 @@ struct KeyboardHelpSheet: View {
 struct ReviewKeyInputView: NSViewRepresentable {
     let isFocused: Bool
     let onArrow: (_ dx: Int, _ dy: Int, _ extending: Bool) -> Void
+    let onSectionArrow: (_ dx: Int, _ dy: Int) -> Void
+    let onSectionExpandCollapse: (_ expand: Bool) -> Void
     let onSingleKey: (_ key: String) -> Void
     let onSpace: () -> Void
     let onOpen: () -> Void
@@ -69,6 +86,8 @@ struct ReviewKeyInputView: NSViewRepresentable {
     func makeNSView(context: Context) -> ReviewKeyResponderView {
         let view = ReviewKeyResponderView()
         view.onArrow = onArrow
+        view.onSectionArrow = onSectionArrow
+        view.onSectionExpandCollapse = onSectionExpandCollapse
         view.onSingleKey = onSingleKey
         view.onSpace = onSpace
         view.onOpen = onOpen
@@ -83,6 +102,8 @@ struct ReviewKeyInputView: NSViewRepresentable {
 
     func updateNSView(_ nsView: ReviewKeyResponderView, context: Context) {
         nsView.onArrow = onArrow
+        nsView.onSectionArrow = onSectionArrow
+        nsView.onSectionExpandCollapse = onSectionExpandCollapse
         nsView.onSingleKey = onSingleKey
         nsView.onSpace = onSpace
         nsView.onOpen = onOpen
@@ -107,6 +128,8 @@ struct ReviewKeyInputView: NSViewRepresentable {
 final class ReviewKeyResponderView: NSView {
     var isHandlingKeys = false
     var onArrow: ((_ dx: Int, _ dy: Int, _ extending: Bool) -> Void)?
+    var onSectionArrow: ((_ dx: Int, _ dy: Int) -> Void)?
+    var onSectionExpandCollapse: ((_ expand: Bool) -> Void)?
     var onSingleKey: ((_ key: String) -> Void)?
     var onSpace: (() -> Void)?
     var onOpen: (() -> Void)?
@@ -126,6 +149,7 @@ final class ReviewKeyResponderView: NSView {
         }
 
         let extending = event.modifierFlags.contains(.shift)
+        let hasOptionModifier = event.modifierFlags.contains(.option)
         if event.modifierFlags.contains(.command),
            let chars = event.charactersIgnoringModifiers?.uppercased() {
             if chars == "A" {
@@ -140,13 +164,29 @@ final class ReviewKeyResponderView: NSView {
 
         switch event.keyCode {
         case 123:
-            onArrow?(-1, 0, extending)
+            if hasOptionModifier {
+                onSectionExpandCollapse?(false)
+            } else {
+                onArrow?(-1, 0, extending)
+            }
         case 124:
-            onArrow?(1, 0, extending)
+            if hasOptionModifier {
+                onSectionExpandCollapse?(true)
+            } else {
+                onArrow?(1, 0, extending)
+            }
         case 125:
-            onArrow?(0, 1, extending)
+            if hasOptionModifier {
+                onSectionArrow?(0, 1)
+            } else {
+                onArrow?(0, 1, extending)
+            }
         case 126:
-            onArrow?(0, -1, extending)
+            if hasOptionModifier {
+                onSectionArrow?(0, -1)
+            } else {
+                onArrow?(0, -1, extending)
+            }
         case 49:
             onSpace?()
         case 36:

@@ -42,6 +42,8 @@ final class AppState: ObservableObject {
     @Published var dayDetailDisplayMode: DayDetailDisplayMode = .review
     @Published var expandedInlineSectionIDs: Set<String> = []
     @Published var pendingInlineScrollTargetID: UUID?
+    @Published var focusedInlineSectionID: String?
+    @Published var pendingInlineSectionScrollTargetID: String?
     @Published var previewingMediaItemID: UUID?
     @Published var comparingMediaItemIDs: [UUID] = []
     @Published var compareSheetTitle: String = "Compare Selection"
@@ -242,6 +244,22 @@ final class AppState: ObservableObject {
         inlineSectionOrganizer.groupedReviewSections(from: organizedInlineSections)
     }
 
+    var canFocusReviewSurface: Bool {
+        !visibleMediaItems.isEmpty
+    }
+
+    var canUseGroupedSectionNavigation: Bool {
+        dayDetailDisplayMode == .sections && !groupedReviewSections.isEmpty
+    }
+
+    var canExpandAllGroupedSections: Bool {
+        canUseGroupedSectionNavigation && !organizedInlineSections.isEmpty
+    }
+
+    var canCollapseAllGroupedSections: Bool {
+        canUseGroupedSectionNavigation && !expandedInlineSectionIDs.isEmpty
+    }
+
     var reviewInteractionItems: [MediaItem] {
         guard shouldShowInlineDaySections, dayDetailDisplayMode == .sections else {
             return visibleMediaItems
@@ -276,7 +294,8 @@ final class AppState: ObservableObject {
 
     var canOpenCurrentSelection: Bool {
         if activePane == .folders { return selectedFolderNodeIDs.count == 1 }
-        if activePane == .sidebar { return selectedBrowserNode?.isContainer == true }
+        if activePane == .sidebar { return canFocusReviewSurface }
+        if activePane == .media { return focusedReviewItem != nil }
         return false
     }
 
@@ -341,6 +360,18 @@ final class AppState: ObservableObject {
 
     var canOpenComparison: Bool {
         currentSelectionMediaIDs().count >= 2
+    }
+
+    var canCommitImport: Bool {
+        currentSession?.mediaItems.contains { $0.selectionState == .selected } ?? false
+    }
+
+    var canConfirmBackup: Bool {
+        currentSession?.walkMetadata.backupConfirmedAt == nil
+    }
+
+    var canCleanupImportedSources: Bool {
+        currentSession?.mediaItems.contains { $0.lifecycleState == .sourceCleanupPending } ?? false
     }
 
     var canNavigatePreviewBackward: Bool {
@@ -619,6 +650,7 @@ final class AppState: ObservableObject {
     func setDayOrganizationMode(_ mode: DayOrganizationMode) {
         dayOrganizationMode = mode
         resetInlineExpansionState()
+        ensureFocusedInlineSection()
     }
 
     func setDayDetailDisplayMode(_ mode: DayDetailDisplayMode) {
@@ -629,6 +661,11 @@ final class AppState: ObservableObject {
             return
         }
         dayDetailDisplayMode = mode
+        if mode == .sections {
+            ensureFocusedInlineSection()
+        } else {
+            pendingInlineSectionScrollTargetID = nil
+        }
         activateReviewGridFocus()
     }
 
@@ -646,6 +683,27 @@ final class AppState: ObservableObject {
         isDetailsInspectorVisible.toggle()
     }
 
+    func focusSidebarNavigation() {
+        activePane = .sidebar
+        reviewGridHasFocus = false
+    }
+
+    func focusReviewSurface() {
+        guard canFocusReviewSurface else { return }
+        if dayDetailDisplayMode == .sections {
+            ensureFocusedInlineSection()
+        }
+        activateReviewGridFocus()
+    }
+
+    func showFlatReview() {
+        setDayDetailDisplayMode(.review)
+    }
+
+    func showGroupedReview() {
+        setDayDetailDisplayMode(.sections)
+    }
+
     func selectSidebarNode(_ nodeID: String?) {
         selectedSidebarNodeID = nodeID
         activePane = .sidebar
@@ -657,11 +715,13 @@ final class AppState: ObservableObject {
     }
 
     func toggleInlineSectionExpansion(_ sectionID: String) {
+        focusInlineSection(sectionID, scrollIntoView: false)
         if expandedInlineSectionIDs.contains(sectionID) {
             expandedInlineSectionIDs.remove(sectionID)
         } else {
             expandedInlineSectionIDs.insert(sectionID)
         }
+        reconcileReviewSelectionWithVisibleItems()
     }
 
     func isInlineSectionExpanded(_ sectionID: String) -> Bool {
@@ -670,15 +730,52 @@ final class AppState: ObservableObject {
 
     func expandAllInlineSections() {
         expandedInlineSectionIDs = Set(inlineSectionOrganizer.flattenSectionIDs(from: organizedInlineSections))
+        ensureFocusedInlineSection()
+        reconcileReviewSelectionWithVisibleItems()
     }
 
     func collapseAllInlineSections() {
         expandedInlineSectionIDs.removeAll()
+        ensureFocusedInlineSection()
+        reconcileReviewSelectionWithVisibleItems()
+    }
+
+    func focusInlineSection(_ sectionID: String, scrollIntoView: Bool = true) {
+        guard canUseGroupedSectionNavigation else { return }
+        focusedInlineSectionID = sectionID
+        activePane = .media
+        reviewGridHasFocus = true
+        if scrollIntoView {
+            pendingInlineSectionScrollTargetID = sectionID
+        }
+    }
+
+    func focusNextInlineSection() {
+        moveInlineSectionFocus(by: 1)
+    }
+
+    func focusPreviousInlineSection() {
+        moveInlineSectionFocus(by: -1)
+    }
+
+    func expandFocusedInlineSection() {
+        guard let section = focusedInlineSection, !section.children.isEmpty else { return }
+        expandedInlineSectionIDs.insert(section.id)
+        focusInlineSection(section.id)
+        reconcileReviewSelectionWithVisibleItems()
+    }
+
+    func collapseFocusedInlineSection() {
+        guard let section = focusedInlineSection, !section.children.isEmpty else { return }
+        expandedInlineSectionIDs.remove(section.id)
+        focusInlineSection(section.id)
+        reconcileReviewSelectionWithVisibleItems()
     }
 
     func revealInlineMediaItem(_ itemID: UUID, sectionPath: [String]) {
         expandedInlineSectionIDs.formUnion(sectionPath)
         selectInlineMediaItem(itemID)
+        focusedInlineSectionID = sectionPath.last
         focusedReviewItemID = itemID
         activePane = .media
         DispatchQueue.main.async { [weak self] in
@@ -689,6 +786,7 @@ final class AppState: ObservableObject {
     func selectInlineMediaItem(_ itemID: UUID) {
         previewingMediaItemID = nil
         selectMediaItems([itemID])
+        syncFocusedInlineSectionToFocusedItem()
         focusedReviewItemID = itemID
         activePane = .media
         reviewGridHasFocus = true
@@ -738,6 +836,7 @@ final class AppState: ObservableObject {
             state: &state
         )
         applyReviewSelectionState(state)
+        syncFocusedInlineSectionToFocusedItem()
         if click.isDoubleClick {
             openFocusedReviewItem()
         }
@@ -747,6 +846,7 @@ final class AppState: ObservableObject {
         var state = reviewSelectionState()
         selectionManager.moveSelection(by: offset, visibleItems: reviewInteractionItems, extending: extending, state: &state)
         applyReviewSelectionState(state)
+        syncFocusedInlineSectionToFocusedItem()
     }
 
     func performReviewShortcut(_ key: String) {
@@ -850,9 +950,9 @@ final class AppState: ObservableObject {
             guard selectedFolderNodeIDs.count == 1, let nodeID = selectedFolderNodeIDs.first else { return }
             selectSidebarNode(nodeID)
         case .sidebar:
-            break
+            focusReviewSurface()
         case .media:
-            break
+            openFocusedReviewItem()
         }
     }
 
@@ -951,6 +1051,8 @@ final class AppState: ObservableObject {
         focusedReviewItemID = nil
         reviewSelectionAnchorID = nil
         reviewGridHasFocus = false
+        focusedInlineSectionID = nil
+        pendingInlineSectionScrollTargetID = nil
     }
 
     private func reviewSelectionState() -> ReviewSelectionState {
@@ -973,11 +1075,19 @@ final class AppState: ObservableObject {
 
     private func resetInlineExpansionState() {
         expandedInlineSectionIDs.removeAll()
+        pendingInlineSectionScrollTargetID = nil
 
         let sections = organizedInlineSections
         if sections.count == 1, let only = sections.first {
             expandedInlineSectionIDs.insert(only.id)
         }
+
+        if dayDetailDisplayMode == .sections {
+            ensureFocusedInlineSection()
+        } else {
+            focusedInlineSectionID = nil
+        }
+        reconcileReviewSelectionWithVisibleItems()
     }
 
     private var inlineSectionOrganizer: InlineSectionOrganizer {
@@ -1226,12 +1336,106 @@ final class AppState: ObservableObject {
         cachedInlineDaySectionsNodeID = nil
         cachedInlineDaySections = []
         invalidateOrganizedInlineSectionCache()
+        focusedInlineSectionID = nil
+        pendingInlineSectionScrollTargetID = nil
     }
 
     private func invalidateOrganizedInlineSectionCache() {
         cachedOrganizedInlineSectionsGeneration = -1
         cachedOrganizedInlineSectionsMode = dayOrganizationMode
         cachedOrganizedInlineSections = []
+    }
+
+    private var focusedInlineSection: InlineSection? {
+        guard let focusedInlineSectionID else { return nil }
+        return inlineSection(matching: focusedInlineSectionID, in: organizedInlineSections)
+    }
+
+    private func moveInlineSectionFocus(by offset: Int) {
+        guard canUseGroupedSectionNavigation else { return }
+        let sections = groupedReviewSections
+        guard !sections.isEmpty else { return }
+
+        let currentID = focusedInlineSectionID ?? defaultInlineSectionFocusID(in: sections)
+        let currentIndex = currentID.flatMap { id in
+            sections.firstIndex(where: { $0.id == id })
+        } ?? 0
+        let targetIndex = min(max(currentIndex + offset, 0), sections.count - 1)
+        focusInlineSection(sections[targetIndex].id)
+    }
+
+    private func defaultInlineSectionFocusID(in sections: [GroupedReviewSection]) -> String? {
+        if let focusedReviewItemID,
+           let containingSectionID = inlineSectionID(containing: focusedReviewItemID, in: organizedInlineSections) {
+            return containingSectionID
+        }
+        return sections.first?.id
+    }
+
+    private func ensureFocusedInlineSection() {
+        guard canUseGroupedSectionNavigation else {
+            focusedInlineSectionID = nil
+            return
+        }
+
+        let sections = groupedReviewSections
+        guard !sections.isEmpty else {
+            focusedInlineSectionID = nil
+            return
+        }
+
+        if let focusedInlineSectionID,
+           sections.contains(where: { $0.id == focusedInlineSectionID }) {
+            return
+        }
+
+        focusedInlineSectionID = defaultInlineSectionFocusID(in: sections)
+    }
+
+    private func syncFocusedInlineSectionToFocusedItem() {
+        guard dayDetailDisplayMode == .sections,
+              let focusedReviewItemID,
+              let containingSectionID = inlineSectionID(containing: focusedReviewItemID, in: organizedInlineSections) else {
+            return
+        }
+        focusedInlineSectionID = containingSectionID
+    }
+
+    private func reconcileReviewSelectionWithVisibleItems() {
+        let visibleIDs = Set(reviewInteractionItems.map(\.id))
+        guard !visibleIDs.isEmpty || dayDetailDisplayMode == .sections else { return }
+
+        selectedMediaItemIDs = selectedMediaItemIDs.intersection(visibleIDs)
+        if let currentFocusedReviewItemID = focusedReviewItemID, !visibleIDs.contains(currentFocusedReviewItemID) {
+            focusedReviewItemID = selectedMediaItemIDs.first ?? reviewInteractionItems.first?.id
+        }
+        if let currentReviewSelectionAnchorID = reviewSelectionAnchorID, !visibleIDs.contains(currentReviewSelectionAnchorID) {
+            reviewSelectionAnchorID = selectedMediaItemIDs.first
+        }
+    }
+
+    private func inlineSection(matching sectionID: String, in sections: [InlineSection]) -> InlineSection? {
+        for section in sections {
+            if section.id == sectionID {
+                return section
+            }
+            if let match = inlineSection(matching: sectionID, in: section.children) {
+                return match
+            }
+        }
+        return nil
+    }
+
+    private func inlineSectionID(containing itemID: UUID, in sections: [InlineSection]) -> String? {
+        for section in sections {
+            if section.photoItemIDs.contains(itemID) || (section.children.isEmpty && section.mediaItemIDs.contains(itemID)) {
+                return section.id
+            }
+            if let child = inlineSectionID(containing: itemID, in: section.children) {
+                return child
+            }
+        }
+        return nil
     }
 
     private func visibleMediaItems(for node: BrowserNode) -> [MediaItem] {
