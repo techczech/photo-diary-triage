@@ -63,6 +63,20 @@ enum DayOrganizationMode: String, Codable, CaseIterable, Sendable {
     }
 }
 
+enum DayDetailDisplayMode: String, CaseIterable, Sendable {
+    case review
+    case sections
+
+    var title: String {
+        switch self {
+        case .review:
+            return "Review Grid"
+        case .sections:
+            return "Sections"
+        }
+    }
+}
+
 struct InlineDaySection: Identifiable, Hashable, Sendable {
     let id: String
     let dayNode: BrowserNode

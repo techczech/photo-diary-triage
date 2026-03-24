@@ -247,19 +247,30 @@ struct CompareSheet: View {
             if items.isEmpty {
                 ContentUnavailableView("No Images Selected", systemImage: "rectangle.on.rectangle", description: Text("Select at least two images in the grid and use Compare."))
             } else {
-                ScrollView([.horizontal, .vertical]) {
-                    HStack(alignment: .top, spacing: 18) {
-                        ForEach(items) { item in
-                            CompareItemCard(appState: appState, item: item, zoom: zoom)
-                                .frame(width: 452, alignment: .topLeading)
+                GeometryReader { proxy in
+                    let cardWidth = compareCardWidth(for: proxy.size.width, count: items.count)
+
+                    ScrollView([.horizontal, .vertical]) {
+                        HStack(alignment: .top, spacing: 18) {
+                            ForEach(items) { item in
+                                CompareItemCard(appState: appState, item: item, zoom: zoom, cardWidth: cardWidth)
+                                    .frame(width: cardWidth, alignment: .topLeading)
+                            }
                         }
+                        .padding(.vertical, 6)
                     }
-                    .padding(.vertical, 6)
                 }
             }
         }
         .padding(20)
-        .frame(minWidth: 980, minHeight: 680)
+        .frame(minWidth: 1_140, minHeight: 760)
+    }
+
+    private func compareCardWidth(for availableWidth: CGFloat, count: Int) -> CGFloat {
+        let visibleColumns = max(1, min(count, 3))
+        let spacing = CGFloat(18 * max(visibleColumns - 1, 0))
+        let candidate = (availableWidth - spacing - 24) / CGFloat(visibleColumns)
+        return max(420, candidate)
     }
 }
 
@@ -267,6 +278,7 @@ struct CompareItemCard: View {
     @ObservedObject var appState: AppState
     let item: MediaItem
     let zoom: CGFloat
+    let cardWidth: CGFloat
 
     private var isSelected: Bool {
         appState.selectedMediaItemIDs.contains(item.id)
@@ -298,7 +310,7 @@ struct CompareItemCard: View {
             }
 
             ZoomableImageCanvas(imageURL: item.sourceURL, zoom: zoom)
-                .frame(width: 430, height: 520)
+                .frame(width: cardWidth - 22, height: 620)
                 .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
                 .overlay {
                     ReviewGridClickTarget { click in
@@ -443,6 +455,10 @@ struct ReviewGridClickTarget: NSViewRepresentable {
 
 final class ReviewGridClickView: NSView {
     var onClick: ((ReviewGridClickContext) -> Void)?
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         self

@@ -33,13 +33,42 @@ struct BrowserOrReviewPaneView: View {
 
     var body: some View {
         if appState.shouldShowInlineDaySections {
-            InlineDaySectionsPaneView(appState: appState)
-        } else if !appState.detailFolderNodes.isEmpty {
-            FolderBrowserPaneView(appState: appState)
+            DayContextPaneView(appState: appState)
         } else if !appState.visibleMediaItems.isEmpty {
             ReviewPaneView(appState: appState)
+        } else if !appState.detailFolderNodes.isEmpty {
+            FolderBrowserPaneView(appState: appState)
         } else {
             ContentUnavailableView("No Content", systemImage: "folder", description: Text("Choose a source folder and browse by year, month, day, or grouping folders."))
+        }
+    }
+}
+
+struct DayContextPaneView: View {
+    @ObservedObject var appState: AppState
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Picker("Display", selection: Binding(
+                    get: { appState.dayDetailDisplayMode },
+                    set: { appState.setDayDetailDisplayMode($0) }
+                )) {
+                    ForEach(DayDetailDisplayMode.allCases, id: \.self) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 260)
+
+                Spacer()
+            }
+
+            if appState.dayDetailDisplayMode == .review {
+                ReviewPaneView(appState: appState)
+            } else {
+                InlineDaySectionsPaneView(appState: appState)
+            }
         }
     }
 }
@@ -189,84 +218,19 @@ struct ReviewPaneView: View {
     }
 
     private var reviewToolbar: some View {
-        HStack {
-            Picker("View", selection: Binding(
-                get: { appState.reviewPresentationMode },
-                set: { appState.setReviewPresentationMode($0) }
-            )) {
-                Text("Grid").tag(ReviewPresentationMode.grid)
-                Text("List").tag(ReviewPresentationMode.list)
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 180)
-
-            Divider()
-
-            Button("Smaller") {
-                appState.decreaseReviewGridCardWidth()
-            }
-            .disabled(appState.reviewGridCardWidth <= ReviewGridMetrics.minCardWidth)
-
-            Text("\(Int(appState.reviewGridCardWidth)) pt")
-                .font(.caption.monospacedDigit())
-                .frame(width: 56, alignment: .center)
-
-            Button("Larger") {
-                appState.increaseReviewGridCardWidth()
-            }
-            .disabled(appState.reviewGridCardWidth >= ReviewGridMetrics.maxCardWidth)
-
-            Button("Reset Size") {
-                appState.resetReviewGridCardWidth()
-            }
-            .disabled(appState.reviewGridCardWidth == ReviewGridMetrics.defaultCardWidth)
-
-            Spacer()
-
-            Button("Select All") {
-                appState.selectAllVisibleMedia()
-            }
-
-            Button("Deselect") {
-                appState.deselectAllVisibleMedia()
-            }
-            .disabled(appState.selectedMediaItemIDs.isEmpty)
-
-            Button("Open") {
-                appState.openFocusedReviewItem()
-            }
-            .disabled(appState.focusedReviewItem == nil)
-
-            Button("Compare (C)") {
-                appState.openComparisonForCurrentSelection()
-            }
-            .disabled(!appState.canOpenComparison)
-
-            if appState.canMutateImportSelection {
-                Button("Mark For Import (I)") {
-                    appState.markCurrentSelectionForImport()
-                }
-                .disabled(!appState.canMarkSelectionForImport)
-
-                Button("Unmark (D)") {
-                    appState.unmarkCurrentSelectionForImport()
-                }
-                .disabled(!appState.canUnmarkSelectionForImport)
-
-                Button("Toggle RAW (R)") {
-                    appState.toggleRawForCurrentMediaSelection()
-                }
-                .disabled(!appState.canToggleRawForSelection)
-            }
+        ViewThatFits(in: .horizontal) {
+            fullReviewToolbar
+            compactReviewToolbar
         }
     }
 
     private func reviewGrid(availableWidth: CGFloat) -> some View {
         let cardWidth = CGFloat(appState.reviewGridCardWidth)
         let spacing = CGFloat(ReviewGridMetrics.gridSpacing)
+        let columns = Array(repeating: GridItem(.fixed(cardWidth), spacing: spacing, alignment: .top), count: max(1, appState.reviewGridColumnCount))
 
-        return ScrollView {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: cardWidth, maximum: cardWidth), spacing: spacing, alignment: .top)], alignment: .leading, spacing: spacing) {
+        return ScrollView([.vertical, .horizontal]) {
+            LazyVGrid(columns: columns, alignment: .leading, spacing: spacing) {
                 ForEach(appState.visibleMediaItems) { item in
                     ReviewGridCard(
                         item: item,
@@ -304,6 +268,124 @@ struct ReviewPaneView: View {
         }
         .onAppear {
             appState.updateReviewGridMetrics(availableWidth: availableWidth)
+        }
+    }
+
+    private var fullReviewToolbar: some View {
+        HStack(spacing: 10) {
+            reviewPresentationPicker
+            sizeControls
+            Spacer()
+            primaryReviewButtons
+            reviewActionsMenu
+        }
+    }
+
+    private var compactReviewToolbar: some View {
+        HStack(spacing: 8) {
+            reviewPresentationPicker
+            sizeControls
+            Spacer()
+            Button("Open") {
+                appState.openFocusedReviewItem()
+            }
+            .disabled(appState.focusedReviewItem == nil)
+
+            Button("Compare") {
+                appState.openComparisonForCurrentSelection()
+            }
+            .disabled(!appState.canOpenComparison)
+
+            reviewActionsMenu
+        }
+    }
+
+    private var reviewPresentationPicker: some View {
+        Picker("View", selection: Binding(
+            get: { appState.reviewPresentationMode },
+            set: { appState.setReviewPresentationMode($0) }
+        )) {
+            Text("Grid").tag(ReviewPresentationMode.grid)
+            Text("List").tag(ReviewPresentationMode.list)
+        }
+        .pickerStyle(.segmented)
+        .frame(width: 180)
+    }
+
+    private var sizeControls: some View {
+        HStack(spacing: 6) {
+            Button {
+                appState.decreaseReviewGridCardWidth()
+            } label: {
+                Image(systemName: "minus.magnifyingglass")
+            }
+            .help("Make review cards smaller")
+            .disabled(appState.reviewGridCardWidth <= ReviewGridMetrics.minCardWidth)
+
+            Text("\(Int(appState.reviewGridCardWidth))")
+                .font(.caption.monospacedDigit())
+                .frame(width: 36)
+
+            Button {
+                appState.increaseReviewGridCardWidth()
+            } label: {
+                Image(systemName: "plus.magnifyingglass")
+            }
+            .help("Make review cards larger")
+            .disabled(appState.reviewGridCardWidth >= ReviewGridMetrics.maxCardWidth)
+
+            Button {
+                appState.resetReviewGridCardWidth()
+            } label: {
+                Image(systemName: "arrow.counterclockwise")
+            }
+            .help("Reset review card size")
+            .disabled(appState.reviewGridCardWidth == ReviewGridMetrics.defaultCardWidth)
+        }
+        .buttonStyle(.bordered)
+    }
+
+    private var primaryReviewButtons: some View {
+        HStack(spacing: 8) {
+            Button("Open") {
+                appState.openFocusedReviewItem()
+            }
+            .disabled(appState.focusedReviewItem == nil)
+
+            Button("Compare") {
+                appState.openComparisonForCurrentSelection()
+            }
+            .disabled(!appState.canOpenComparison)
+        }
+    }
+
+    private var reviewActionsMenu: some View {
+        Menu("Actions") {
+            Button("Select All") {
+                appState.selectAllVisibleMedia()
+            }
+
+            Button("Deselect") {
+                appState.deselectAllVisibleMedia()
+            }
+            .disabled(appState.selectedMediaItemIDs.isEmpty)
+
+            if appState.canMutateImportSelection {
+                Button("Mark For Import") {
+                    appState.markCurrentSelectionForImport()
+                }
+                .disabled(!appState.canMarkSelectionForImport)
+
+                Button("Unmark") {
+                    appState.unmarkCurrentSelectionForImport()
+                }
+                .disabled(!appState.canUnmarkSelectionForImport)
+
+                Button("Toggle RAW") {
+                    appState.toggleRawForCurrentMediaSelection()
+                }
+                .disabled(!appState.canToggleRawForSelection)
+            }
         }
     }
 

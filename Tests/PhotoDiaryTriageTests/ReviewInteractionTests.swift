@@ -65,6 +65,24 @@ import Testing
 }
 
 @MainActor
+@Test func dayContainerStillExposesMediaForReviewGrid() {
+    let items = makeSelectionItems(count: 3)
+    let state = AppState()
+    let root = URL(fileURLWithPath: "/tmp/review-container-state", isDirectory: true)
+    state.currentSession = makeTestSession(sourceRoot: root, archiveRoot: root.appendingPathComponent("archive", isDirectory: true), items: items)
+    state.burstGroups = []
+    state.timeClusters = []
+
+    let containerNode = state.browserNodeMap.values.first {
+        !($0.children?.isEmpty ?? true) && $0.mediaItemIDs.count == items.count
+    }
+
+    #expect(containerNode != nil)
+    state.selectedSidebarNodeID = containerNode?.id
+    #expect(state.visibleMediaItems.count == items.count)
+}
+
+@MainActor
 private func makeReviewAppState(items: [MediaItem]) -> AppState {
     let state = AppState()
     let root = URL(fileURLWithPath: "/tmp/review-state", isDirectory: true)

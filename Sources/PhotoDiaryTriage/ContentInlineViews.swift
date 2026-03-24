@@ -192,6 +192,10 @@ final class InlineGridClickView: NSView {
     var onSingleClick: (() -> Void)?
     var onDoubleClick: (() -> Void)?
 
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
     override func hitTest(_ point: NSPoint) -> NSView? {
         self
     }
