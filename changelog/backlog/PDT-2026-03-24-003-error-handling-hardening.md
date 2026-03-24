@@ -2,7 +2,7 @@
 
 ## Status
 
-- Current status: `draft`
+- Current status: `awaiting_user_review`
 - Priority: P0
 - Target release version: TBD
 - Target feature slug: `error-handling-hardening`
@@ -34,3 +34,9 @@ Fix `try!` crash points at app init and add graceful degradation for database an
 
 - Zero `try!` or force-unwrap on fallible initialization paths.
 - App degrades gracefully rather than crashing on storage failures.
+
+## Normalization Note
+
+- The requested startup hardening shipped as part of `PDT-2026-03-24-016`.
+- `AppState` now uses recoverable startup error handling and preview-cache fallback instead of launch-time `try!`.
+- This item stays open only for explicit user approval of the normalized tracking state.

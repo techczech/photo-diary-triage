@@ -2,7 +2,7 @@
 
 ## Status
 
-- Current status: `blocked`
+- Current status: `awaiting_user_review`
 - Target release version: `0.1.17`
 - Target feature slug: `testing-module-bootstrap`
 
@@ -40,3 +40,9 @@ Fix the local toolchain/testing setup so `swift test` works again.
 - The local Apple developer install is also missing `XCTest`, `Testing`, and `CompilerPluginSupport` artifacts that SwiftPM expects.
 - `softwareupdate --list` shows only Safari and macOS system updates, not a standalone Command Line Tools repair package.
 - Fixing this fully requires an Apple-side developer tools reinstall or a full Xcode install outside the repository.
+
+## Normalization Note
+
+- This backlog item was resolved by switching to the full Xcode toolchain on 2026-03-24.
+- `swift test` now runs locally without a repo-local `swift-testing` dependency workaround.
+- The item remains `awaiting_user_review` until the user explicitly accepts the normalized status.

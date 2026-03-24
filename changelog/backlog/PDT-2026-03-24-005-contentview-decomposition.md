@@ -2,7 +2,7 @@
 
 ## Status
 
-- Current status: `draft`
+- Current status: `partially_implemented_via_follow_on_items`
 - Priority: P1
 - Target release version: TBD
 - Target feature slug: `contentview-decomposition`
@@ -35,3 +35,9 @@ Extract the 1,452-line ContentView into focused sub-views in separate files.
 
 - `ContentView.swift` reduced to <300 lines.
 - Each sub-view is in its own file with clear responsibility.
+
+## Normalization Note
+
+- The practical decomposition work landed through `PDT-2026-03-24-017`, `018`, and `019`.
+- `ContentView.swift` is already reduced to a coordinator-sized file, but some extraction goals were superseded by the current usability-first review rescue.
+- Remaining UI cleanup should be tracked through usability-focused backlog items rather than more decomposition-only work.

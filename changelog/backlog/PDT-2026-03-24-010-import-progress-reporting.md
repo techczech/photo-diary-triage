@@ -2,7 +2,7 @@
 
 ## Status
 
-- Current status: `draft`
+- Current status: `awaiting_user_review`
 - Priority: P2
 - Target release version: TBD
 - Target feature slug: `import-progress-reporting`
@@ -32,3 +32,8 @@ Show per-file progress during imports instead of a single completion message.
 ## Success Criteria
 
 - User sees real-time feedback during imports of 10+ files.
+
+## Normalization Note
+
+- Import progress reporting shipped through `PDT-2026-03-24-016` and is exercised by the expanded workflow tests in `PDT-2026-03-24-004`.
+- The stale draft state no longer matches the code and has been normalized here.

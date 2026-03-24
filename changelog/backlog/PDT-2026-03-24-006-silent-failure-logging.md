@@ -2,7 +2,7 @@
 
 ## Status
 
-- Current status: `draft`
+- Current status: `awaiting_user_review`
 - Priority: P1
 - Target release version: TBD
 - Target feature slug: `silent-failure-logging`
@@ -33,3 +33,8 @@ Add structured logging for currently swallowed errors in thumbnail generation, m
 ## Success Criteria
 
 - All `try?` sites in critical paths either log the error or have explicit justification for silence.
+
+## Normalization Note
+
+- Structured logging for startup, session persistence, preview generation, metadata extraction, and import verification shipped in `PDT-2026-03-24-016`.
+- This backlog entry is normalized to reflect the implemented state already recorded in the changelog.
