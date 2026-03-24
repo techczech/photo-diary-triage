@@ -157,14 +157,7 @@ final class AppState: ObservableObject {
     }
 
     var inlineDaySections: [InlineDaySection] {
-        guard let node = selectedBrowserNode else { return [] }
-        if node.kind == .day {
-            return [makeInlineDaySection(from: node)].compactMap { $0 }
-        }
-
-        let dayChildren = (node.children ?? []).filter { $0.kind == .day }
-        guard !dayChildren.isEmpty else { return [] }
-        return dayChildren.compactMap(makeInlineDaySection(from:))
+        inlineSectionOrganizer.inlineDaySections(from: selectedBrowserNode)
     }
 
     var shouldShowInlineDaySections: Bool {
@@ -172,7 +165,7 @@ final class AppState: ObservableObject {
     }
 
     var organizedInlineSections: [InlineSection] {
-        inlineDaySections.map(buildInlineSection(for:))
+        inlineSectionOrganizer.organizedInlineSections(from: inlineDaySections, mode: dayOrganizationMode)
     }
 
     func mediaItems(for ids: [UUID]) -> [MediaItem] {
@@ -524,7 +517,7 @@ final class AppState: ObservableObject {
     }
 
     func expandAllInlineSections() {
-        expandedInlineSectionIDs = Set(flattenInlineSectionIDs(from: organizedInlineSections))
+        expandedInlineSectionIDs = Set(inlineSectionOrganizer.flattenSectionIDs(from: organizedInlineSections))
     }
 
     func collapseAllInlineSections() {
@@ -551,14 +544,7 @@ final class AppState: ObservableObject {
 
     func previewItems(for section: InlineSection, limit: Int = 18) -> [MediaItem] {
         let itemsByID = Dictionary(uniqueKeysWithValues: mediaItems(for: section.mediaItemIDs).map { ($0.id, $0) })
-
-        let burstRepresentativeIDs = representativeBurstItemIDs(in: section, availableItems: itemsByID)
-        let nonBurstIDs = evenlySampledIDs(
-            from: section.mediaItemIDs.filter { !burstRepresentativeIDs.contains($0) },
-            limit: max(0, limit - burstRepresentativeIDs.count)
-        )
-
-        let orderedIDs = Array((burstRepresentativeIDs + nonBurstIDs).prefix(limit))
+        let orderedIDs = inlineSectionOrganizer.previewItemIDs(for: section, availableItems: itemsByID, limit: limit)
         return orderedIDs.compactMap { itemsByID[$0] }
     }
 
@@ -821,6 +807,10 @@ final class AppState: ObservableObject {
         }
     }
 
+    private var inlineSectionOrganizer: InlineSectionOrganizer {
+        InlineSectionOrganizer(burstGroups: burstGroups)
+    }
+
     private func regroupCurrentSession(statusPrefix: String) {
         guard var session = currentSession else {
             statusMessage = "\(statusPrefix); new sessions will use the saved thresholds."
@@ -1006,208 +996,6 @@ final class AppState: ObservableObject {
             statusMessage = loadResult.statusMessage
         } catch {
             statusMessage = "Failed to load archive folder: \(error.localizedDescription)"
-        }
-    }
-
-    private func makeInlineDaySection(from node: BrowserNode) -> InlineDaySection? {
-        guard node.kind == .day else { return nil }
-        let children = node.children ?? []
-        let photosNode = children.first { $0.kind == .photosFolder }
-        let burstFolderNode = children.first { $0.kind == .burstsFolder }
-        let timeClusterFolderNode = children.first { $0.kind == .timeClustersFolder }
-        return InlineDaySection(
-            id: node.id,
-            dayNode: node,
-            photosNode: photosNode,
-            burstFolderNode: burstFolderNode,
-            timeClusterFolderNode: timeClusterFolderNode
-        )
-    }
-
-    private func buildInlineSection(for section: InlineDaySection) -> InlineSection {
-        let dayItemIDs = section.mediaItemIDs
-
-        switch dayOrganizationMode {
-        case .days:
-            return InlineSection(
-                id: section.id,
-                title: section.dayNode.title,
-                kind: .day,
-                mediaItemIDs: dayItemIDs,
-                photoItemIDs: dayItemIDs,
-                children: []
-            )
-        case .daysAndBursts:
-            let burstChildren = buildBurstSections(from: section.burstFolderNode?.children ?? [], allowedItemIDs: Set(dayItemIDs))
-            let remainder = makeRemainderSection(
-                id: "\(section.id)-other-photos",
-                title: "Other Photos",
-                itemIDs: dayItemIDs,
-                groupedItemIDs: Set(burstChildren.flatMap(\.mediaItemIDs))
-            )
-            return InlineSection(
-                id: section.id,
-                title: section.dayNode.title,
-                kind: .day,
-                mediaItemIDs: dayItemIDs,
-                photoItemIDs: [],
-                children: burstChildren + (remainder.map { [$0] } ?? [])
-            )
-        case .daysAndClusters:
-            let clusterChildren = buildClusterSections(
-                from: section.timeClusterFolderNode?.children ?? [],
-                allowedItemIDs: Set(dayItemIDs),
-                includeBursts: false
-            )
-            let remainder = makeRemainderSection(
-                id: "\(section.id)-other-photos",
-                title: "Other Photos",
-                itemIDs: dayItemIDs,
-                groupedItemIDs: Set(clusterChildren.flatMap(\.mediaItemIDs))
-            )
-            return InlineSection(
-                id: section.id,
-                title: section.dayNode.title,
-                kind: .day,
-                mediaItemIDs: dayItemIDs,
-                photoItemIDs: [],
-                children: clusterChildren + (remainder.map { [$0] } ?? [])
-            )
-        case .daysClustersAndBursts:
-            let clusterChildren = buildClusterSections(
-                from: section.timeClusterFolderNode?.children ?? [],
-                allowedItemIDs: Set(dayItemIDs),
-                includeBursts: true
-            )
-            let remainder = makeRemainderSection(
-                id: "\(section.id)-other-photos",
-                title: "Other Photos",
-                itemIDs: dayItemIDs,
-                groupedItemIDs: Set(clusterChildren.flatMap(\.mediaItemIDs))
-            )
-            return InlineSection(
-                id: section.id,
-                title: section.dayNode.title,
-                kind: .day,
-                mediaItemIDs: dayItemIDs,
-                photoItemIDs: [],
-                children: clusterChildren + (remainder.map { [$0] } ?? [])
-            )
-        }
-    }
-
-    private func buildClusterSections(from clusters: [BrowserNode], allowedItemIDs: Set<UUID>, includeBursts: Bool) -> [InlineSection] {
-        clusters.compactMap { cluster in
-            let clusterItemIDs = cluster.mediaItemIDs.filter { allowedItemIDs.contains($0) }
-            guard !clusterItemIDs.isEmpty else { return nil }
-
-            if includeBursts {
-                let burstChildren = buildBurstSections(
-                    from: burstGroups.compactMap { burst -> BrowserNode? in
-                        let ids = burst.mediaItemIDs.filter { clusterItemIDs.contains($0) }
-                        guard !ids.isEmpty else { return nil }
-                        return BrowserNode(
-                            id: "nested-burst-\(burst.id.uuidString)",
-                            title: "Burst",
-                            subtitle: "\(ids.count) item(s)",
-                            kind: .burstGroup,
-                            parentID: cluster.id,
-                            mediaItemIDs: ids,
-                            children: nil,
-                            folderURL: nil
-                        )
-                    },
-                    allowedItemIDs: Set(clusterItemIDs)
-                )
-                let remainder = makeRemainderSection(
-                    id: "\(cluster.id)-other-photos",
-                    title: "Other Photos",
-                    itemIDs: clusterItemIDs,
-                    groupedItemIDs: Set(burstChildren.flatMap(\.mediaItemIDs))
-                )
-                return InlineSection(
-                    id: cluster.id,
-                    title: cluster.title,
-                    kind: .cluster,
-                    mediaItemIDs: clusterItemIDs,
-                    photoItemIDs: [],
-                    children: burstChildren + (remainder.map { [$0] } ?? [])
-                )
-            }
-
-            return InlineSection(
-                id: cluster.id,
-                title: cluster.title,
-                kind: .cluster,
-                mediaItemIDs: clusterItemIDs,
-                photoItemIDs: clusterItemIDs,
-                children: []
-            )
-        }
-    }
-
-    private func buildBurstSections(from bursts: [BrowserNode], allowedItemIDs: Set<UUID>) -> [InlineSection] {
-        bursts.compactMap { burst in
-            let burstItemIDs = burst.mediaItemIDs.filter { allowedItemIDs.contains($0) }
-            guard !burstItemIDs.isEmpty else { return nil }
-            return InlineSection(
-                id: burst.id,
-                title: burst.title,
-                kind: .burst,
-                mediaItemIDs: burstItemIDs,
-                photoItemIDs: burstItemIDs,
-                children: []
-            )
-        }
-    }
-
-    private func makeRemainderSection(id: String, title: String, itemIDs: [UUID], groupedItemIDs: Set<UUID>) -> InlineSection? {
-        let remainderIDs = itemIDs.filter { !groupedItemIDs.contains($0) }
-        guard !remainderIDs.isEmpty else { return nil }
-        return InlineSection(
-            id: id,
-            title: title,
-            kind: .remainder,
-            mediaItemIDs: remainderIDs,
-            photoItemIDs: remainderIDs,
-            children: []
-        )
-    }
-
-    private func flattenInlineSectionIDs(from sections: [InlineSection]) -> [String] {
-        sections.flatMap { [$0.id] + flattenInlineSectionIDs(from: $0.children) }
-    }
-
-    private func representativeBurstItemIDs(in section: InlineSection, availableItems: [UUID: MediaItem]) -> [UUID] {
-        let burstSections = flattenedBurstSections(in: section)
-        guard !burstSections.isEmpty else { return [] }
-        return burstSections.compactMap { burst in
-            evenlySampledIDs(from: burst.mediaItemIDs, limit: 1).first
-        }
-        .filter { availableItems[$0] != nil }
-    }
-
-    private func flattenedBurstSections(in section: InlineSection) -> [InlineSection] {
-        var result: [InlineSection] = []
-        if section.kind == .burst {
-            result.append(section)
-        }
-        for child in section.children {
-            result.append(contentsOf: flattenedBurstSections(in: child))
-        }
-        return result
-    }
-
-    private func evenlySampledIDs(from ids: [UUID], limit: Int) -> [UUID] {
-        guard limit > 0, !ids.isEmpty else { return [] }
-        if ids.count <= limit { return ids }
-        if limit == 1 { return [ids[ids.count / 2]] }
-
-        let lastIndex = ids.count - 1
-        return (0..<limit).map { position in
-            let fraction = Double(position) / Double(limit - 1)
-            let index = Int((fraction * Double(lastIndex)).rounded())
-            return ids[index]
         }
     }
 
