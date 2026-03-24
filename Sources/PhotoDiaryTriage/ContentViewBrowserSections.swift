@@ -281,45 +281,57 @@ struct ReviewPaneView: View {
         let spacing = CGFloat(ReviewGridMetrics.gridSpacing)
         let columns = Array(repeating: GridItem(.fixed(cardWidth), spacing: spacing, alignment: .top), count: max(1, appState.reviewGridColumnCount))
 
-        return ScrollView([.vertical, .horizontal]) {
-            LazyVGrid(columns: columns, alignment: .leading, spacing: spacing) {
-                ForEach(visibleItems) { item in
-                    ReviewGridCard(
-                        item: item,
-                        thumbnailImage: appState.thumbnailImage(for: item),
-                        archivePreview: appState.archivePreview(for: item),
-                        cardWidth: cardWidth,
-                        canMutateImportSelection: appState.canMutateImportSelection,
-                        isSelected: appState.selectedMediaItemIDs.contains(item.id),
-                        isFocused: appState.focusedReviewItemID == item.id,
-                        thumbnailFailed: appState.thumbnailFailures.contains(item.id),
-                        onClick: { click in
-                            appState.handleGridSelection(for: item.id, click: click)
-                        },
-                        retryThumbnail: {
+        return ScrollViewReader { proxy in
+            ScrollView([.vertical, .horizontal]) {
+                LazyVGrid(columns: columns, alignment: .leading, spacing: spacing) {
+                    ForEach(visibleItems) { item in
+                        ReviewGridCard(
+                            item: item,
+                            thumbnailImage: appState.thumbnailImage(for: item),
+                            archivePreview: appState.archivePreview(for: item),
+                            cardWidth: cardWidth,
+                            canMutateImportSelection: appState.canMutateImportSelection,
+                            isSelected: appState.selectedMediaItemIDs.contains(item.id),
+                            isFocused: appState.focusedReviewItemID == item.id,
+                            thumbnailFailed: appState.thumbnailFailures.contains(item.id),
+                            onClick: { click in
+                                appState.handleGridSelection(for: item.id, click: click)
+                            },
+                            retryThumbnail: {
+                                appState.requestThumbnail(for: item)
+                            },
+                            setIncludeRaw: { enabled in
+                                if appState.canMutateImportSelection {
+                                    appState.setImportRawCompanions(for: item, enabled: enabled)
+                                }
+                            },
+                            toggleImport: {
+                                guard appState.canMutateImportSelection else { return }
+                                appState.selectMediaItems([item.id])
+                                if item.selectionState == .selected {
+                                    appState.unmarkCurrentSelectionForImport()
+                                } else {
+                                    appState.markCurrentSelectionForImport()
+                                }
+                            }
+                        )
+                        .id(item.id)
+                        .onAppear {
                             appState.requestThumbnail(for: item)
-                        },
-                        setIncludeRaw: { enabled in
-                            if appState.canMutateImportSelection {
-                                appState.setImportRawCompanions(for: item, enabled: enabled)
-                            }
-                        },
-                        toggleImport: {
-                            guard appState.canMutateImportSelection else { return }
-                            appState.selectMediaItems([item.id])
-                            if item.selectionState == .selected {
-                                appState.unmarkCurrentSelectionForImport()
-                            } else {
-                                appState.markCurrentSelectionForImport()
-                            }
                         }
-                    )
-                    .onAppear {
-                        appState.requestThumbnail(for: item)
                     }
                 }
+                .padding(CGFloat(ReviewGridMetrics.gridPadding))
             }
-            .padding(CGFloat(ReviewGridMetrics.gridPadding))
+            .onChange(of: appState.pendingReviewScrollTargetID) { _, targetID in
+                guard let targetID else { return }
+                DispatchQueue.main.async {
+                    withAnimation {
+                        proxy.scrollTo(targetID, anchor: .center)
+                    }
+                    appState.pendingReviewScrollTargetID = nil
+                }
+            }
         }
         .onAppear {
             appState.updateReviewGridMetrics(availableWidth: availableWidth)
@@ -353,6 +365,15 @@ struct ReviewPaneView: View {
                         proxy.scrollTo(targetID, anchor: .center)
                     }
                     appState.pendingInlineScrollTargetID = nil
+                }
+            }
+            .onChange(of: appState.pendingReviewScrollTargetID) { _, targetID in
+                guard let targetID else { return }
+                DispatchQueue.main.async {
+                    withAnimation {
+                        proxy.scrollTo(targetID, anchor: .center)
+                    }
+                    appState.pendingReviewScrollTargetID = nil
                 }
             }
             .onChange(of: appState.pendingInlineSectionScrollTargetID) { _, targetID in
@@ -557,6 +578,15 @@ struct ReviewPaneView: View {
                     appState.pendingInlineScrollTargetID = nil
                 }
             }
+            .onChange(of: appState.pendingReviewScrollTargetID) { _, targetID in
+                guard let targetID else { return }
+                DispatchQueue.main.async {
+                    withAnimation {
+                        proxy.scrollTo(targetID, anchor: .center)
+                    }
+                    appState.pendingReviewScrollTargetID = nil
+                }
+            }
             .onChange(of: appState.pendingInlineSectionScrollTargetID) { _, targetID in
                 guard let targetID else { return }
                 DispatchQueue.main.async {
@@ -581,12 +611,12 @@ private struct GroupedReviewSectionNodeView: View {
     let cardWidth: CGFloat
     let presentationMode: ReviewPresentationMode
 
-    private var hasChildren: Bool {
-        !section.children.isEmpty
+    private var isCollapsible: Bool {
+        !section.mediaItemIDs.isEmpty
     }
 
     private var isExpanded: Bool {
-        hasChildren ? appState.isInlineSectionExpanded(section.id) : true
+        appState.isInlineSectionExpanded(section.id)
     }
 
     private var directItemIDs: [UUID] {
@@ -613,13 +643,13 @@ private struct GroupedReviewSectionNodeView: View {
                                 .id(item.id)
                         }
                     }
-                    .padding(.leading, hasChildren ? 24 : 0)
+                    .padding(.leading, !section.children.isEmpty ? 24 : 0)
                 } else if !directItems.isEmpty {
                     ForEach(directItems) { item in
                         reviewListRow(for: item)
                             .id(item.id)
                     }
-                    .padding(.leading, hasChildren ? 12 : 0)
+                    .padding(.leading, !section.children.isEmpty ? 12 : 0)
                 }
 
                 ForEach(section.children) { child in
@@ -645,7 +675,7 @@ private struct GroupedReviewSectionNodeView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            if hasChildren {
+            if isCollapsible {
                 Button {
                     appState.focusInlineSection(section.id, scrollIntoView: false)
                     appState.toggleInlineSectionExpansion(section.id)
@@ -697,7 +727,7 @@ private struct GroupedReviewSectionNodeView: View {
     }
 
     private var sectionSummary: String {
-        if directItemIDs.isEmpty && hasChildren {
+        if directItemIDs.isEmpty && !section.children.isEmpty {
             return "\(section.mediaItemIDs.count) grouped photo(s)"
         }
         return "\(directItemIDs.count) photo(s)"
