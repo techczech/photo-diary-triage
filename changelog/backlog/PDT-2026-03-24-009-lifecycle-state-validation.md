@@ -2,7 +2,7 @@
 
 ## Status
 
-- Current status: `draft`
+- Current status: `awaiting_user_review`
 - Priority: P2
 - Target release version: TBD
 - Target feature slug: `lifecycle-state-validation`
@@ -33,3 +33,8 @@ Enforce valid lifecycle state transitions so media items cannot jump to invalid 
 ## Success Criteria
 
 - No code path can set an invalid lifecycle state without an explicit error.
+
+## Normalization Note
+
+- Validated lifecycle transitions shipped as part of `PDT-2026-03-24-016` and are now covered by tests added in `PDT-2026-03-24-004`.
+- This entry is no longer draft work; it is waiting only for user approval of the normalized backlog state.

@@ -16,13 +16,15 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "PhotoDiaryTriage",
+            exclude: ["AGENTS.md"],
             linkerSettings: [
                 .linkedLibrary("sqlite3")
             ]
         ),
         .testTarget(
             name: "PhotoDiaryTriageTests",
-            dependencies: ["PhotoDiaryTriage"]
+            dependencies: ["PhotoDiaryTriage"],
+            exclude: ["AGENTS.md"]
         )
     ]
 )
