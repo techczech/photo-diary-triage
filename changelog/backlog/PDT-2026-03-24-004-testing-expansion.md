@@ -2,14 +2,14 @@
 
 ## Status
 
-- Current status: `draft`
+- Current status: `awaiting_user_review`
 - Priority: P0
-- Target release version: TBD
+- Target release version: `0.1.26`
 - Target feature slug: `testing-expansion`
 
 ## User Request
 
-Expand test coverage beyond the current 7 service-layer tests to cover persistence, selection, lifecycle, and import workflows.
+Expand test coverage beyond the current 7 service-layer tests to cover persistence, selection, lifecycle, and import workflows now that full-Xcode local test execution is available.
 
 ## Constraints
 
