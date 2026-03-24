@@ -34,10 +34,22 @@ struct CompareGridMetrics: Equatable, Sendable {
     let availableWidth: Double
     let targetCardWidth: Double
     let itemCount: Int
+    let zoomScale: Double
+
+    init(availableWidth: Double, targetCardWidth: Double, itemCount: Int, zoomScale: Double = 1) {
+        self.availableWidth = availableWidth
+        self.targetCardWidth = targetCardWidth
+        self.itemCount = itemCount
+        self.zoomScale = zoomScale
+    }
+
+    private var effectiveTargetCardWidth: Double {
+        min(max(targetCardWidth * zoomScale, Self.minCardWidth), Self.maxCardWidth)
+    }
 
     var columnCount: Int {
         guard itemCount > 0 else { return 1 }
-        let clampedWidth = min(max(targetCardWidth, Self.minCardWidth), Self.maxCardWidth)
+        let clampedWidth = effectiveTargetCardWidth
         let usableWidth = max(availableWidth - (Self.gridPadding * 2) + Self.gridSpacing, clampedWidth)
         return max(1, min(itemCount, Int(usableWidth / (clampedWidth + Self.gridSpacing))))
     }
@@ -47,7 +59,8 @@ struct CompareGridMetrics: Equatable, Sendable {
         let totalSpacing = Double(max(columns - 1, 0)) * Self.gridSpacing
         let usableWidth = max(availableWidth - (Self.gridPadding * 2), Self.minCardWidth)
         let fittedWidth = (usableWidth - totalSpacing) / Double(columns)
-        return min(max(fittedWidth, Self.minCardWidth), Self.maxCardWidth)
+        let requestedWidth = min(max(effectiveTargetCardWidth, Self.minCardWidth), Self.maxCardWidth)
+        return min(max(min(fittedWidth, requestedWidth), Self.minCardWidth), Self.maxCardWidth)
     }
 
     var imageHeight: Double {

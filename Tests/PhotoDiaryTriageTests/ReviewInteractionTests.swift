@@ -19,6 +19,15 @@ import Testing
     #expect(dense.cardWidth < roomy.cardWidth)
 }
 
+@Test func compareGridMetricsZoomAlsoChangesCardWidth() {
+    let defaultZoom = CompareGridMetrics(availableWidth: 1_600, targetCardWidth: 320, itemCount: 4, zoomScale: 1)
+    let zoomedOut = CompareGridMetrics(availableWidth: 1_600, targetCardWidth: 320, itemCount: 4, zoomScale: 0.5)
+    let zoomedIn = CompareGridMetrics(availableWidth: 1_600, targetCardWidth: 320, itemCount: 4, zoomScale: 1.5)
+
+    #expect(zoomedOut.cardWidth < defaultZoom.cardWidth)
+    #expect(zoomedIn.cardWidth > defaultZoom.cardWidth)
+}
+
 @Test func reviewGridClickContextTracksModifiersAndDoubleClick() {
     let shiftDoubleClick = ReviewGridClickContext(modifiers: [.shift], clickCount: 2)
     let commandClick = ReviewGridClickContext(modifiers: [.command], clickCount: 1)

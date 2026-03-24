@@ -254,7 +254,8 @@ struct CompareSheet: View {
                     let metrics = CompareGridMetrics(
                         availableWidth: proxy.size.width,
                         targetCardWidth: appState.compareGridCardWidth,
-                        itemCount: items.count
+                        itemCount: items.count,
+                        zoomScale: zoom
                     )
                     let columns = Array(
                         repeating: GridItem(
