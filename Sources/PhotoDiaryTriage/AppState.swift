@@ -188,6 +188,10 @@ final class AppState: ObservableObject {
         !inlineDaySections.isEmpty
     }
 
+    var canUseGroupedReviewMode: Bool {
+        shouldShowInlineDaySections
+    }
+
     var organizedInlineSections: [InlineSection] {
         inlineSectionOrganizer.organizedInlineSections(from: inlineDaySections, mode: dayOrganizationMode)
     }
@@ -576,6 +580,12 @@ final class AppState: ObservableObject {
     }
 
     func setDayDetailDisplayMode(_ mode: DayDetailDisplayMode) {
+        if mode == .sections, !canUseGroupedReviewMode {
+            dayDetailDisplayMode = .review
+            statusMessage = "Grouped review is available when browsing a day or a folder with day sections."
+            activateReviewGridFocus()
+            return
+        }
         dayDetailDisplayMode = mode
         activateReviewGridFocus()
     }

@@ -139,6 +139,42 @@ import Testing
 }
 
 @MainActor
+@Test func groupedReviewCanBeRequestedForDayContainerContexts() {
+    let items = makeSelectionItems(count: 4)
+    let state = AppState()
+    let root = URL(fileURLWithPath: "/tmp/grouped-review-shell", isDirectory: true)
+    state.currentSession = makeTestSession(sourceRoot: root, archiveRoot: root.appendingPathComponent("archive", isDirectory: true), items: items)
+    state.burstGroups = []
+    state.timeClusters = []
+
+    let containerNode = state.browserNodeMap.values.first(where: { node in
+        state.selectedSidebarNodeID = node.id
+        return state.canUseGroupedReviewMode
+    })
+
+    #expect(containerNode != nil)
+    state.selectedSidebarNodeID = containerNode?.id
+    #expect(state.canUseGroupedReviewMode)
+
+    state.setDayDetailDisplayMode(.sections)
+
+    #expect(state.dayDetailDisplayMode == .sections)
+}
+
+@MainActor
+@Test func groupedReviewFallsBackCleanlyWhenCurrentNodeCannotBeGrouped() {
+    let items = makeSelectionItems(count: 3)
+    let state = makeReviewAppState(items: items)
+
+    #expect(!state.canUseGroupedReviewMode)
+
+    state.setDayDetailDisplayMode(.sections)
+
+    #expect(state.dayDetailDisplayMode == .review)
+    #expect(state.statusMessage.contains("Grouped review is available"))
+}
+
+@MainActor
 private func makeReviewAppState(items: [MediaItem]) -> AppState {
     let state = AppState()
     let root = URL(fileURLWithPath: "/tmp/review-state", isDirectory: true)

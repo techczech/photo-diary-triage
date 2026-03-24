@@ -32,10 +32,8 @@ struct BrowserOrReviewPaneView: View {
     @ObservedObject var appState: AppState
 
     var body: some View {
-        if appState.shouldShowInlineDaySections {
+        if !appState.visibleMediaItems.isEmpty {
             DayContextPaneView(appState: appState)
-        } else if !appState.visibleMediaItems.isEmpty {
-            ReviewPaneView(appState: appState)
         } else if !appState.detailFolderNodes.isEmpty {
             FolderBrowserPaneView(appState: appState)
         } else {
@@ -64,7 +62,13 @@ struct DayContextPaneView: View {
                 Spacer()
             }
 
-            if appState.dayDetailDisplayMode == .sections {
+            if !appState.canUseGroupedReviewMode {
+                Text("Grouped review is available when browsing a day or a folder with day sections.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if appState.canUseGroupedReviewMode && appState.dayDetailDisplayMode == .sections {
                 HStack {
                     Picker("Show By", selection: Binding(
                         get: { appState.dayOrganizationMode },
