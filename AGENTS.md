@@ -2,6 +2,32 @@
 
 This is the canonical agent-instructions file for this repo. Always read this file before planning, implementing, reviewing, or reporting status.
 
+## Build Environment
+
+- **Platform:** macOS 15.7+ (arm64)
+- **Xcode:** 26.3 at `/Volumes/BigData/Applications/Xcode.app`
+- **Swift:** 6.2.4 (swiftlang-6.2.4.1.4)
+- **Swift tools version:** 5.10 (declared in Package.swift)
+- **macOS SDK:** 26.2
+- **macOS deployment target:** 14.0
+- **Dependencies:** sqlite3 (system library), no external packages
+- **xcode-select:** must point at `/Volumes/BigData/Applications/Xcode.app/Contents/Developer`
+
+### Build and test commands
+
+```bash
+swift build                        # debug build
+swift test                         # run unit tests
+./scripts/build_app_bundle.sh      # package into dist/PhotoDiaryTriage.app (requires swift build first)
+```
+
+### Notes
+
+- Xcode lives on the BigData external volume, not the boot disk. If `xcodebuild -version` fails, run: `sudo xcode-select -s /Volumes/BigData/Applications/Xcode.app/Contents/Developer`
+- The app is built and run exclusively via SPM command line. The Xcode IDE is never used.
+- The build script produces an ad-hoc signed `.app` bundle in `dist/`.
+- See `_DEVLOG/machineconfig/devsetup_swift_xcode.md` for full environment setup instructions.
+
 ## Purpose
 
 This document defines the agent responsibilities for evolving Photo Diary Triage without drifting from the SSD-first selective-import workflow or from the UX contract in [DESIGN.md](/Volumes/BigData/gitrepos/14_apps-and-utilities/photo-diary-triage/DESIGN.md).
