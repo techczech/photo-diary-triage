@@ -181,7 +181,7 @@ final class AppState: ObservableObject {
     }
 
     var inlineDaySections: [InlineDaySection] {
-        inlineSectionOrganizer.inlineDaySections(from: selectedBrowserNode)
+        inlineSectionOrganizer.inlineDaySections(from: selectedBrowserNode, visibleItems: visibleMediaItems)
     }
 
     var shouldShowInlineDaySections: Bool {

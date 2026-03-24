@@ -164,8 +164,7 @@ import Testing
 
 @MainActor
 @Test func groupedReviewFallsBackCleanlyWhenCurrentNodeCannotBeGrouped() {
-    let items = makeSelectionItems(count: 3)
-    let state = makeReviewAppState(items: items)
+    let state = AppState()
 
     #expect(!state.canUseGroupedReviewMode)
     #expect(state.availableDayDetailDisplayModes == [.review])
@@ -174,6 +173,21 @@ import Testing
 
     #expect(state.dayDetailDisplayMode == .review)
     #expect(state.statusMessage.contains("Grouped review is available"))
+}
+
+@MainActor
+@Test func leafReviewContextNowExposesGroupedReviewFromVisibleItems() {
+    let items = makeSelectionItems(count: 4)
+    let state = makeReviewAppState(items: items)
+
+    #expect(state.visibleMediaItems.count == items.count)
+    #expect(state.canUseGroupedReviewMode)
+    #expect(state.availableDayDetailDisplayModes == DayDetailDisplayMode.allCases)
+    #expect(!state.inlineDaySections.isEmpty)
+
+    state.setDayDetailDisplayMode(.sections)
+
+    #expect(state.dayDetailDisplayMode == .sections)
 }
 
 @MainActor

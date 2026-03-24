@@ -3,15 +3,18 @@ import Foundation
 struct InlineSectionOrganizer {
     let burstGroups: [BurstGroup]
 
-    func inlineDaySections(from selectedBrowserNode: BrowserNode?) -> [InlineDaySection] {
+    func inlineDaySections(from selectedBrowserNode: BrowserNode?, visibleItems: [MediaItem]) -> [InlineDaySection] {
         guard let node = selectedBrowserNode else { return [] }
         if node.kind == .day {
             return [makeInlineDaySection(from: node)].compactMap { $0 }
         }
 
         let dayChildren = (node.children ?? []).filter { $0.kind == .day }
-        guard !dayChildren.isEmpty else { return [] }
-        return dayChildren.compactMap(makeInlineDaySection(from:))
+        if !dayChildren.isEmpty {
+            return dayChildren.compactMap(makeInlineDaySection(from:))
+        }
+
+        return syntheticInlineDaySections(from: visibleItems, parentNodeID: node.id)
     }
 
     func organizedInlineSections(from daySections: [InlineDaySection], mode: DayOrganizationMode) -> [InlineSection] {
@@ -57,6 +60,168 @@ struct InlineSectionOrganizer {
             burstFolderNode: burstFolderNode,
             timeClusterFolderNode: timeClusterFolderNode
         )
+    }
+
+    private func syntheticInlineDaySections(from items: [MediaItem], parentNodeID: String?) -> [InlineDaySection] {
+        guard !items.isEmpty else { return [] }
+
+        let calendar = Calendar(identifier: .gregorian)
+        let grouped = Dictionary(grouping: items) { item in
+            item.capturedAt.flatMap { calendar.startOfDay(for: $0) }
+        }
+
+        let orderedKeys = grouped.keys.sorted { lhs, rhs in
+            switch (lhs, rhs) {
+            case let (lhs?, rhs?):
+                return lhs < rhs
+            case (.some, nil):
+                return true
+            case (nil, .some):
+                return false
+            case (nil, nil):
+                return false
+            }
+        }
+
+        return orderedKeys.compactMap { dayStart in
+            guard let dayItems = grouped[dayStart]?.sorted(by: mediaSort) else { return nil }
+            return makeSyntheticInlineDaySection(
+                from: dayItems,
+                dayStart: dayStart,
+                parentNodeID: parentNodeID
+            )
+        }
+    }
+
+    private func makeSyntheticInlineDaySection(from items: [MediaItem], dayStart: Date?, parentNodeID: String?) -> InlineDaySection {
+        let dayID = syntheticDayID(for: dayStart, items: items)
+        let dayNode = BrowserNode(
+            id: dayID,
+            title: syntheticDayTitle(for: dayStart),
+            subtitle: "\(items.count) item(s)",
+            kind: .day,
+            parentID: parentNodeID,
+            mediaItemIDs: items.map(\.id),
+            children: nil,
+            folderURL: nil
+        )
+
+        let photosNode = BrowserNode(
+            id: "\(dayID)-photos",
+            title: "Photos",
+            subtitle: "\(items.count) item(s)",
+            kind: .photosFolder,
+            parentID: dayID,
+            mediaItemIDs: items.map(\.id),
+            children: nil,
+            folderURL: nil
+        )
+
+        let burstFolderNode = syntheticGroupFolderNode(
+            kind: .burstsFolder,
+            title: "Bursts",
+            nodeID: "\(dayID)-bursts",
+            parentID: dayID,
+            items: items,
+            groupID: \.burstGroupID,
+            childKind: .burstGroup,
+            childTitlePrefix: "Burst"
+        )
+
+        let timeClusterFolderNode = syntheticGroupFolderNode(
+            kind: .timeClustersFolder,
+            title: "Time Clusters",
+            nodeID: "\(dayID)-clusters",
+            parentID: dayID,
+            items: items,
+            groupID: \.timeClusterID,
+            childKind: .timeCluster,
+            childTitlePrefix: "Cluster"
+        )
+
+        return InlineDaySection(
+            id: dayID,
+            dayNode: dayNode,
+            photosNode: photosNode,
+            burstFolderNode: burstFolderNode,
+            timeClusterFolderNode: timeClusterFolderNode
+        )
+    }
+
+    private func syntheticGroupFolderNode(
+        kind: BrowserNodeKind,
+        title: String,
+        nodeID: String,
+        parentID: String,
+        items: [MediaItem],
+        groupID: KeyPath<MediaItem, UUID?>,
+        childKind: BrowserNodeKind,
+        childTitlePrefix: String
+    ) -> BrowserNode? {
+        let groupedItems = Dictionary(grouping: items.compactMap { item -> (UUID, MediaItem)? in
+            guard let id = item[keyPath: groupID] else { return nil }
+            return (id, item)
+        }, by: \.0)
+
+        let children = groupedItems.keys.sorted { lhs, rhs in
+            let lhsDate = groupedItems[lhs]?.compactMap(\.1.capturedAt).min() ?? .distantPast
+            let rhsDate = groupedItems[rhs]?.compactMap(\.1.capturedAt).min() ?? .distantPast
+            return lhsDate < rhsDate
+        }
+        .compactMap { id -> BrowserNode? in
+            guard let grouped = groupedItems[id]?.map(\.1).sorted(by: mediaSort), !grouped.isEmpty else { return nil }
+            return BrowserNode(
+                id: "\(nodeID)-\(id.uuidString)",
+                title: "\(childTitlePrefix) \(grouped.count)",
+                subtitle: "\(grouped.count) item(s)",
+                kind: childKind,
+                parentID: nodeID,
+                mediaItemIDs: grouped.map(\.id),
+                children: nil,
+                folderURL: nil
+            )
+        }
+
+        guard !children.isEmpty else { return nil }
+        return BrowserNode(
+            id: nodeID,
+            title: title,
+            subtitle: "\(children.count) group(s)",
+            kind: kind,
+            parentID: parentID,
+            mediaItemIDs: items.map(\.id),
+            children: children,
+            folderURL: nil
+        )
+    }
+
+    private func syntheticDayID(for dayStart: Date?, items: [MediaItem]) -> String {
+        if let dayStart {
+            return "synthetic-day-\(syntheticDayFormatter.string(from: dayStart))"
+        }
+        return "synthetic-day-unknown-\(items.count)"
+    }
+
+    private func syntheticDayTitle(for dayStart: Date?) -> String {
+        guard let dayStart else { return "Unknown Date" }
+        return syntheticDayFormatter.string(from: dayStart)
+    }
+
+    private var syntheticDayFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_GB_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }
+
+    private func mediaSort(lhs: MediaItem, rhs: MediaItem) -> Bool {
+        let lhsDate = lhs.capturedAt ?? .distantPast
+        let rhsDate = rhs.capturedAt ?? .distantPast
+        if lhsDate == rhsDate {
+            return lhs.fileName.localizedCaseInsensitiveCompare(rhs.fileName) == .orderedAscending
+        }
+        return lhsDate < rhsDate
     }
 
     private func buildInlineSection(for section: InlineDaySection, mode: DayOrganizationMode) -> InlineSection {
