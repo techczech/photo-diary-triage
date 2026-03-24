@@ -38,3 +38,4 @@
 {"ts":"2026-03-24T09:46:02Z","item_id":"PDT-2026-03-24-019","event":"report_created","status":"implemented","title":"Content support view split","file":"changelog/changelog/PDT-2026-03-24-019-content-support-view-split-report.md"}
 {"ts":"2026-03-24T09:51:27Z","item_id":"PDT-2026-03-24-020","event":"report_created","status":"implemented","title":"Browser view model extraction","file":"changelog/changelog/PDT-2026-03-24-020-browser-view-model-extraction-report.md"}
 {"ts":"2026-03-24T09:58:33Z","item_id":"PDT-2026-03-24-021","event":"report_created","status":"implemented","title":"Inline section organizer extraction","file":"changelog/changelog/PDT-2026-03-24-021-inline-section-organizer-extraction-report.md"}
+{"ts":"2026-03-24T10:14:39Z","item_id":"PDT-2026-03-24-022","event":"report_created","status":"implemented","title":"Session lifecycle coordinator extraction","file":"changelog/changelog/PDT-2026-03-24-022-session-lifecycle-coordinator-extraction-report.md"}
