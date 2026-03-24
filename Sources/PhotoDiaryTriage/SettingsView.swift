@@ -55,6 +55,15 @@ struct SettingsView: View {
                 .pickerStyle(.segmented)
                 .frame(width: 220)
 
+                Stepper(value: reviewGridCardWidthBinding, in: ReviewGridMetrics.minCardWidth...ReviewGridMetrics.maxCardWidth, step: ReviewGridMetrics.cardWidthStep) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Grid card width")
+                            .font(.subheadline.weight(.semibold))
+                        Text("Current size: \(Int(appState.reviewGridCardWidth)) pt")
+                            .font(.callout.monospacedDigit())
+                    }
+                }
+
                 Divider()
 
                 Text("Grouping")
@@ -123,6 +132,13 @@ struct SettingsView: View {
         Binding(
             get: { appState.settings.proximityThresholdSeconds },
             set: { appState.setProximityThresholdSeconds($0) }
+        )
+    }
+
+    private var reviewGridCardWidthBinding: Binding<Double> {
+        Binding(
+            get: { appState.reviewGridCardWidth },
+            set: { appState.setReviewGridCardWidth($0) }
         )
     }
 

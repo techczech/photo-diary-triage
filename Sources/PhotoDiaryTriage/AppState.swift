@@ -23,6 +23,8 @@ final class AppState: ObservableObject {
     @Published var pendingInlineScrollTargetID: UUID?
     @Published var previewingMediaItemID: UUID?
     @Published var comparingMediaItemIDs: [UUID] = []
+    @Published var compareSheetTitle: String = "Compare Selection"
+    @Published var reviewGridColumnCount: Int = 1
     @Published var statusMessage: String = "Choose a source folder on the SSD to begin."
     @Published var thumbnailFailures: Set<UUID> = []
     @Published var archiveMediaCache: [String: [MediaItem]] = [:]
@@ -45,6 +47,8 @@ final class AppState: ObservableObject {
     private let fileManager: FileManager
     private let supportRoot: URL
     private let logger = AppLogger.appState
+    private let thumbnailScheduler = ThumbnailScheduler()
+    private var thumbnailTasks: [UUID: Task<Void, Never>] = [:]
     private var volumeMountObserver: NSObjectProtocol?
     private var hasAttemptedInitialAutoLoad = false
 
@@ -188,6 +192,10 @@ final class AppState: ObservableObject {
         settings.reviewPresentationMode
     }
 
+    var reviewGridCardWidth: Double {
+        settings.reviewGridCardWidth
+    }
+
     var canOpenCurrentSelection: Bool {
         if activePane == .folders { return selectedFolderNodeIDs.count == 1 }
         if activePane == .sidebar { return selectedBrowserNode?.isContainer == true }
@@ -257,6 +265,14 @@ final class AppState: ObservableObject {
 
     var canOpenComparison: Bool {
         currentSelectionMediaIDs().count >= 2
+    }
+
+    var canNavigatePreviewBackward: Bool {
+        previewNavigationOffset(-1) != nil
+    }
+
+    var canNavigatePreviewForward: Bool {
+        previewNavigationOffset(1) != nil
     }
 
     var isBrowsingArchive: Bool {
@@ -335,7 +351,7 @@ final class AppState: ObservableObject {
 
             statusMessage = "Loaded \(opened.session.mediaItems.count) visible items from \(folder.lastPathComponent)."
 
-            requestThumbnails(for: opened.session.mediaItems)
+            requestVisibleThumbnails(prefetching: opened.session.mediaItems)
         } catch {
             logger.error("Failed to open session for \(folder.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
             statusMessage = error.localizedDescription
@@ -421,19 +437,7 @@ final class AppState: ObservableObject {
     }
 
     func requestThumbnail(for item: MediaItem) {
-        Task {
-            let success = await previewStore.generateThumbnail(for: item)
-            await MainActor.run {
-                if success {
-                    thumbnailFailures.remove(item.id)
-                } else {
-                    thumbnailFailures.insert(item.id)
-                    if previewStore.isPersistentCacheAvailable == false {
-                        statusMessage = "Preview cache unavailable; thumbnails are temporarily disabled."
-                    }
-                }
-            }
-        }
+        enqueueThumbnailRequests([item], priority: .visible)
     }
 
     func setArchiveRoot(_ archiveRoot: URL) {
@@ -462,6 +466,26 @@ final class AppState: ObservableObject {
         persistSettings()
     }
 
+    func setReviewGridCardWidth(_ width: Double) {
+        let clamped = min(max(width, ReviewGridMetrics.minCardWidth), ReviewGridMetrics.maxCardWidth)
+        guard settings.reviewGridCardWidth != clamped else { return }
+        settings.reviewGridCardWidth = clamped
+        updateReviewGridMetrics(availableWidth: nil)
+        persistSettings()
+    }
+
+    func increaseReviewGridCardWidth() {
+        setReviewGridCardWidth(settings.reviewGridCardWidth + ReviewGridMetrics.cardWidthStep)
+    }
+
+    func decreaseReviewGridCardWidth() {
+        setReviewGridCardWidth(settings.reviewGridCardWidth - ReviewGridMetrics.cardWidthStep)
+    }
+
+    func resetReviewGridCardWidth() {
+        setReviewGridCardWidth(ReviewGridMetrics.defaultCardWidth)
+    }
+
     func setBurstThresholdSeconds(_ threshold: TimeInterval) {
         let clamped = min(max(threshold, 0.5), 10)
         guard settings.burstThresholdSeconds != clamped else { return }
@@ -483,6 +507,12 @@ final class AppState: ObservableObject {
         resetInlineExpansionState()
     }
 
+    func updateReviewGridMetrics(availableWidth: CGFloat?) {
+        let width = Double(availableWidth ?? 0)
+        let metrics = ReviewGridMetrics(availableWidth: width, cardWidth: reviewGridCardWidth)
+        reviewGridColumnCount = reviewPresentationMode == .grid ? metrics.columnCount : 1
+    }
+
     func toggleDetailsInspector() {
         isDetailsInspectorVisible.toggle()
     }
@@ -493,6 +523,7 @@ final class AppState: ObservableObject {
         clearDetailSelections()
         loadArchiveMediaIfNeeded(for: nodeID)
         resetInlineExpansionState()
+        requestVisibleThumbnails()
     }
 
     func toggleInlineSectionExpansion(_ sectionID: String) {
@@ -563,16 +594,23 @@ final class AppState: ObservableObject {
     }
 
     func handleGridSelection(for itemID: UUID, modifiers: NSEvent.ModifierFlags) {
+        handleGridSelection(for: itemID, click: ReviewGridClickContext(modifiers: modifiers, clickCount: 1))
+    }
+
+    func handleGridSelection(for itemID: UUID, click: ReviewGridClickContext) {
         guard let _ = currentSession else { return }
         var state = reviewSelectionState()
         selectionManager.handleGridSelection(
             for: itemID,
             visibleItems: visibleMediaItems,
-            isShiftPressed: modifiers.contains(.shift),
-            isCommandPressed: modifiers.contains(.command),
+            isShiftPressed: click.isShiftPressed,
+            isCommandPressed: click.isCommandPressed,
             state: &state
         )
         applyReviewSelectionState(state)
+        if click.isDoubleClick {
+            openFocusedReviewItem()
+        }
     }
 
     func moveGridSelection(by offset: Int, extending: Bool) {
@@ -632,13 +670,41 @@ final class AppState: ObservableObject {
         previewingMediaItemID = focusedID
     }
 
+    func navigatePreview(by offset: Int) {
+        guard let targetID = previewNavigationOffset(offset) else { return }
+        previewingMediaItemID = targetID
+        focusedReviewItemID = targetID
+        selectedMediaItemIDs = [targetID]
+        reviewSelectionAnchorID = targetID
+        activePane = .media
+    }
+
     func openComparisonForCurrentSelection() {
         let ids = visibleMediaItems
             .map(\.id)
             .filter { currentSelectionMediaIDs().contains($0) }
-        guard ids.count >= 2 else { return }
-        comparingMediaItemIDs = ids
-        statusMessage = "Opened compare view for \(ids.count) selected item(s)."
+        openComparison(for: ids, title: "Compare Selection")
+    }
+
+    func openComparison(for itemIDs: [UUID], title: String) {
+        let deduplicatedIDs = itemIDs.reduce(into: [UUID]()) { result, id in
+            if !result.contains(id) {
+                result.append(id)
+            }
+        }
+        guard deduplicatedIDs.count >= 2 else { return }
+        compareSheetTitle = title
+        comparingMediaItemIDs = deduplicatedIDs
+        statusMessage = "Opened compare view for \(deduplicatedIDs.count) item(s)."
+    }
+
+    func focusComparisonItem(_ itemID: UUID, extendingSelection: Bool = false) {
+        let modifiers: NSEvent.ModifierFlags = extendingSelection ? [.shift] : []
+        handleGridSelection(for: itemID, modifiers: modifiers)
+    }
+
+    func toggleSelectionForComparisonItem(_ itemID: UUID) {
+        handleGridSelection(for: itemID, modifiers: [.command])
     }
 
     func openCurrentSelection() {
@@ -913,9 +979,65 @@ final class AppState: ObservableObject {
     }
 
     private func requestThumbnails(for items: [MediaItem]) {
-        for item in items {
-            requestThumbnail(for: item)
+        enqueueThumbnailRequests(items, priority: .background)
+    }
+
+    private func requestVisibleThumbnails(prefetching items: [MediaItem] = []) {
+        let visible = visibleMediaItems
+        let visibleIDs = Set(visible.map(\.id))
+
+        if !visible.isEmpty {
+            enqueueThumbnailRequests(visible, priority: .visible)
         }
+
+        let backgroundItems = items.filter { !visibleIDs.contains($0.id) }
+        if !backgroundItems.isEmpty {
+            enqueueThumbnailRequests(backgroundItems, priority: .background)
+        }
+    }
+
+    private func enqueueThumbnailRequests(_ items: [MediaItem], priority: ThumbnailPriority) {
+        Task { [weak self] in
+            guard let self else { return }
+            let scheduled = await self.thumbnailScheduler.enqueue(items, priority: priority)
+            self.startThumbnailTasks(for: scheduled)
+        }
+    }
+
+    private func startThumbnailTasks(for items: [MediaItem]) {
+        for item in items where thumbnailTasks[item.id] == nil {
+            thumbnailTasks[item.id] = Task { [weak self] in
+                guard let self else { return }
+                let success = await self.previewStore.generateThumbnail(for: item)
+                await self.finishThumbnail(itemID: item.id, success: success)
+            }
+        }
+    }
+
+    private func finishThumbnail(itemID: UUID, success: Bool) async {
+        if success {
+            thumbnailFailures.remove(itemID)
+        } else {
+            thumbnailFailures.insert(itemID)
+            if previewStore.isPersistentCacheAvailable == false {
+                statusMessage = "Preview cache unavailable; thumbnails are temporarily disabled."
+            }
+        }
+
+        thumbnailTasks[itemID] = nil
+        let scheduled = await thumbnailScheduler.complete(itemID)
+        startThumbnailTasks(for: scheduled)
+    }
+
+    private func previewNavigationOffset(_ offset: Int) -> UUID? {
+        let navigationItems = visibleMediaItems.isEmpty ? (currentSession?.mediaItems ?? []) : visibleMediaItems
+        guard let currentID = previewingMediaItemID ?? focusedReviewItemID ?? selectedMediaItemIDs.first,
+              let currentIndex = navigationItems.firstIndex(where: { $0.id == currentID }) else {
+            return nil
+        }
+        let targetIndex = currentIndex + offset
+        guard navigationItems.indices.contains(targetIndex) else { return nil }
+        return navigationItems[targetIndex].id
     }
 
     private func configurePersistence() {
@@ -938,7 +1060,7 @@ final class AppState: ObservableObject {
                 settings: settings
             ) else { return }
             archiveMediaCache[loadResult.nodeID] = loadResult.items
-            requestThumbnails(for: loadResult.items)
+            requestVisibleThumbnails(prefetching: loadResult.items)
             statusMessage = loadResult.statusMessage
         } catch {
             statusMessage = "Failed to load archive folder: \(error.localizedDescription)"
