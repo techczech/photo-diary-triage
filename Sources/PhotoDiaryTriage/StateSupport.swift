@@ -93,6 +93,7 @@ final class NoCachePreviewStore: PreviewCaching {
 struct AppLogger {
     static let appState = Logger(subsystem: "PhotoDiaryTriage", category: "AppState")
     static let sessionLifecycle = Logger(subsystem: "PhotoDiaryTriage", category: "SessionLifecycle")
+    static let sessionMutation = Logger(subsystem: "PhotoDiaryTriage", category: "SessionMutation")
     static let sessionManager = Logger(subsystem: "PhotoDiaryTriage", category: "SessionManager")
     static let importWorkflow = Logger(subsystem: "PhotoDiaryTriage", category: "ImportWorkflow")
     static let sessionStore = Logger(subsystem: "PhotoDiaryTriage", category: "SessionStore")

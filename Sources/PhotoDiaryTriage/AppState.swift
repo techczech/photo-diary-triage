@@ -33,6 +33,7 @@ final class AppState: ObservableObject {
     private let groupingService: GroupingService
     private let importCoordinator: ImportCoordinator
     private let sessionLifecycleCoordinator: SessionLifecycleCoordinator
+    private let sessionMutationCoordinator: SessionMutationCoordinator
     private var sessionStore: SessionPersisting
     private var previewStore: PreviewCaching
     private let settingsStore: SettingsPersisting
@@ -64,6 +65,7 @@ final class AppState: ObservableObject {
             fileManager: self.fileManager,
             supportRoot: self.supportRoot
         )
+        self.sessionMutationCoordinator = SessionMutationCoordinator()
         self.sessionStore = InMemorySessionStore()
         self.previewStore = NoCachePreviewStore(cacheRoot: settings.cacheRoot)
         self.sessionManager = SessionManager(scanner: self.scanner, groupingService: self.groupingService)
@@ -350,43 +352,22 @@ final class AppState: ObservableObject {
     }
 
     func updateWalkMetadata(title: String, location: String, notes: String) {
-        guard var session = currentSession else { return }
-        session.walkMetadata.title = title
-        session.walkMetadata.location = location
-        session.walkMetadata.notes = notes
-        save(session)
+        guard let currentSession else { return }
+        save(sessionMutationCoordinator.sessionByUpdatingWalkMetadata(currentSession, title: title, location: location, notes: notes))
     }
 
     func updateWalkDetailsExpansion(for session: ImportSession?) {
-        guard let session else {
-            isWalkDetailsExpanded = true
-            return
-        }
-
-        let metadata = session.walkMetadata
-        let hasMetadata = metadata.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-            || metadata.location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-            || metadata.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-        isWalkDetailsExpanded = !hasMetadata
+        isWalkDetailsExpanded = sessionMutationCoordinator.walkDetailsShouldExpand(for: session)
     }
 
     func setImportRawCompanions(for item: MediaItem, enabled: Bool) {
-        guard var session = currentSession, let index = session.mediaItems.firstIndex(where: { $0.id == item.id }) else { return }
-        session.mediaItems[index].importRawCompanions = enabled
-        save(session)
+        guard let currentSession else { return }
+        save(sessionMutationCoordinator.sessionBySettingImportRawCompanions(currentSession, for: item.id, enabled: enabled))
     }
 
     func markBackupConfirmed() {
-        guard var session = currentSession else { return }
-        session.walkMetadata.backupConfirmedAt = Date()
-        for index in session.mediaItems.indices where session.mediaItems[index].lifecycleState == .verified {
-            do {
-                session.mediaItems[index].lifecycleState = try session.mediaItems[index].lifecycleState.transition(to: .sourceCleanupPending)
-            } catch {
-                logger.error("Failed to mark cleanup pending for \(session.mediaItems[index].sourceURL.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
-            }
-        }
-        save(session)
+        guard let currentSession else { return }
+        save(sessionMutationCoordinator.sessionByMarkingBackupConfirmed(currentSession))
     }
 
     func commitImport() {
@@ -703,14 +684,8 @@ final class AppState: ObservableObject {
 
     func toggleRawForCurrentMediaSelection() {
         guard canMutateImportSelection else { return }
-        guard var session = currentSession else { return }
-        let selectedIDs = selectedMediaItemIDs
-
-        for index in session.mediaItems.indices where selectedIDs.contains(session.mediaItems[index].id) && !session.mediaItems[index].companionFiles.isEmpty {
-            session.mediaItems[index].importRawCompanions.toggle()
-        }
-
-        save(session)
+        guard let currentSession else { return }
+        save(sessionMutationCoordinator.sessionByTogglingRawCompanions(currentSession, selectedIDs: selectedMediaItemIDs))
     }
 
     func exportBackup() {
@@ -751,23 +726,8 @@ final class AppState: ObservableObject {
     }
 
     private func updateImportState(for mediaIDs: Set<UUID>, selected: Bool) {
-        guard var session = currentSession else { return }
-
-        for index in session.mediaItems.indices where mediaIDs.contains(session.mediaItems[index].id) {
-            do {
-                let targetState: LifecycleState = selected ? .selectedForImport : .discovered
-                session.mediaItems[index].lifecycleState = try session.mediaItems[index].lifecycleState.transition(to: targetState)
-            } catch {
-                logger.error("Failed to update import selection for \(session.mediaItems[index].sourceURL.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
-                continue
-            }
-            session.mediaItems[index].selectionState = selected ? .selected : .skipped
-            if !selected {
-                session.mediaItems[index].importRawCompanions = false
-            }
-        }
-
-        save(session)
+        guard let currentSession else { return }
+        save(sessionMutationCoordinator.sessionByUpdatingImportSelection(currentSession, mediaIDs: mediaIDs, selected: selected))
     }
 
     private func currentSelectionMediaIDs() -> Set<UUID> {
