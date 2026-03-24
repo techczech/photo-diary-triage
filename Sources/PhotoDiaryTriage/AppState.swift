@@ -19,6 +19,7 @@ final class AppState: ObservableObject {
     @Published var isDetailsInspectorVisible = true
     @Published var isWalkDetailsExpanded = true
     @Published var dayOrganizationMode: DayOrganizationMode = .days
+    @Published var dayDetailDisplayMode: DayDetailDisplayMode = .review
     @Published var expandedInlineSectionIDs: Set<String> = []
     @Published var pendingInlineScrollTargetID: UUID?
     @Published var previewingMediaItemID: UUID?
@@ -161,7 +162,6 @@ final class AppState: ObservableObject {
         if let cached = archiveMediaCache[node.id] {
             return cached.sorted(by: Self.mediaSort)
         }
-        guard node.children == nil || node.children?.isEmpty == true else { return [] }
         let mediaIDs = Set(node.mediaItemIDs)
         return (currentSession?.mediaItems ?? [])
             .filter { mediaIDs.contains($0.id) }
@@ -507,6 +507,13 @@ final class AppState: ObservableObject {
         resetInlineExpansionState()
     }
 
+    func setDayDetailDisplayMode(_ mode: DayDetailDisplayMode) {
+        dayDetailDisplayMode = mode
+        if mode == .review {
+            activateReviewGridFocus()
+        }
+    }
+
     func updateReviewGridMetrics(availableWidth: CGFloat?) {
         let width = Double(availableWidth ?? 0)
         let metrics = ReviewGridMetrics(availableWidth: width, cardWidth: reviewGridCardWidth)
@@ -520,6 +527,7 @@ final class AppState: ObservableObject {
     func selectSidebarNode(_ nodeID: String?) {
         selectedSidebarNodeID = nodeID
         activePane = .sidebar
+        dayDetailDisplayMode = .review
         clearDetailSelections()
         loadArchiveMediaIfNeeded(for: nodeID)
         resetInlineExpansionState()
