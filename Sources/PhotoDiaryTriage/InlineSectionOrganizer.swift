@@ -427,7 +427,7 @@ struct InlineSectionOrganizer {
     }
 
     private func visibleMediaItemIDs(in section: InlineSection, expandedSectionIDs: Set<String>) -> [UUID] {
-        let isExpanded = section.children.isEmpty || expandedSectionIDs.contains(section.id)
+        let isExpanded = expandedSectionIDs.contains(section.id)
         guard isExpanded else { return [] }
 
         var ids = section.photoItemIDs

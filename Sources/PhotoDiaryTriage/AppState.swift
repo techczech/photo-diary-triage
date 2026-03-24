@@ -42,6 +42,7 @@ final class AppState: ObservableObject {
     @Published var dayDetailDisplayMode: DayDetailDisplayMode = .review
     @Published var expandedInlineSectionIDs: Set<String> = []
     @Published var pendingInlineScrollTargetID: UUID?
+    @Published var pendingReviewScrollTargetID: UUID?
     @Published var focusedInlineSectionID: String?
     @Published var pendingInlineSectionScrollTargetID: String?
     @Published var previewingMediaItemID: UUID?
@@ -686,6 +687,9 @@ final class AppState: ObservableObject {
     func focusSidebarNavigation() {
         activePane = .sidebar
         reviewGridHasFocus = false
+        DispatchQueue.main.async {
+            self.focusSidebarFirstResponder()
+        }
     }
 
     func focusReviewSurface() {
@@ -759,14 +763,14 @@ final class AppState: ObservableObject {
     }
 
     func expandFocusedInlineSection() {
-        guard let section = focusedInlineSection, !section.children.isEmpty else { return }
+        guard let section = focusedInlineSection, !section.mediaItemIDs.isEmpty else { return }
         expandedInlineSectionIDs.insert(section.id)
         focusInlineSection(section.id)
         reconcileReviewSelectionWithVisibleItems()
     }
 
     func collapseFocusedInlineSection() {
-        guard let section = focusedInlineSection, !section.children.isEmpty else { return }
+        guard let section = focusedInlineSection, !section.mediaItemIDs.isEmpty else { return }
         expandedInlineSectionIDs.remove(section.id)
         focusInlineSection(section.id)
         reconcileReviewSelectionWithVisibleItems()
@@ -1066,21 +1070,22 @@ final class AppState: ObservableObject {
     }
 
     private func applyReviewSelectionState(_ state: ReviewSelectionState) {
+        let previousFocusedReviewItemID = focusedReviewItemID
         selectedMediaItemIDs = state.selectedMediaItemIDs
         focusedReviewItemID = state.focusedReviewItemID
         reviewSelectionAnchorID = state.reviewSelectionAnchorID
         activePane = state.activePane
         reviewGridHasFocus = state.reviewGridHasFocus
+        if state.activePane == .media,
+           state.reviewGridHasFocus,
+           focusedReviewItemID != previousFocusedReviewItemID {
+            pendingReviewScrollTargetID = focusedReviewItemID
+        }
     }
 
     private func resetInlineExpansionState() {
-        expandedInlineSectionIDs.removeAll()
+        expandedInlineSectionIDs = Set(inlineSectionOrganizer.flattenSectionIDs(from: organizedInlineSections))
         pendingInlineSectionScrollTargetID = nil
-
-        let sections = organizedInlineSections
-        if sections.count == 1, let only = sections.first {
-            expandedInlineSectionIDs.insert(only.id)
-        }
 
         if dayDetailDisplayMode == .sections {
             ensureFocusedInlineSection()
@@ -1338,6 +1343,7 @@ final class AppState: ObservableObject {
         invalidateOrganizedInlineSectionCache()
         focusedInlineSectionID = nil
         pendingInlineSectionScrollTargetID = nil
+        pendingReviewScrollTargetID = nil
     }
 
     private func invalidateOrganizedInlineSectionCache() {
@@ -1412,6 +1418,34 @@ final class AppState: ObservableObject {
         if let currentReviewSelectionAnchorID = reviewSelectionAnchorID, !visibleIDs.contains(currentReviewSelectionAnchorID) {
             reviewSelectionAnchorID = selectedMediaItemIDs.first
         }
+    }
+
+    private func focusSidebarFirstResponder() {
+        guard let window = NSApp.keyWindow,
+              let contentView = window.contentView else { return }
+
+        if let outlineView = firstSubview(in: contentView, matching: { $0 is NSOutlineView }) as? NSOutlineView {
+            window.makeFirstResponder(outlineView)
+            return
+        }
+
+        if let tableView = firstSubview(in: contentView, matching: { $0 is NSTableView }) as? NSTableView {
+            window.makeFirstResponder(tableView)
+        }
+    }
+
+    private func firstSubview(in root: NSView, matching predicate: (NSView) -> Bool) -> NSView? {
+        if predicate(root) {
+            return root
+        }
+
+        for subview in root.subviews {
+            if let match = firstSubview(in: subview, matching: predicate) {
+                return match
+            }
+        }
+
+        return nil
     }
 
     private func inlineSection(matching sectionID: String, in sections: [InlineSection]) -> InlineSection? {

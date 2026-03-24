@@ -202,6 +202,7 @@ import Testing
     #expect(state.activePane == .media)
     #expect(state.reviewGridHasFocus)
     #expect(state.focusedReviewItemID != nil)
+    #expect(state.pendingReviewScrollTargetID == state.focusedReviewItemID)
 }
 
 @MainActor
@@ -220,6 +221,11 @@ import Testing
 
     #expect(state.focusedInlineSectionID == sections[1].id)
     #expect(state.pendingInlineSectionScrollTargetID == sections[1].id)
+    #expect(state.expandedInlineSectionIDs.contains(sections[1].id))
+
+    state.collapseFocusedInlineSection()
+
+    #expect(!state.expandedInlineSectionIDs.contains(sections[1].id))
 
     state.focusPreviousInlineSection()
 
@@ -230,6 +236,20 @@ import Testing
 
     state.expandFocusedInlineSection()
     #expect(state.expandedInlineSectionIDs.contains(sections[0].id))
+}
+
+@MainActor
+@Test func keyboardSelectionMovementRequestsScrollToFocusedItem() {
+    let items = makeSelectionItems(count: 4)
+    let state = makeReviewAppState(items: items)
+
+    state.focusReviewSurface()
+    let firstFocusedID = state.focusedReviewItemID
+
+    state.moveGridSelection(by: 1, extending: false)
+
+    #expect(state.focusedReviewItemID != firstFocusedID)
+    #expect(state.pendingReviewScrollTargetID == state.focusedReviewItemID)
 }
 
 @MainActor
