@@ -155,6 +155,7 @@ import Testing
     #expect(containerNode != nil)
     state.selectedSidebarNodeID = containerNode?.id
     #expect(state.canUseGroupedReviewMode)
+    #expect(state.availableDayDetailDisplayModes == DayDetailDisplayMode.allCases)
 
     state.setDayDetailDisplayMode(.sections)
 
@@ -167,6 +168,7 @@ import Testing
     let state = makeReviewAppState(items: items)
 
     #expect(!state.canUseGroupedReviewMode)
+    #expect(state.availableDayDetailDisplayModes == [.review])
 
     state.setDayDetailDisplayMode(.sections)
 

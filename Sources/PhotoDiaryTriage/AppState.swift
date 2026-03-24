@@ -192,6 +192,10 @@ final class AppState: ObservableObject {
         shouldShowInlineDaySections
     }
 
+    var availableDayDetailDisplayModes: [DayDetailDisplayMode] {
+        canUseGroupedReviewMode ? DayDetailDisplayMode.allCases : [.review]
+    }
+
     var organizedInlineSections: [InlineSection] {
         inlineSectionOrganizer.organizedInlineSections(from: inlineDaySections, mode: dayOrganizationMode)
     }

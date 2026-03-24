@@ -52,12 +52,12 @@ struct DayContextPaneView: View {
                     get: { appState.dayDetailDisplayMode },
                     set: { appState.setDayDetailDisplayMode($0) }
                 )) {
-                    ForEach(DayDetailDisplayMode.allCases, id: \.self) { mode in
+                    ForEach(appState.availableDayDetailDisplayModes, id: \.self) { mode in
                         Text(mode.title).tag(mode)
                     }
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 260)
+                .frame(width: appState.canUseGroupedReviewMode ? 260 : 130)
 
                 Spacer()
             }
