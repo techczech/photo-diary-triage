@@ -191,6 +191,48 @@ import Testing
 }
 
 @MainActor
+@Test func openCurrentSelectionJumpsFromSidebarIntoReviewGrid() {
+    let items = makeSelectionItems(count: 4)
+    let state = makeReviewAppState(items: items)
+
+    #expect(state.activePane == .sidebar)
+
+    state.openCurrentSelection()
+
+    #expect(state.activePane == .media)
+    #expect(state.reviewGridHasFocus)
+    #expect(state.focusedReviewItemID != nil)
+}
+
+@MainActor
+@Test func groupedSectionKeyboardNavigationTracksFocusedSection() {
+    let items = makeSelectionItems(count: 4)
+    let state = makeReviewAppState(items: items)
+
+    state.setDayOrganizationMode(.daysAndBursts)
+    state.showGroupedReview()
+    let sections = state.groupedReviewSections
+
+    #expect(sections.count >= 2)
+    #expect(state.focusedInlineSectionID == sections.first?.id)
+
+    state.focusNextInlineSection()
+
+    #expect(state.focusedInlineSectionID == sections[1].id)
+    #expect(state.pendingInlineSectionScrollTargetID == sections[1].id)
+
+    state.focusPreviousInlineSection()
+
+    #expect(state.focusedInlineSectionID == sections[0].id)
+
+    state.collapseFocusedInlineSection()
+    #expect(!state.expandedInlineSectionIDs.contains(sections[0].id))
+
+    state.expandFocusedInlineSection()
+    #expect(state.expandedInlineSectionIDs.contains(sections[0].id))
+}
+
+@MainActor
 private func makeReviewAppState(items: [MediaItem]) -> AppState {
     let state = AppState()
     let root = URL(fileURLWithPath: "/tmp/review-state", isDirectory: true)

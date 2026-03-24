@@ -192,6 +192,20 @@ struct ReviewPaneView: View {
                                 appState.moveGridSelection(by: dy * columns, extending: extending)
                             }
                         },
+                        onSectionArrow: { _, dy in
+                            if dy < 0 {
+                                appState.focusPreviousInlineSection()
+                            } else if dy > 0 {
+                                appState.focusNextInlineSection()
+                            }
+                        },
+                        onSectionExpandCollapse: { expand in
+                            if expand {
+                                appState.expandFocusedInlineSection()
+                            } else {
+                                appState.collapseFocusedInlineSection()
+                            }
+                        },
                         onSingleKey: { key in
                             appState.performReviewShortcut(key)
                         },
@@ -339,6 +353,15 @@ struct ReviewPaneView: View {
                         proxy.scrollTo(targetID, anchor: .center)
                     }
                     appState.pendingInlineScrollTargetID = nil
+                }
+            }
+            .onChange(of: appState.pendingInlineSectionScrollTargetID) { _, targetID in
+                guard let targetID else { return }
+                DispatchQueue.main.async {
+                    withAnimation {
+                        proxy.scrollTo(targetID, anchor: .center)
+                    }
+                    appState.pendingInlineSectionScrollTargetID = nil
                 }
             }
         }
@@ -534,6 +557,15 @@ struct ReviewPaneView: View {
                     appState.pendingInlineScrollTargetID = nil
                 }
             }
+            .onChange(of: appState.pendingInlineSectionScrollTargetID) { _, targetID in
+                guard let targetID else { return }
+                DispatchQueue.main.async {
+                    withAnimation {
+                        proxy.scrollTo(targetID, anchor: .center)
+                    }
+                    appState.pendingInlineSectionScrollTargetID = nil
+                }
+            }
         }
         .contentShape(Rectangle())
         .onTapGesture {
@@ -602,14 +634,20 @@ private struct GroupedReviewSectionNodeView: View {
                 }
             }
         }
+        .id(section.id)
         .padding(12)
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.35), in: RoundedRectangle(cornerRadius: 14))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(appState.focusedInlineSectionID == section.id ? Color.accentColor : Color.clear, lineWidth: 2)
+        }
     }
 
     private var header: some View {
         HStack(spacing: 10) {
             if hasChildren {
                 Button {
+                    appState.focusInlineSection(section.id, scrollIntoView: false)
                     appState.toggleInlineSectionExpansion(section.id)
                 } label: {
                     HStack(spacing: 8) {
@@ -631,6 +669,10 @@ private struct GroupedReviewSectionNodeView: View {
                     Text(sectionSummary)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    appState.focusInlineSection(section.id, scrollIntoView: false)
                 }
             }
 

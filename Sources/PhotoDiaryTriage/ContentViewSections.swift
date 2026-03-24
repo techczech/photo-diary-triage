@@ -105,17 +105,17 @@ struct ActionButtonsPaneView: View {
                     Button("Copy Marked Files Into Archive") {
                         appState.commitImport()
                     }
-                    .disabled(appState.currentSession?.mediaItems.allSatisfy { $0.selectionState == .skipped } ?? true)
+                    .disabled(!appState.canCommitImport)
 
                     Button("Confirm Backup And Enable Cleanup") {
                         appState.markBackupConfirmed()
                     }
-                    .disabled(appState.currentSession?.walkMetadata.backupConfirmedAt != nil)
+                    .disabled(!appState.canConfirmBackup)
 
                     Button("Clean Imported Files From Source SSD") {
                         appState.cleanupImportedSources()
                     }
-                    .disabled(!(appState.currentSession?.mediaItems.contains { $0.lifecycleState == .sourceCleanupPending } ?? false))
+                    .disabled(!appState.canCleanupImportedSources)
                 }
             }
         }
