@@ -4,9 +4,21 @@ import Foundation
 @MainActor
 final class AppState: ObservableObject {
     @Published var settings: AppSettings
-    @Published var currentSession: ImportSession?
-    @Published var burstGroups: [BurstGroup] = []
-    @Published var timeClusters: [TimeCluster] = []
+    @Published var currentSession: ImportSession? {
+        didSet {
+            rebuildDerivedStateCaches()
+        }
+    }
+    @Published var burstGroups: [BurstGroup] = [] {
+        didSet {
+            rebuildBrowserCaches()
+        }
+    }
+    @Published var timeClusters: [TimeCluster] = [] {
+        didSet {
+            rebuildBrowserCaches()
+        }
+    }
     @Published var selectedSidebarNodeID: String?
     @Published var selectedFolderNodeIDs: Set<String> = []
     @Published var selectedMediaItemIDs: Set<UUID> = []
@@ -45,10 +57,18 @@ final class AppState: ObservableObject {
     private var browserViewModel: BrowserViewModel
     private let selectionManager = SelectionManager()
     private let backupStore = BackupStore()
+    private let archivePlanner = ArchivePlanner()
     private let fileManager: FileManager
     private let supportRoot: URL
     private let logger = AppLogger.appState
     private let thumbnailScheduler = ThumbnailScheduler()
+    private let thumbnailImageCache = NSCache<NSURL, NSImage>()
+    private var cachedBrowserRoots: [BrowserNode] = []
+    private var cachedBrowserNodeMap: [String: BrowserNode] = [:]
+    private var sessionMediaByID: [UUID: MediaItem] = [:]
+    private var sessionVisibleMediaCacheByNodeID: [String: [MediaItem]] = [:]
+    private var archivePreviewByMediaItemID: [UUID: String] = [:]
+    private var missingThumbnailPaths: Set<String> = []
     private var thumbnailTasks: [UUID: Task<Void, Never>] = [:]
     private var volumeMountObserver: NSObjectProtocol?
     private var hasAttemptedInitialAutoLoad = false
@@ -77,6 +97,7 @@ final class AppState: ObservableObject {
         self.importWorkflow = ImportWorkflow(coordinator: self.importCoordinator)
         self.browserViewModel = BrowserViewModel(scanner: self.scanner)
         self.archiveYearFolders = ArchiveLibraryInspector.existingYearFolders(in: settings.archiveRoot)
+        rebuildBrowserCaches()
 
         configurePersistence()
         loadMostRecentSession()
@@ -115,16 +136,11 @@ final class AppState: ObservableObject {
     }
 
     var browserRoots: [BrowserNode] {
-        browserViewModel.browserRoots(
-            currentSession: currentSession,
-            bursts: burstGroups,
-            clusters: timeClusters,
-            archiveRoot: settings.archiveRoot
-        )
+        cachedBrowserRoots
     }
 
     var browserNodeMap: [String: BrowserNode] {
-        browserViewModel.nodeMap(for: browserRoots)
+        cachedBrowserNodeMap
     }
 
     var selectedBrowserNode: BrowserNode? {
@@ -159,13 +175,7 @@ final class AppState: ObservableObject {
 
     var visibleMediaItems: [MediaItem] {
         guard let node = selectedBrowserNode else { return [] }
-        if let cached = archiveMediaCache[node.id] {
-            return cached.sorted(by: Self.mediaSort)
-        }
-        let mediaIDs = Set(node.mediaItemIDs)
-        return (currentSession?.mediaItems ?? [])
-            .filter { mediaIDs.contains($0.id) }
-            .sorted(by: Self.mediaSort)
+        return visibleMediaItems(for: node)
     }
 
     var inlineDaySections: [InlineDaySection] {
@@ -183,9 +193,9 @@ final class AppState: ObservableObject {
     func mediaItems(for ids: [UUID]) -> [MediaItem] {
         let idSet = Set(ids)
         if let node = selectedBrowserNode, let cached = archiveMediaCache[node.id] {
-            return cached.filter { idSet.contains($0.id) }.sorted(by: Self.mediaSort)
+            return cached.filter { idSet.contains($0.id) }
         }
-        return (currentSession?.mediaItems ?? []).filter { idSet.contains($0.id) }.sorted(by: Self.mediaSort)
+        return ids.compactMap { sessionMediaByID[$0] }.sorted(by: Self.mediaSort)
     }
 
     var reviewPresentationMode: ReviewPresentationMode {
@@ -230,8 +240,7 @@ final class AppState: ObservableObject {
     }
 
     var selectedMediaItems: [MediaItem] {
-        guard let session = currentSession else { return [] }
-        return session.mediaItems.filter { selectedMediaItemIDs.contains($0.id) }
+        selectedMediaItemIDs.compactMap { sessionMediaByID[$0] }.sorted(by: Self.mediaSort)
     }
 
     var focusedReviewItem: MediaItem? {
@@ -248,17 +257,16 @@ final class AppState: ObservableObject {
 
     var previewingMediaItem: MediaItem? {
         guard let previewingMediaItemID else { return nil }
-        return currentSession?.mediaItems.first(where: { $0.id == previewingMediaItemID })
+        return sessionMediaByID[previewingMediaItemID]
     }
 
     var comparingMediaItems: [MediaItem] {
-        guard let session = currentSession else { return [] }
         let selectedIDs = Set(comparingMediaItemIDs)
         let orderedVisible = visibleMediaItems.filter { selectedIDs.contains($0.id) }
         if orderedVisible.count == comparingMediaItemIDs.count {
             return orderedVisible
         }
-        return session.mediaItems.filter { selectedIDs.contains($0.id) }.sorted(by: Self.mediaSort)
+        return comparingMediaItemIDs.compactMap { sessionMediaByID[$0] }
     }
 
     var canOpenSettings: Bool { true }
@@ -427,16 +435,40 @@ final class AppState: ObservableObject {
     }
 
     func archivePreview(for item: MediaItem) -> String {
-        guard let session = currentSession else { return "" }
-        let matchingEntries = ArchivePlanner().plan(for: session).entries.filter { $0.mediaItemID == item.id }
-        return matchingEntries.map(\.destinationURL.path).joined(separator: "\n")
+        archivePreviewByMediaItemID[item.id] ?? ""
     }
 
     func thumbnailURL(for item: MediaItem) -> URL {
         previewStore.cachedThumbnailURL(for: item)
     }
 
+    func thumbnailImage(for item: MediaItem) -> NSImage? {
+        let imageURL = thumbnailURL(for: item)
+        let url = imageURL as NSURL
+        if let image = thumbnailImageCache.object(forKey: url) {
+            return image
+        }
+
+        if missingThumbnailPaths.contains(imageURL.path) {
+            return nil
+        }
+
+        guard fileManager.fileExists(atPath: imageURL.path),
+              let image = NSImage(contentsOf: imageURL) else {
+            missingThumbnailPaths.insert(imageURL.path)
+            return nil
+        }
+
+        missingThumbnailPaths.remove(imageURL.path)
+        thumbnailImageCache.setObject(image, forKey: url)
+        return image
+    }
+
     func requestThumbnail(for item: MediaItem) {
+        let imageURL = thumbnailURL(for: item)
+        if thumbnailImageCache.object(forKey: imageURL as NSURL) != nil || fileManager.fileExists(atPath: imageURL.path) {
+            return
+        }
         enqueueThumbnailRequests([item], priority: .visible)
     }
 
@@ -444,6 +476,7 @@ final class AppState: ObservableObject {
         settings.archiveRoot = archiveRoot
         archiveYearFolders = ArchiveLibraryInspector.existingYearFolders(in: archiveRoot)
         archiveMediaCache.removeAll()
+        rebuildBrowserCaches()
 
         if var session = currentSession {
             session.archiveRoot = archiveRoot
@@ -701,6 +734,7 @@ final class AppState: ObservableObject {
             }
         }
         guard deduplicatedIDs.count >= 2 else { return }
+        reviewGridHasFocus = false
         compareSheetTitle = title
         comparingMediaItemIDs = deduplicatedIDs
         statusMessage = "Opened compare view for \(deduplicatedIDs.count) item(s)."
@@ -998,7 +1032,7 @@ final class AppState: ObservableObject {
             enqueueThumbnailRequests(visible, priority: .visible)
         }
 
-        let backgroundItems = items.filter { !visibleIDs.contains($0.id) }
+        let backgroundItems = thumbnailPrefetchCandidates(from: items, excluding: visibleIDs)
         if !backgroundItems.isEmpty {
             enqueueThumbnailRequests(backgroundItems, priority: .background)
         }
@@ -1025,6 +1059,10 @@ final class AppState: ObservableObject {
     private func finishThumbnail(itemID: UUID, success: Bool) async {
         if success {
             thumbnailFailures.remove(itemID)
+            if let item = sessionMediaByID[itemID] {
+                missingThumbnailPaths.remove(thumbnailURL(for: item).path)
+                thumbnailImageCache.removeObject(forKey: thumbnailURL(for: item) as NSURL)
+            }
         } else {
             thumbnailFailures.insert(itemID)
             if previewStore.isPersistentCacheAvailable == false {
@@ -1048,6 +1086,64 @@ final class AppState: ObservableObject {
         return navigationItems[targetIndex].id
     }
 
+    private func rebuildDerivedStateCaches() {
+        rebuildSessionCaches()
+        rebuildBrowserCaches()
+    }
+
+    private func rebuildSessionCaches() {
+        sessionVisibleMediaCacheByNodeID.removeAll()
+
+        guard let currentSession else {
+            sessionMediaByID = [:]
+            archivePreviewByMediaItemID = [:]
+            missingThumbnailPaths.removeAll()
+            thumbnailImageCache.removeAllObjects()
+            return
+        }
+
+        sessionMediaByID = Dictionary(uniqueKeysWithValues: currentSession.mediaItems.map { ($0.id, $0) })
+        let plan = archivePlanner.plan(for: currentSession)
+        var previews: [UUID: [String]] = [:]
+        for entry in plan.entries {
+            previews[entry.mediaItemID, default: []].append(entry.destinationURL.path)
+        }
+        archivePreviewByMediaItemID = previews.mapValues { $0.joined(separator: "\n") }
+        missingThumbnailPaths.removeAll()
+        thumbnailImageCache.removeAllObjects()
+    }
+
+    private func rebuildBrowserCaches() {
+        cachedBrowserRoots = browserViewModel.browserRoots(
+            currentSession: currentSession,
+            bursts: burstGroups,
+            clusters: timeClusters,
+            archiveRoot: settings.archiveRoot
+        )
+        cachedBrowserNodeMap = browserViewModel.nodeMap(for: cachedBrowserRoots)
+        sessionVisibleMediaCacheByNodeID.removeAll()
+    }
+
+    private func visibleMediaItems(for node: BrowserNode) -> [MediaItem] {
+        if let cachedArchiveItems = archiveMediaCache[node.id] {
+            return cachedArchiveItems
+        }
+
+        if let cachedSessionItems = sessionVisibleMediaCacheByNodeID[node.id] {
+            return cachedSessionItems
+        }
+
+        let items = node.mediaItemIDs.compactMap { sessionMediaByID[$0] }.sorted(by: Self.mediaSort)
+        sessionVisibleMediaCacheByNodeID[node.id] = items
+        return items
+    }
+
+    private func thumbnailPrefetchCandidates(from items: [MediaItem], excluding visibleIDs: Set<UUID>) -> [MediaItem] {
+        guard !items.isEmpty else { return [] }
+        let limit = max(96, visibleIDs.count * 4)
+        return Array(items.lazy.filter { !visibleIDs.contains($0.id) }.prefix(limit))
+    }
+
     private func configurePersistence() {
         let configuration = sessionLifecycleCoordinator.configurePersistence(settings: settings)
         sessionStore = configuration.sessionStore
@@ -1067,8 +1163,9 @@ final class AppState: ObservableObject {
                 archiveMediaCache: archiveMediaCache,
                 settings: settings
             ) else { return }
-            archiveMediaCache[loadResult.nodeID] = loadResult.items
-            requestVisibleThumbnails(prefetching: loadResult.items)
+            let sortedItems = loadResult.items.sorted(by: Self.mediaSort)
+            archiveMediaCache[loadResult.nodeID] = sortedItems
+            requestVisibleThumbnails(prefetching: sortedItems)
             statusMessage = loadResult.statusMessage
         } catch {
             statusMessage = "Failed to load archive folder: \(error.localizedDescription)"

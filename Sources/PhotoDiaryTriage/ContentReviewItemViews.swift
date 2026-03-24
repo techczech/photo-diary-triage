@@ -3,7 +3,7 @@ import SwiftUI
 
 struct ReviewGridCard: View {
     let item: MediaItem
-    let thumbnailURL: URL
+    let thumbnailImage: NSImage?
     let archivePreview: String
     let cardWidth: CGFloat
     let canMutateImportSelection: Bool
@@ -117,8 +117,8 @@ struct ReviewGridCard: View {
 
     @ViewBuilder
     private var thumbnail: some View {
-        if let image = NSImage(contentsOf: thumbnailURL) {
-            Image(nsImage: image)
+        if let thumbnailImage {
+            Image(nsImage: thumbnailImage)
                 .resizable()
                 .scaledToFill()
         } else if thumbnailFailed {
@@ -140,7 +140,7 @@ struct ReviewGridCard: View {
 
 struct MediaItemRow: View {
     let item: MediaItem
-    let thumbnailURL: URL
+    let thumbnailImage: NSImage?
     let archivePreview: String
     let canMutateImportSelection: Bool
     let isSelected: Bool
@@ -232,8 +232,8 @@ struct MediaItemRow: View {
 
     @ViewBuilder
     private var thumbnail: some View {
-        if let image = NSImage(contentsOf: thumbnailURL) {
-            Image(nsImage: image)
+        if let thumbnailImage {
+            Image(nsImage: thumbnailImage)
                 .resizable()
                 .scaledToFill()
         } else if thumbnailFailed {

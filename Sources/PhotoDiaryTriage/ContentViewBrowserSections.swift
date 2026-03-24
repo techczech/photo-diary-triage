@@ -225,16 +225,17 @@ struct ReviewPaneView: View {
     }
 
     private func reviewGrid(availableWidth: CGFloat) -> some View {
+        let visibleItems = appState.visibleMediaItems
         let cardWidth = CGFloat(appState.reviewGridCardWidth)
         let spacing = CGFloat(ReviewGridMetrics.gridSpacing)
         let columns = Array(repeating: GridItem(.fixed(cardWidth), spacing: spacing, alignment: .top), count: max(1, appState.reviewGridColumnCount))
 
         return ScrollView([.vertical, .horizontal]) {
             LazyVGrid(columns: columns, alignment: .leading, spacing: spacing) {
-                ForEach(appState.visibleMediaItems) { item in
+                ForEach(visibleItems) { item in
                     ReviewGridCard(
                         item: item,
-                        thumbnailURL: appState.thumbnailURL(for: item),
+                        thumbnailImage: appState.thumbnailImage(for: item),
                         archivePreview: appState.archivePreview(for: item),
                         cardWidth: cardWidth,
                         canMutateImportSelection: appState.canMutateImportSelection,
@@ -262,6 +263,9 @@ struct ReviewPaneView: View {
                             }
                         }
                     )
+                    .onAppear {
+                        appState.requestThumbnail(for: item)
+                    }
                 }
             }
             .padding(CGFloat(ReviewGridMetrics.gridPadding))
@@ -390,14 +394,15 @@ struct ReviewPaneView: View {
     }
 
     private var reviewList: some View {
-        List(selection: Binding(
+        let visibleItems = appState.visibleMediaItems
+        return List(selection: Binding(
             get: { appState.selectedMediaItemIDs },
             set: { appState.selectMediaItems($0) }
         )) {
-            ForEach(appState.visibleMediaItems) { item in
+            ForEach(visibleItems) { item in
                 MediaItemRow(
                     item: item,
-                    thumbnailURL: appState.thumbnailURL(for: item),
+                    thumbnailImage: appState.thumbnailImage(for: item),
                     archivePreview: appState.archivePreview(for: item),
                     canMutateImportSelection: appState.canMutateImportSelection,
                     isSelected: appState.selectedMediaItemIDs.contains(item.id),
@@ -421,6 +426,9 @@ struct ReviewPaneView: View {
                         }
                     }
                 )
+                .onAppear {
+                    appState.requestThumbnail(for: item)
+                }
                 .tag(item.id)
             }
         }
