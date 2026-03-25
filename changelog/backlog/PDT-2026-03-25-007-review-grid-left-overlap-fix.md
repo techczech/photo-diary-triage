@@ -1,0 +1,25 @@
+# PDT-2026-03-25-007 Review grid left-overlap fix
+
+- item ID: PDT-2026-03-25-007
+- title: Review grid left-overlap fix
+- user request summary:
+  - The review grid shifts left under the sidebar when the user clicks inside the grid.
+  - Tooltip behavior is now acceptable enough; escape remains imperfect but is deferred.
+- constraints:
+  - Do not expand the grouped escape scope in this slice.
+  - Preserve current performance and non-crashing tooltip behavior.
+  - Fix the layout shift without regressing grid responsiveness.
+- implementation intent:
+  - Find the layout or focus-state transition that changes the review content width or offset when the grid becomes active.
+  - Stabilize the review container so grid activation does not move cards under the left sidebar.
+- test conditions:
+  - `swift build`
+  - `swift test`
+  - clicking in the review grid must not shift it under the sidebar
+- success criteria:
+  - Review content stays aligned within its pane before and after clicks/focus changes.
+  - No overlap with the left sidebar.
+  - Existing grouped review and tooltip behavior remains intact.
+- current status: awaiting_user_review
+- target release version: 0.1.46
+- target feature slug: review-grid-left-overlap-fix

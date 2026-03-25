@@ -249,6 +249,8 @@ struct ReviewPaneView: View {
                         }
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .clipped()
                 .onAppear {
                     appState.updateReviewGridMetrics(availableWidth: proxy.size.width)
                 }
@@ -281,7 +283,7 @@ struct ReviewPaneView: View {
         let columns = Array(repeating: GridItem(.fixed(cardWidth), spacing: spacing, alignment: .top), count: max(1, appState.reviewGridColumnCount))
 
         return ScrollViewReader { proxy in
-            ScrollView([.vertical, .horizontal]) {
+            ScrollView(.vertical) {
                 LazyVGrid(columns: columns, alignment: .leading, spacing: spacing) {
                     ForEach(visibleItems) { item in
                         ReviewGridCard(
@@ -320,8 +322,10 @@ struct ReviewPaneView: View {
                         }
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(CGFloat(ReviewGridMetrics.gridPadding))
             }
+            .clipped()
             .onChange(of: appState.pendingReviewScrollTargetID) { _, targetID in
                 guard let targetID else { return }
                 DispatchQueue.main.async {
