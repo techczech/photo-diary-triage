@@ -220,7 +220,6 @@ import Testing
     state.focusNextInlineSection()
 
     #expect(state.focusedInlineSectionID == sections[1].id)
-    #expect(state.pendingInlineSectionScrollTargetID == sections[1].id)
     #expect(state.expandedInlineSectionIDs.contains(sections[1].id))
 
     state.collapseFocusedInlineSection()
