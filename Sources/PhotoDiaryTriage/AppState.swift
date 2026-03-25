@@ -772,7 +772,10 @@ final class AppState: ObservableObject {
         reviewGridHasFocus = true
         reviewKeyboardTarget = asKeyboardTarget ? .sections : .items
         if scrollIntoView {
-            pendingInlineSectionScrollTargetID = sectionID
+            pendingInlineSectionScrollTargetID = nil
+            DispatchQueue.main.async { [weak self] in
+                self?.pendingInlineSectionScrollTargetID = sectionID
+            }
         }
     }
 

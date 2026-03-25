@@ -24,29 +24,20 @@ private struct ShortcutHintModifier: ViewModifier {
     let shortcut: String
     let helpText: String
     let alignment: Alignment
-    @State private var isHovering = false
 
     func body(content: Content) -> some View {
         content
             .help(helpText)
-            .onHover { hovering in
-                withAnimation(.easeOut(duration: 0.12)) {
-                    isHovering = hovering
-                }
-            }
-            .popover(
-                isPresented: $isHovering,
-                attachmentAnchor: .point(alignment == .bottom ? .bottom : .top),
-                arrowEdge: alignment == .bottom ? .bottom : .top
-            ) {
+            .overlay(alignment: alignment) {
                 ShortcutHintBubble(shortcut: shortcut)
-                    .padding(8)
+                    .scaleEffect(0.82)
+                    .padding(6)
             }
     }
 }
 
 extension View {
-    func shortcutHint(_ shortcut: String, help: String? = nil, alignment: Alignment = .top) -> some View {
+    func shortcutHint(_ shortcut: String, help: String? = nil, alignment: Alignment = .topTrailing) -> some View {
         modifier(ShortcutHintModifier(shortcut: shortcut, helpText: help ?? shortcut, alignment: alignment))
     }
 }
