@@ -14,11 +14,11 @@ struct HeaderPaneView: View {
                     appState.toggleDetailsInspector()
                 }
                 .buttonStyle(.bordered)
-                .shortcutHint("\(appState.isDetailsInspectorVisible ? "Hide" : "Show") inspector (Cmd-Option-I)")
+                .shortcutHint("Cmd-Option-I", help: "\(appState.isDetailsInspectorVisible ? "Hide" : "Show") inspector (Cmd-Option-I)")
                 Button("Keyboard Shortcuts") {
                     appState.showKeyboardHelp = true
                 }
-                .shortcutHint("Show keyboard shortcuts (Cmd-Shift-/)")
+                .shortcutHint("Cmd-Shift-/", help: "Show keyboard shortcuts (Cmd-Shift-/)")
             }
 
             if let node = appState.selectedBrowserNode {
@@ -60,7 +60,7 @@ struct DayContextPaneView: View {
                 }
                 .pickerStyle(.segmented)
                 .frame(width: appState.canUseGroupedReviewMode ? 260 : 130)
-                .shortcutHint("Switch between flat review and grouped review (Cmd-3 / Cmd-4)")
+                .shortcutHint("Cmd-3 / Cmd-4", help: "Switch between flat review and grouped review (Cmd-3 / Cmd-4)")
 
                 Spacer()
             }
@@ -83,19 +83,19 @@ struct DayContextPaneView: View {
                     }
                     .pickerStyle(.segmented)
                     .frame(maxWidth: 520)
-                    .shortcutHint("Change grouped review organization (Cmd-Control-1 through Cmd-Control-4)")
+                    .shortcutHint("Cmd-Ctrl-1..4", help: "Change grouped review organization (Cmd-Control-1 through Cmd-Control-4)")
 
                     Spacer()
 
                     Button("Expand All") {
                         appState.expandAllInlineSections()
                     }
-                    .shortcutHint("Expand all grouped sections (Cmd-Option-])")
+                    .shortcutHint("Cmd-Option-]", help: "Expand all grouped sections (Cmd-Option-])")
 
                     Button("Collapse All") {
                         appState.collapseAllInlineSections()
                     }
-                    .shortcutHint("Collapse all grouped sections (Cmd-Option-[)")
+                    .shortcutHint("Cmd-Option-[", help: "Collapse all grouped sections (Cmd-Option-[)")
                 }
             }
 
@@ -120,19 +120,19 @@ struct InlineDaySectionsPaneView: View {
                 }
                 .pickerStyle(.segmented)
                 .frame(maxWidth: 520)
-                .shortcutHint("Change grouped review organization (Cmd-Control-1 through Cmd-Control-4)")
+                .shortcutHint("Cmd-Ctrl-1..4", help: "Change grouped review organization (Cmd-Control-1 through Cmd-Control-4)")
 
                 Spacer()
 
                 Button("Expand All") {
                     appState.expandAllInlineSections()
                 }
-                .shortcutHint("Expand all grouped sections (Cmd-Option-])")
+                .shortcutHint("Cmd-Option-]", help: "Expand all grouped sections (Cmd-Option-])")
 
                 Button("Collapse All") {
                     appState.collapseAllInlineSections()
                 }
-                .shortcutHint("Collapse all grouped sections (Cmd-Option-[)")
+                .shortcutHint("Cmd-Option-[", help: "Collapse all grouped sections (Cmd-Option-[)")
             }
 
             ScrollViewReader { proxy in
@@ -209,10 +209,13 @@ struct ReviewPaneView: View {
                             appState.toggleFocusedReviewItemSelection()
                         },
                         onOpen: {
-                            appState.openFocusedReviewItem()
+                            appState.activateCurrentReviewTarget()
+                        },
+                        onCommandOpen: {
+                            appState.openCurrentSelection()
                         },
                         onEscape: {
-                            appState.deactivateReviewGridFocus()
+                            appState.handleReviewEscape()
                         },
                         onSelectAll: {
                             appState.selectAllVisibleMedia()
@@ -406,13 +409,13 @@ struct ReviewPaneView: View {
                 appState.openFocusedReviewItem()
             }
             .disabled(appState.focusedReviewItem == nil)
-            .shortcutHint("Open focused photo preview (Return)")
+            .shortcutHint("Return", help: "Open focused photo preview (Return)")
 
             Button("Compare") {
                 appState.openComparisonForCurrentSelection()
             }
             .disabled(!appState.canOpenComparison)
-            .shortcutHint("Compare the current selection (C / Cmd-Shift-C)")
+            .shortcutHint("C / Cmd-Shift-C", help: "Compare the current selection (C / Cmd-Shift-C)")
 
             reviewActionsMenu
         }
@@ -428,7 +431,7 @@ struct ReviewPaneView: View {
         }
         .pickerStyle(.segmented)
         .frame(width: 180)
-        .shortcutHint("Switch between grid and list layout (Cmd-Option-G / Cmd-Option-L)")
+        .shortcutHint("Cmd-Option-G / L", help: "Switch between grid and list layout (Cmd-Option-G / Cmd-Option-L)")
     }
 
     private var sizeControls: some View {
@@ -438,7 +441,7 @@ struct ReviewPaneView: View {
             } label: {
                 Image(systemName: "minus.magnifyingglass")
             }
-            .shortcutHint("Make review cards smaller (-)")
+            .shortcutHint("-", help: "Make review cards smaller (-)")
             .disabled(appState.reviewGridCardWidth <= ReviewGridMetrics.minCardWidth)
 
             Text("\(Int(appState.reviewGridCardWidth))")
@@ -450,7 +453,7 @@ struct ReviewPaneView: View {
             } label: {
                 Image(systemName: "plus.magnifyingglass")
             }
-            .shortcutHint("Make review cards larger (+)")
+            .shortcutHint("+", help: "Make review cards larger (+)")
             .disabled(appState.reviewGridCardWidth >= ReviewGridMetrics.maxCardWidth)
 
             Button {
@@ -458,7 +461,7 @@ struct ReviewPaneView: View {
             } label: {
                 Image(systemName: "arrow.counterclockwise")
             }
-            .shortcutHint("Reset review card size (0)")
+            .shortcutHint("0", help: "Reset review card size (0)")
             .disabled(appState.reviewGridCardWidth == ReviewGridMetrics.defaultCardWidth)
         }
         .buttonStyle(.bordered)
@@ -470,13 +473,13 @@ struct ReviewPaneView: View {
                 appState.openFocusedReviewItem()
             }
             .disabled(appState.focusedReviewItem == nil)
-            .shortcutHint("Open focused photo preview (Return)")
+            .shortcutHint("Return", help: "Open focused photo preview (Return)")
 
             Button("Compare") {
                 appState.openComparisonForCurrentSelection()
             }
             .disabled(!appState.canOpenComparison)
-            .shortcutHint("Compare the current selection (C / Cmd-Shift-C)")
+            .shortcutHint("C / Cmd-Shift-C", help: "Compare the current selection (C / Cmd-Shift-C)")
         }
     }
 
@@ -508,7 +511,7 @@ struct ReviewPaneView: View {
                 .disabled(!appState.canToggleRawForSelection)
             }
         }
-        .shortcutHint("Selection and import actions")
+        .help("Selection and import actions")
     }
 
     private var reviewList: some View {
@@ -694,7 +697,7 @@ private struct GroupedReviewSectionNodeView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .shortcutHint(isExpanded ? "Collapse this group. When the group header is focused, use Left Arrow to collapse and Up or Down to move between groups." : "Expand this group. When the group header is focused, use Right Arrow to expand and Up or Down to move between groups.")
+                .shortcutHint("Up / Down / Left / Right", help: isExpanded ? "Collapse this group. When the group header is focused, use Left Arrow to collapse and Up or Down to move between groups." : "Expand this group. When the group header is focused, use Right Arrow to expand and Up or Down to move between groups.")
             } else {
                 HStack(spacing: 8) {
                     Text(section.title)
@@ -707,7 +710,7 @@ private struct GroupedReviewSectionNodeView: View {
                 .onTapGesture {
                     appState.focusInlineSection(section.id, scrollIntoView: false)
                 }
-                .shortcutHint("Focus this group for keyboard navigation. Use Up or Down to move between groups and Left or Right to collapse or expand.")
+                .shortcutHint("Up / Down / Left / Right", help: "Focus this group for keyboard navigation. Use Up or Down to move between groups and Left or Right to collapse or expand.")
             }
 
             Spacer()
@@ -717,7 +720,7 @@ private struct GroupedReviewSectionNodeView: View {
                     appState.openComparison(for: compareItemIDs, title: "Compare \(section.title)")
                 }
                 .buttonStyle(.bordered)
-                .shortcutHint("Compare all photos in this group")
+                .help("Compare all photos in this group")
             }
         }
     }

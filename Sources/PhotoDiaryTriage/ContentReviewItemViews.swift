@@ -25,14 +25,14 @@ struct ReviewGridCard: View {
                     set: setIncludeRaw
                 ))
                 .toggleStyle(.checkbox)
-                .shortcutHint("Include RAW companions for this item (R / Cmd-Option-R)")
+                .shortcutHint("R / Cmd-Option-R", help: "Include RAW companions for this item (R / Cmd-Option-R)")
             }
 
             HStack {
                 if canMutateImportSelection {
                     Button(item.selectionState == .selected ? "Unmark (D)" : "Mark (I)", action: toggleImport)
                         .buttonStyle(.borderedProminent)
-                        .shortcutHint(item.selectionState == .selected ? "Remove this item from import (D / Cmd-Shift-I)" : "Mark this item for import (I / Cmd-I)")
+                        .shortcutHint(item.selectionState == .selected ? "D / Cmd-Shift-I" : "I / Cmd-I", help: item.selectionState == .selected ? "Remove this item from import (D / Cmd-Shift-I)" : "Mark this item for import (I / Cmd-I)")
                 }
                 Spacer()
             }
@@ -112,7 +112,7 @@ struct ReviewGridCard: View {
             }
         }
         .contentShape(RoundedRectangle(cornerRadius: 12))
-        .shortcutHint("Click to select. Shift-click extends the selection, Command-click toggles selection, and double-click opens preview.")
+        .shortcutHint("Shift-click / Cmd-click / Double-click", help: "Click to select. Shift-click extends the selection, Command-click toggles selection, and double-click opens preview.")
         .overlay {
             ReviewGridClickTarget(onClick: onClick)
         }
@@ -190,7 +190,7 @@ struct MediaItemRow: View {
                             set: setIncludeRaw
                         ))
                         .toggleStyle(.checkbox)
-                        .shortcutHint("Include RAW companions for this item (R / Cmd-Option-R)")
+                        .shortcutHint("R / Cmd-Option-R", help: "Include RAW companions for this item (R / Cmd-Option-R)")
                     }
                 }
             }
@@ -199,7 +199,7 @@ struct MediaItemRow: View {
                 if canMutateImportSelection {
                     Button(item.selectionState == .selected ? "Unmark (D)" : "Mark (I)", action: toggleImport)
                         .buttonStyle(.borderedProminent)
-                        .shortcutHint(item.selectionState == .selected ? "Remove this item from import (D / Cmd-Shift-I)" : "Mark this item for import (I / Cmd-I)")
+                        .shortcutHint(item.selectionState == .selected ? "D / Cmd-Shift-I" : "I / Cmd-I", help: item.selectionState == .selected ? "Remove this item from import (D / Cmd-Shift-I)" : "Mark this item for import (I / Cmd-I)")
                 }
                 Spacer()
             }

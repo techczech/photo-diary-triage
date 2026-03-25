@@ -2,10 +2,10 @@ import AppKit
 import SwiftUI
 
 private struct ShortcutHintBubble: View {
-    let text: String
+    let shortcut: String
 
     var body: some View {
-        Text(text)
+        Text(shortcut)
             .font(.caption.weight(.semibold))
             .foregroundStyle(.primary)
             .padding(.horizontal, 10)
@@ -21,16 +21,17 @@ private struct ShortcutHintBubble: View {
 }
 
 private struct ShortcutHintModifier: ViewModifier {
-    let text: String
+    let shortcut: String
+    let helpText: String
     let alignment: Alignment
     @State private var isHovering = false
 
     func body(content: Content) -> some View {
         content
-            .help(text)
+            .help(helpText)
             .overlay(alignment: alignment) {
                 if isHovering {
-                    ShortcutHintBubble(text: text)
+                    ShortcutHintBubble(shortcut: shortcut)
                         .offset(y: alignment == .bottom ? 12 : -12)
                         .transition(.opacity.combined(with: .scale(scale: 0.96)))
                         .zIndex(10)
@@ -45,8 +46,8 @@ private struct ShortcutHintModifier: ViewModifier {
 }
 
 extension View {
-    func shortcutHint(_ text: String, alignment: Alignment = .top) -> some View {
-        modifier(ShortcutHintModifier(text: text, alignment: alignment))
+    func shortcutHint(_ shortcut: String, help: String? = nil, alignment: Alignment = .top) -> some View {
+        modifier(ShortcutHintModifier(shortcut: shortcut, helpText: help ?? shortcut, alignment: alignment))
     }
 }
 
@@ -81,8 +82,8 @@ struct KeyboardHelpSheet: View {
                         ("S", "Keep only the focused photo selected."),
                         ("A", "Select all visible photos."),
                         ("C", "Open compare for the current selection."),
-                        ("Return", "Open the focused photo preview."),
-                        ("Escape", "Exit review-grid keyboard focus.")
+                        ("Return", "Open the focused photo preview, or enter the focused grouped section for item navigation."),
+                        ("Escape", "Return to grouped-section selection, or exit review-grid keyboard focus.")
                     ])
 
                     shortcutSection("Grouped Review", rows: [
@@ -105,7 +106,7 @@ struct KeyboardHelpSheet: View {
                     shortcutSection("Focus And Global Commands", rows: [
                         ("Cmd-O", "Choose a source folder."),
                         ("Cmd-1 / Cmd-2", "Focus sidebar navigation or jump into the review grid."),
-                        ("Cmd-Return", "Open the current item or jump from sidebar into review."),
+                        ("Cmd-Return", "Open the current item, jump from sidebar into review, or drill into the focused grouped section."),
                         ("Cmd-Option-I", "Toggle the right-side inspector."),
                         ("Cmd-Option-S", "Toggle the left sidebar."),
                         ("Cmd-I", "Mark the current selection for import."),
@@ -164,6 +165,7 @@ struct ReviewKeyInputView: NSViewRepresentable {
     let onSingleKey: (_ key: String) -> Void
     let onSpace: () -> Void
     let onOpen: () -> Void
+    let onCommandOpen: () -> Void
     let onEscape: () -> Void
     let onSelectAll: () -> Void
     let onDeselectAll: () -> Void
@@ -179,6 +181,7 @@ struct ReviewKeyInputView: NSViewRepresentable {
         view.onSingleKey = onSingleKey
         view.onSpace = onSpace
         view.onOpen = onOpen
+        view.onCommandOpen = onCommandOpen
         view.onEscape = onEscape
         view.onSelectAll = onSelectAll
         view.onDeselectAll = onDeselectAll
@@ -195,6 +198,7 @@ struct ReviewKeyInputView: NSViewRepresentable {
         nsView.onSingleKey = onSingleKey
         nsView.onSpace = onSpace
         nsView.onOpen = onOpen
+        nsView.onCommandOpen = onCommandOpen
         nsView.onEscape = onEscape
         nsView.onSelectAll = onSelectAll
         nsView.onDeselectAll = onDeselectAll
@@ -219,6 +223,7 @@ final class ReviewKeyResponderView: NSView {
     var onSingleKey: ((_ key: String) -> Void)?
     var onSpace: (() -> Void)?
     var onOpen: (() -> Void)?
+    var onCommandOpen: (() -> Void)?
     var onEscape: (() -> Void)?
     var onSelectAll: (() -> Void)?
     var onDeselectAll: (() -> Void)?
@@ -236,7 +241,9 @@ final class ReviewKeyResponderView: NSView {
 
         let extending = event.modifierFlags.contains(.shift)
         let hasOptionModifier = event.modifierFlags.contains(.option)
-        if event.modifierFlags.contains(.command),
+        let hasCommandModifier = event.modifierFlags.contains(.command)
+        let hasControlModifier = event.modifierFlags.contains(.control)
+        if hasCommandModifier,
            let chars = event.charactersIgnoringModifiers?.uppercased() {
             if chars == "A" {
                 if event.modifierFlags.contains(.shift) {
@@ -276,7 +283,11 @@ final class ReviewKeyResponderView: NSView {
         case 49:
             onSpace?()
         case 36:
-            onOpen?()
+            if hasCommandModifier || hasControlModifier {
+                onCommandOpen?()
+            } else {
+                onOpen?()
+            }
         case 53:
             onEscape?()
         default:
@@ -325,21 +336,21 @@ struct FullPhotoSheet: View {
                 }
                 .disabled(!appState.canNavigatePreviewBackward)
                 .keyboardShortcut(.leftArrow, modifiers: [])
-                .shortcutHint("Show the previous visible photo (Left Arrow)")
+                .shortcutHint("Left", help: "Show the previous visible photo (Left Arrow)")
 
                 Button("Next") {
                     appState.navigatePreview(by: 1)
                 }
                 .disabled(!appState.canNavigatePreviewForward)
                 .keyboardShortcut(.rightArrow, modifiers: [])
-                .shortcutHint("Show the next visible photo (Right Arrow)")
+                .shortcutHint("Right", help: "Show the next visible photo (Right Arrow)")
 
                 ZoomToolbar(zoom: $zoom)
                 Button("Close") {
                     dismiss()
                 }
                 .keyboardShortcut(.cancelAction)
-                .shortcutHint("Close preview (Escape)")
+                .shortcutHint("Escape", help: "Close preview (Escape)")
             }
 
             ZoomableImageCanvas(imageURL: item.sourceURL, zoom: zoom)
@@ -374,7 +385,7 @@ struct CompareSheet: View {
                         onClose()
                     }
                     .keyboardShortcut(.cancelAction)
-                    .shortcutHint("Close compare (Escape)")
+                    .shortcutHint("Escape", help: "Close compare (Escape)")
                 }
 
                 if items.isEmpty {
@@ -428,7 +439,7 @@ struct CompareSheet: View {
             } label: {
                 Image(systemName: "minus.rectangle.on.rectangle")
             }
-            .shortcutHint("Fit more compare items on screen")
+            .shortcutHint("-", help: "Fit more compare items on screen (-)")
             .disabled(appState.compareGridCardWidth <= CompareGridMetrics.minCardWidth)
 
             Text("\(Int(appState.compareGridCardWidth))")
@@ -440,7 +451,7 @@ struct CompareSheet: View {
             } label: {
                 Image(systemName: "plus.rectangle.on.rectangle")
             }
-            .shortcutHint("Make compare items larger")
+            .shortcutHint("+", help: "Make compare items larger (+)")
             .disabled(appState.compareGridCardWidth >= CompareGridMetrics.maxCardWidth)
 
             Button {
@@ -448,7 +459,7 @@ struct CompareSheet: View {
             } label: {
                 Image(systemName: "arrow.counterclockwise")
             }
-            .shortcutHint("Reset compare layout size")
+            .shortcutHint("0", help: "Reset compare layout size (0)")
             .disabled(appState.compareGridCardWidth == CompareGridMetrics.defaultCardWidth)
         }
         .buttonStyle(.bordered)
@@ -504,18 +515,18 @@ struct CompareItemCard: View {
                 Button("Select Only") {
                     appState.selectMediaItems([item.id])
                 }
-                .shortcutHint("Select only this item")
+                .help("Select only this item")
 
                 Button("Toggle Selection") {
                     appState.toggleSelectionForComparisonItem(item.id)
                 }
-                .shortcutHint("Toggle this item in the current selection")
+                .help("Toggle this item in the current selection")
 
                 Button("Preview") {
                     appState.selectMediaItems([item.id])
                     appState.openFocusedReviewItem()
                 }
-                .shortcutHint("Open this item in preview")
+                .help("Open this item in preview")
             }
             .buttonStyle(.bordered)
 
@@ -530,7 +541,7 @@ struct CompareItemCard: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
-                    .shortcutHint(item.selectionState == .selected ? "Remove this item from import" : "Mark this item for import")
+                    .shortcutHint(item.selectionState == .selected ? "D / Cmd-Shift-I" : "I / Cmd-I", help: item.selectionState == .selected ? "Remove this item from import" : "Mark this item for import")
 
                     if !item.companionFiles.isEmpty {
                         Toggle("RAW", isOn: Binding(
@@ -538,7 +549,7 @@ struct CompareItemCard: View {
                             set: { appState.setImportRawCompanions(for: item, enabled: $0) }
                         ))
                         .toggleStyle(.switch)
-                        .shortcutHint("Include RAW companions for this compare item")
+                        .shortcutHint("R / Cmd-Option-R", help: "Include RAW companions for this compare item")
                     }
 
                     Spacer()
@@ -576,19 +587,19 @@ struct ZoomToolbar: View {
                 zoom = max(0.25, zoom - 0.25)
             }
             .keyboardShortcut("-", modifiers: keyboardModifiers)
-            .shortcutHint(keyboardModifiers.isEmpty ? "Zoom out (-)" : "Zoom out (Option--)")
+            .shortcutHint(keyboardModifiers.isEmpty ? "-" : "Option--", help: keyboardModifiers.isEmpty ? "Zoom out (-)" : "Zoom out (Option--)")
 
             Button("100%") {
                 zoom = 1
             }
             .keyboardShortcut("0", modifiers: keyboardModifiers)
-            .shortcutHint(keyboardModifiers.isEmpty ? "Reset zoom (0)" : "Reset compare zoom (Option-0)")
+            .shortcutHint(keyboardModifiers.isEmpty ? "0" : "Option-0", help: keyboardModifiers.isEmpty ? "Reset zoom (0)" : "Reset compare zoom (Option-0)")
 
             Button("+") {
                 zoom = min(4, zoom + 0.25)
             }
             .keyboardShortcut("+", modifiers: keyboardModifiers)
-            .shortcutHint(keyboardModifiers.isEmpty ? "Zoom in (+)" : "Zoom in (Option-+)")
+            .shortcutHint(keyboardModifiers.isEmpty ? "+" : "Option-+", help: keyboardModifiers.isEmpty ? "Zoom in (+)" : "Zoom in (Option-+)")
 
             Text("\(Int(zoom * 100))%")
                 .font(.caption.monospacedDigit())

@@ -278,6 +278,55 @@ import Testing
 }
 
 @MainActor
+@Test func groupedSectionReturnEntersItemsAndEscapeReturnsToSectionSelection() {
+    let items = makeSelectionItems(count: 4)
+    let state = makeReviewAppState(items: items)
+
+    state.setDayOrganizationMode(.daysAndBursts)
+    state.showGroupedReview()
+    let sections = state.groupedReviewSections
+
+    #expect(!sections.isEmpty)
+    state.focusInlineSection(sections[0].id)
+
+    state.activateCurrentReviewTarget()
+
+    #expect(!state.isGroupedSectionKeyboardTargetActive)
+    #expect(state.focusedReviewItemID != nil)
+    #expect(state.focusedInlineSectionID == sections[0].id)
+
+    state.handleReviewEscape()
+
+    #expect(state.isGroupedSectionKeyboardTargetActive)
+    #expect(state.focusedInlineSectionID == sections[0].id)
+}
+
+@MainActor
+@Test func groupedSectionCommandOpenDrillsIntoScopedReview() {
+    let items = makeSelectionItems(count: 4)
+    let state = makeReviewAppState(items: items)
+
+    state.setDayOrganizationMode(.daysAndBursts)
+    state.showGroupedReview()
+    let sections = state.groupedReviewSections
+
+    #expect(!sections.isEmpty)
+    state.focusInlineSection(sections[0].id)
+
+    state.openCurrentSelection()
+
+    #expect(state.drilledInlineSectionID == sections[0].id)
+    #expect(state.dayDetailDisplayMode == .review)
+    #expect(state.visibleMediaItems.count == state.drilledInlineSectionMediaItemIDs.count)
+
+    state.handleReviewEscape()
+
+    #expect(state.drilledInlineSectionID == nil)
+    #expect(state.dayDetailDisplayMode == .sections)
+    #expect(state.focusedInlineSectionID == sections[0].id)
+}
+
+@MainActor
 @Test func keyboardSelectionMovementRequestsScrollToFocusedItem() {
     let items = makeSelectionItems(count: 4)
     let state = makeReviewAppState(items: items)

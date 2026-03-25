@@ -50,6 +50,8 @@ final class AppState: ObservableObject {
     @Published var pendingReviewScrollTargetID: UUID?
     @Published var focusedInlineSectionID: String?
     @Published var pendingInlineSectionScrollTargetID: String?
+    @Published var drilledInlineSectionID: String?
+    @Published var drilledInlineSectionMediaItemIDs: [UUID] = []
     @Published var previewingMediaItemID: UUID?
     @Published var comparingMediaItemIDs: [UUID] = []
     @Published var compareSheetTitle: String = "Compare Selection"
@@ -204,6 +206,9 @@ final class AppState: ObservableObject {
     }
 
     var visibleMediaItems: [MediaItem] {
+        if !drilledInlineSectionMediaItemIDs.isEmpty {
+            return orderedMediaItems(for: drilledInlineSectionMediaItemIDs)
+        }
         guard let node = selectedBrowserNode else { return [] }
         return visibleMediaItems(for: node)
     }
@@ -726,6 +731,8 @@ final class AppState: ObservableObject {
         activePane = .sidebar
         dayDetailDisplayMode = .review
         reviewKeyboardTarget = .items
+        drilledInlineSectionID = nil
+        drilledInlineSectionMediaItemIDs = []
         clearDetailSelections()
         loadArchiveMediaIfNeeded(for: nodeID)
         resetInlineExpansionState()
@@ -841,6 +848,36 @@ final class AppState: ObservableObject {
 
     func deactivateReviewGridFocus() {
         reviewGridHasFocus = false
+    }
+
+    func activateCurrentReviewTarget() {
+        if isGroupedSectionKeyboardTargetActive {
+            enterFocusedInlineSection()
+        } else {
+            openFocusedReviewItem()
+        }
+    }
+
+    func handleReviewEscape() {
+        if let drilledInlineSectionID {
+            drilledInlineSectionMediaItemIDs = []
+            self.drilledInlineSectionID = nil
+            dayDetailDisplayMode = .sections
+            focusInlineSection(drilledInlineSectionID)
+            statusMessage = "Returned to grouped section selection."
+            return
+        }
+
+        if dayDetailDisplayMode == .sections, reviewKeyboardTarget == .items {
+            let sectionID = focusedInlineSectionID ?? focusedReviewItemID.flatMap { inlineSectionID(containing: $0, in: organizedInlineSections) }
+            if let sectionID {
+                focusInlineSection(sectionID)
+                statusMessage = "Returned to grouped section selection."
+                return
+            }
+        }
+
+        deactivateReviewGridFocus()
     }
 
     func handleReviewArrowKey(dx: Int, dy: Int, extending: Bool) {
@@ -972,6 +1009,25 @@ final class AppState: ObservableObject {
         previewingMediaItemID = focusedID
     }
 
+    func drillIntoFocusedInlineSection() {
+        guard let section = focusedInlineSection else { return }
+        let scopedItemIDs = resolvedMediaItemIDs(in: section)
+        guard !scopedItemIDs.isEmpty else { return }
+        drilledInlineSectionID = section.id
+        drilledInlineSectionMediaItemIDs = scopedItemIDs
+        dayDetailDisplayMode = .review
+        reviewKeyboardTarget = .items
+        activePane = .media
+        reviewGridHasFocus = true
+        if let firstID = scopedItemIDs.first {
+            selectedMediaItemIDs = [firstID]
+            focusedReviewItemID = firstID
+            reviewSelectionAnchorID = firstID
+            pendingReviewScrollTargetID = firstID
+        }
+        statusMessage = "Opened \(section.title)."
+    }
+
     func navigatePreview(by offset: Int) {
         guard let targetID = previewNavigationOffset(offset) else { return }
         previewingMediaItemID = targetID
@@ -1024,7 +1080,11 @@ final class AppState: ObservableObject {
         case .sidebar:
             focusReviewSurface()
         case .media:
-            openFocusedReviewItem()
+            if isGroupedSectionKeyboardTargetActive {
+                drillIntoFocusedInlineSection()
+            } else {
+                openFocusedReviewItem()
+            }
         }
     }
 
@@ -1124,6 +1184,8 @@ final class AppState: ObservableObject {
         reviewSelectionAnchorID = nil
         reviewGridHasFocus = false
         reviewKeyboardTarget = .items
+        drilledInlineSectionID = nil
+        drilledInlineSectionMediaItemIDs = []
         focusedInlineSectionID = nil
         pendingInlineSectionScrollTargetID = nil
     }
@@ -1247,6 +1309,30 @@ final class AppState: ObservableObject {
 
         reviewGridHasFocus = previousReviewFocus && activePane == .media && !visibleIDSet.isEmpty
         reviewKeyboardTarget = .items
+    }
+
+    private func enterFocusedInlineSection() {
+        guard let section = focusedInlineSection else { return }
+        if !expandedInlineSectionIDs.contains(section.id) {
+            expandedInlineSectionIDs.insert(section.id)
+            reconcileReviewSelectionWithVisibleItems()
+        }
+        guard let targetID = resolvedMediaItemIDs(in: section).first else { return }
+        selectInlineMediaItem(targetID)
+        focusedInlineSectionID = section.id
+        statusMessage = "Entered \(section.title)."
+    }
+
+    private func resolvedMediaItemIDs(in section: InlineSection) -> [UUID] {
+        if !section.photoItemIDs.isEmpty {
+            return section.photoItemIDs
+        }
+
+        if !section.mediaItemIDs.isEmpty {
+            return section.mediaItemIDs
+        }
+
+        return section.children.flatMap { resolvedMediaItemIDs(in: $0) }
     }
 
     private func loadMostRecentSession() {
