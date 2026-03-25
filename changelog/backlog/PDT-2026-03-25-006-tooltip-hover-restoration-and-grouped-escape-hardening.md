@@ -1,0 +1,26 @@
+# PDT-2026-03-25-006 Tooltip hover restoration and grouped escape hardening
+
+- item ID: PDT-2026-03-25-006
+- title: Tooltip hover restoration and grouped escape hardening
+- user request summary:
+  - Escape still sometimes leaves grouped review in a blank or offset state.
+  - Shortcut hints are now always visible and clutter the UI.
+- constraints:
+  - Preserve grouped review performance improvements.
+  - Do not reintroduce the SwiftUI/AppKit layout crash seen in 0.1.43.
+  - Keep keyboard-driven grouped review workflow intact.
+- implementation intent:
+  - Make grouped escape restore a stable grouped header focus and visible content path.
+  - Replace always-visible shortcut badges with a safer hover-only hint implementation.
+- test conditions:
+  - `swift build`
+  - `swift test`
+  - grouped drill-in then repeated Escape recovery
+  - hover hints visible only on hover
+- success criteria:
+  - Escape never leaves a blank scroll region when returning from grouped drill-in.
+  - Shortcut hints are hidden by default and appear only on hover.
+  - No layout-crash regression from hint rendering.
+- current status: awaiting_user_review
+- target release version: 0.1.45
+- target feature slug: tooltip-hover-restoration-and-grouped-escape-hardening

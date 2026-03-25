@@ -24,14 +24,23 @@ private struct ShortcutHintModifier: ViewModifier {
     let shortcut: String
     let helpText: String
     let alignment: Alignment
+    @State private var isHovering = false
 
     func body(content: Content) -> some View {
         content
             .help(helpText)
+            .onHover { hovering in
+                isHovering = hovering
+            }
             .overlay(alignment: alignment) {
-                ShortcutHintBubble(shortcut: shortcut)
-                    .scaleEffect(0.82)
-                    .padding(6)
+                if isHovering {
+                    ShortcutHintBubble(shortcut: shortcut)
+                        .scaleEffect(0.82)
+                        .padding(6)
+                }
+            }
+            .transaction { transaction in
+                transaction.animation = nil
             }
     }
 }
