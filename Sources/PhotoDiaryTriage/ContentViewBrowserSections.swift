@@ -375,12 +375,17 @@ struct ReviewPaneView: View {
                     appState.pendingReviewScrollTargetID = nil
                 }
             }
-            .onChange(of: appState.pendingInlineSectionScrollTargetID) { _, targetID in
-                guard let targetID else { return }
+            .onAppear {
+                guard let targetID = appState.pendingInlineSectionScrollTargetID else { return }
                 DispatchQueue.main.async {
-                    withAnimation {
-                        proxy.scrollTo(targetID, anchor: .center)
-                    }
+                    proxy.scrollTo(targetID, anchor: .top)
+                    appState.pendingInlineSectionScrollTargetID = nil
+                }
+            }
+            .onChange(of: appState.pendingInlineSectionScrollRevision) { _, _ in
+                guard let targetID = appState.pendingInlineSectionScrollTargetID else { return }
+                DispatchQueue.main.async {
+                    proxy.scrollTo(targetID, anchor: .top)
                     appState.pendingInlineSectionScrollTargetID = nil
                 }
             }
@@ -592,12 +597,17 @@ struct ReviewPaneView: View {
                     appState.pendingReviewScrollTargetID = nil
                 }
             }
-            .onChange(of: appState.pendingInlineSectionScrollTargetID) { _, targetID in
-                guard let targetID else { return }
+            .onAppear {
+                guard let targetID = appState.pendingInlineSectionScrollTargetID else { return }
                 DispatchQueue.main.async {
-                    withAnimation {
-                        proxy.scrollTo(targetID, anchor: .center)
-                    }
+                    proxy.scrollTo(targetID, anchor: .top)
+                    appState.pendingInlineSectionScrollTargetID = nil
+                }
+            }
+            .onChange(of: appState.pendingInlineSectionScrollRevision) { _, _ in
+                guard let targetID = appState.pendingInlineSectionScrollTargetID else { return }
+                DispatchQueue.main.async {
+                    proxy.scrollTo(targetID, anchor: .top)
                     appState.pendingInlineSectionScrollTargetID = nil
                 }
             }

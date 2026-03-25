@@ -50,6 +50,7 @@ final class AppState: ObservableObject {
     @Published var pendingReviewScrollTargetID: UUID?
     @Published var focusedInlineSectionID: String?
     @Published var pendingInlineSectionScrollTargetID: String?
+    @Published var pendingInlineSectionScrollRevision: Int = 0
     @Published var drilledInlineSectionID: String?
     @Published var drilledInlineSectionMediaItemIDs: [UUID] = []
     @Published var previewingMediaItemID: UUID?
@@ -772,10 +773,7 @@ final class AppState: ObservableObject {
         reviewGridHasFocus = true
         reviewKeyboardTarget = asKeyboardTarget ? .sections : .items
         if scrollIntoView {
-            pendingInlineSectionScrollTargetID = nil
-            DispatchQueue.main.async { [weak self] in
-                self?.pendingInlineSectionScrollTargetID = sectionID
-            }
+            requestInlineSectionScroll(to: sectionID)
         }
     }
 
@@ -866,7 +864,10 @@ final class AppState: ObservableObject {
             drilledInlineSectionMediaItemIDs = []
             self.drilledInlineSectionID = nil
             setDayDetailDisplayMode(.sections)
-            focusInlineSection(drilledInlineSectionID)
+            pendingInlineScrollTargetID = nil
+            pendingReviewScrollTargetID = nil
+            focusInlineSection(drilledInlineSectionID, scrollIntoView: false)
+            requestInlineSectionScroll(to: drilledInlineSectionID)
             requestVisibleThumbnails()
             statusMessage = "Returned to grouped section selection."
             return
@@ -1506,6 +1507,7 @@ final class AppState: ObservableObject {
         invalidateOrganizedInlineSectionCache()
         focusedInlineSectionID = nil
         pendingInlineSectionScrollTargetID = nil
+        pendingInlineSectionScrollRevision = 0
         pendingReviewScrollTargetID = nil
     }
 
@@ -1559,6 +1561,14 @@ final class AppState: ObservableObject {
         }
 
         focusedInlineSectionID = defaultInlineSectionFocusID(in: sections)
+    }
+
+    private func requestInlineSectionScroll(to sectionID: String) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.pendingInlineSectionScrollTargetID = sectionID
+            self.pendingInlineSectionScrollRevision &+= 1
+        }
     }
 
     private func syncFocusedInlineSectionToFocusedItem() {
