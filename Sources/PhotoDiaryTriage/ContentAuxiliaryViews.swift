@@ -1,6 +1,55 @@
 import AppKit
 import SwiftUI
 
+private struct ShortcutHintBubble: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(.ultraThickMaterial, in: Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(0.12), radius: 8, y: 4)
+            .allowsHitTesting(false)
+    }
+}
+
+private struct ShortcutHintModifier: ViewModifier {
+    let text: String
+    let alignment: Alignment
+    @State private var isHovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .help(text)
+            .overlay(alignment: alignment) {
+                if isHovering {
+                    ShortcutHintBubble(text: text)
+                        .offset(y: alignment == .bottom ? 12 : -12)
+                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                        .zIndex(10)
+                }
+            }
+            .onHover { hovering in
+                withAnimation(.easeOut(duration: 0.12)) {
+                    isHovering = hovering
+                }
+            }
+    }
+}
+
+extension View {
+    func shortcutHint(_ text: String, alignment: Alignment = .top) -> some View {
+        modifier(ShortcutHintModifier(text: text, alignment: alignment))
+    }
+}
+
 struct KeyboardHelpSheet: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -153,12 +202,10 @@ struct ReviewKeyInputView: NSViewRepresentable {
         nsView.onZoomOut = onZoomOut
         nsView.onZoomReset = onZoomReset
 
-        if isFocused != nsView.isHandlingKeys {
-            nsView.isHandlingKeys = isFocused
-            if isFocused, nsView.window?.firstResponder !== nsView {
-                DispatchQueue.main.async {
-                    nsView.window?.makeFirstResponder(nsView)
-                }
+        nsView.isHandlingKeys = isFocused
+        if isFocused, nsView.window?.firstResponder !== nsView {
+            DispatchQueue.main.async {
+                nsView.window?.makeFirstResponder(nsView)
             }
         }
     }
@@ -278,21 +325,21 @@ struct FullPhotoSheet: View {
                 }
                 .disabled(!appState.canNavigatePreviewBackward)
                 .keyboardShortcut(.leftArrow, modifiers: [])
-                .help("Show the previous visible photo (Left Arrow)")
+                .shortcutHint("Show the previous visible photo (Left Arrow)")
 
                 Button("Next") {
                     appState.navigatePreview(by: 1)
                 }
                 .disabled(!appState.canNavigatePreviewForward)
                 .keyboardShortcut(.rightArrow, modifiers: [])
-                .help("Show the next visible photo (Right Arrow)")
+                .shortcutHint("Show the next visible photo (Right Arrow)")
 
                 ZoomToolbar(zoom: $zoom)
                 Button("Close") {
                     dismiss()
                 }
                 .keyboardShortcut(.cancelAction)
-                .help("Close preview (Escape)")
+                .shortcutHint("Close preview (Escape)")
             }
 
             ZoomableImageCanvas(imageURL: item.sourceURL, zoom: zoom)
@@ -327,7 +374,7 @@ struct CompareSheet: View {
                         onClose()
                     }
                     .keyboardShortcut(.cancelAction)
-                    .help("Close compare (Escape)")
+                    .shortcutHint("Close compare (Escape)")
                 }
 
                 if items.isEmpty {
@@ -381,7 +428,7 @@ struct CompareSheet: View {
             } label: {
                 Image(systemName: "minus.rectangle.on.rectangle")
             }
-            .help("Fit more compare items on screen")
+            .shortcutHint("Fit more compare items on screen")
             .disabled(appState.compareGridCardWidth <= CompareGridMetrics.minCardWidth)
 
             Text("\(Int(appState.compareGridCardWidth))")
@@ -393,7 +440,7 @@ struct CompareSheet: View {
             } label: {
                 Image(systemName: "plus.rectangle.on.rectangle")
             }
-            .help("Make compare items larger")
+            .shortcutHint("Make compare items larger")
             .disabled(appState.compareGridCardWidth >= CompareGridMetrics.maxCardWidth)
 
             Button {
@@ -401,7 +448,7 @@ struct CompareSheet: View {
             } label: {
                 Image(systemName: "arrow.counterclockwise")
             }
-            .help("Reset compare layout size")
+            .shortcutHint("Reset compare layout size")
             .disabled(appState.compareGridCardWidth == CompareGridMetrics.defaultCardWidth)
         }
         .buttonStyle(.bordered)
@@ -457,18 +504,18 @@ struct CompareItemCard: View {
                 Button("Select Only") {
                     appState.selectMediaItems([item.id])
                 }
-                .help("Select only this item")
+                .shortcutHint("Select only this item")
 
                 Button("Toggle Selection") {
                     appState.toggleSelectionForComparisonItem(item.id)
                 }
-                .help("Toggle this item in the current selection")
+                .shortcutHint("Toggle this item in the current selection")
 
                 Button("Preview") {
                     appState.selectMediaItems([item.id])
                     appState.openFocusedReviewItem()
                 }
-                .help("Open this item in preview")
+                .shortcutHint("Open this item in preview")
             }
             .buttonStyle(.bordered)
 
@@ -483,7 +530,7 @@ struct CompareItemCard: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
-                    .help(item.selectionState == .selected ? "Remove this item from import" : "Mark this item for import")
+                    .shortcutHint(item.selectionState == .selected ? "Remove this item from import" : "Mark this item for import")
 
                     if !item.companionFiles.isEmpty {
                         Toggle("RAW", isOn: Binding(
@@ -491,7 +538,7 @@ struct CompareItemCard: View {
                             set: { appState.setImportRawCompanions(for: item, enabled: $0) }
                         ))
                         .toggleStyle(.switch)
-                        .help("Include RAW companions for this compare item")
+                        .shortcutHint("Include RAW companions for this compare item")
                     }
 
                     Spacer()
@@ -529,19 +576,19 @@ struct ZoomToolbar: View {
                 zoom = max(0.25, zoom - 0.25)
             }
             .keyboardShortcut("-", modifiers: keyboardModifiers)
-            .help(keyboardModifiers.isEmpty ? "Zoom out (-)" : "Zoom out (Option--)")
+            .shortcutHint(keyboardModifiers.isEmpty ? "Zoom out (-)" : "Zoom out (Option--)")
 
             Button("100%") {
                 zoom = 1
             }
             .keyboardShortcut("0", modifiers: keyboardModifiers)
-            .help(keyboardModifiers.isEmpty ? "Reset zoom (0)" : "Reset compare zoom (Option-0)")
+            .shortcutHint(keyboardModifiers.isEmpty ? "Reset zoom (0)" : "Reset compare zoom (Option-0)")
 
             Button("+") {
                 zoom = min(4, zoom + 0.25)
             }
             .keyboardShortcut("+", modifiers: keyboardModifiers)
-            .help(keyboardModifiers.isEmpty ? "Zoom in (+)" : "Zoom in (Option-+)")
+            .shortcutHint(keyboardModifiers.isEmpty ? "Zoom in (+)" : "Zoom in (Option-+)")
 
             Text("\(Int(zoom * 100))%")
                 .font(.caption.monospacedDigit())
