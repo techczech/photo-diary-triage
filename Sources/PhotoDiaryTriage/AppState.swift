@@ -1,6 +1,11 @@
 import AppKit
 import Foundation
 
+enum ReviewKeyboardTarget {
+    case items
+    case sections
+}
+
 @MainActor
 final class AppState: ObservableObject {
     @Published var settings: AppSettings
@@ -89,6 +94,7 @@ final class AppState: ObservableObject {
     private var volumeMountObserver: NSObjectProtocol?
     private var hasAttemptedInitialAutoLoad = false
     private var lastMeasuredReviewPaneWidth: Double = 0
+    private var reviewKeyboardTarget: ReviewKeyboardTarget = .items
     private var inlineSectionCacheGeneration: Int = 0
     private var cachedInlineDaySectionsGeneration: Int = -1
     private var cachedInlineDaySectionsNodeID: String?
@@ -251,6 +257,10 @@ final class AppState: ObservableObject {
 
     var canUseGroupedSectionNavigation: Bool {
         dayDetailDisplayMode == .sections && !groupedReviewSections.isEmpty
+    }
+
+    var isGroupedSectionKeyboardTargetActive: Bool {
+        canUseGroupedSectionNavigation && reviewKeyboardTarget == .sections
     }
 
     var canExpandAllGroupedSections: Bool {
@@ -666,6 +676,7 @@ final class AppState: ObservableObject {
             ensureFocusedInlineSection()
         } else {
             pendingInlineSectionScrollTargetID = nil
+            reviewKeyboardTarget = .items
         }
         activateReviewGridFocus()
     }
@@ -687,6 +698,7 @@ final class AppState: ObservableObject {
     func focusSidebarNavigation() {
         activePane = .sidebar
         reviewGridHasFocus = false
+        reviewKeyboardTarget = .items
         DispatchQueue.main.async {
             self.focusSidebarFirstResponder()
         }
@@ -697,6 +709,7 @@ final class AppState: ObservableObject {
         if dayDetailDisplayMode == .sections {
             ensureFocusedInlineSection()
         }
+        reviewKeyboardTarget = .items
         activateReviewGridFocus()
     }
 
@@ -712,6 +725,7 @@ final class AppState: ObservableObject {
         selectedSidebarNodeID = nodeID
         activePane = .sidebar
         dayDetailDisplayMode = .review
+        reviewKeyboardTarget = .items
         clearDetailSelections()
         loadArchiveMediaIfNeeded(for: nodeID)
         resetInlineExpansionState()
@@ -744,11 +758,12 @@ final class AppState: ObservableObject {
         reconcileReviewSelectionWithVisibleItems()
     }
 
-    func focusInlineSection(_ sectionID: String, scrollIntoView: Bool = true) {
+    func focusInlineSection(_ sectionID: String, scrollIntoView: Bool = true, asKeyboardTarget: Bool = true) {
         guard canUseGroupedSectionNavigation else { return }
         focusedInlineSectionID = sectionID
         activePane = .media
         reviewGridHasFocus = true
+        reviewKeyboardTarget = asKeyboardTarget ? .sections : .items
         if scrollIntoView {
             pendingInlineSectionScrollTargetID = sectionID
         }
@@ -782,6 +797,7 @@ final class AppState: ObservableObject {
         focusedInlineSectionID = sectionPath.last
         focusedReviewItemID = itemID
         activePane = .media
+        reviewKeyboardTarget = .items
         DispatchQueue.main.async { [weak self] in
             self?.pendingInlineScrollTargetID = itemID
         }
@@ -794,6 +810,7 @@ final class AppState: ObservableObject {
         focusedReviewItemID = itemID
         activePane = .media
         reviewGridHasFocus = true
+        reviewKeyboardTarget = .items
     }
 
     func previewItems(for section: InlineSection, limit: Int = 18) -> [MediaItem] {
@@ -819,10 +836,59 @@ final class AppState: ObservableObject {
         var state = reviewSelectionState()
         selectionManager.activateReviewGridFocus(visibleItems: reviewInteractionItems, state: &state)
         applyReviewSelectionState(state)
+        reviewKeyboardTarget = .items
     }
 
     func deactivateReviewGridFocus() {
         reviewGridHasFocus = false
+    }
+
+    func handleReviewArrowKey(dx: Int, dy: Int, extending: Bool) {
+        guard reviewGridHasFocus else { return }
+
+        if isGroupedSectionKeyboardTargetActive {
+            if dy < 0 {
+                focusPreviousInlineSection()
+            } else if dy > 0 {
+                focusNextInlineSection()
+            } else if dx < 0 {
+                collapseFocusedInlineSection()
+            } else if dx > 0 {
+                expandFocusedInlineSection()
+            }
+            return
+        }
+
+        let columns = max(1, reviewPresentationMode == .grid ? reviewGridColumnCount : 1)
+        if dx != 0 {
+            moveGridSelection(by: dx, extending: extending)
+        } else if dy != 0 {
+            moveGridSelection(by: dy * columns, extending: extending)
+        }
+    }
+
+    func handleGroupedSectionArrowKey(dx: Int, dy: Int) {
+        guard canUseGroupedSectionNavigation else { return }
+        reviewKeyboardTarget = .sections
+        if dy < 0 {
+            focusPreviousInlineSection()
+        } else if dy > 0 {
+            focusNextInlineSection()
+        } else if dx < 0 {
+            collapseFocusedInlineSection()
+        } else if dx > 0 {
+            expandFocusedInlineSection()
+        }
+    }
+
+    func handleGroupedSectionExpandCollapse(expand: Bool) {
+        guard canUseGroupedSectionNavigation else { return }
+        reviewKeyboardTarget = .sections
+        if expand {
+            expandFocusedInlineSection()
+        } else {
+            collapseFocusedInlineSection()
+        }
     }
 
     func handleGridSelection(for itemID: UUID, modifiers: NSEvent.ModifierFlags) {
@@ -840,6 +906,7 @@ final class AppState: ObservableObject {
             state: &state
         )
         applyReviewSelectionState(state)
+        reviewKeyboardTarget = .items
         syncFocusedInlineSectionToFocusedItem()
         if click.isDoubleClick {
             openFocusedReviewItem()
@@ -850,6 +917,7 @@ final class AppState: ObservableObject {
         var state = reviewSelectionState()
         selectionManager.moveSelection(by: offset, visibleItems: reviewInteractionItems, extending: extending, state: &state)
         applyReviewSelectionState(state)
+        reviewKeyboardTarget = .items
         syncFocusedInlineSectionToFocusedItem()
     }
 
@@ -1055,6 +1123,7 @@ final class AppState: ObservableObject {
         focusedReviewItemID = nil
         reviewSelectionAnchorID = nil
         reviewGridHasFocus = false
+        reviewKeyboardTarget = .items
         focusedInlineSectionID = nil
         pendingInlineSectionScrollTargetID = nil
     }
@@ -1076,6 +1145,9 @@ final class AppState: ObservableObject {
         reviewSelectionAnchorID = state.reviewSelectionAnchorID
         activePane = state.activePane
         reviewGridHasFocus = state.reviewGridHasFocus
+        if state.activePane == .media, state.reviewGridHasFocus {
+            reviewKeyboardTarget = .items
+        }
         if state.activePane == .media,
            state.reviewGridHasFocus,
            focusedReviewItemID != previousFocusedReviewItemID {
@@ -1174,6 +1246,7 @@ final class AppState: ObservableObject {
         }
 
         reviewGridHasFocus = previousReviewFocus && activePane == .media && !visibleIDSet.isEmpty
+        reviewKeyboardTarget = .items
     }
 
     private func loadMostRecentSession() {

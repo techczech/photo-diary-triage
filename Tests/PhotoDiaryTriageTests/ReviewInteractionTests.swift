@@ -239,6 +239,45 @@ import Testing
 }
 
 @MainActor
+@Test func plainArrowKeysOperateOnGroupedSectionsWhenSectionTargetIsActive() {
+    let items = makeSelectionItems(count: 4)
+    let state = makeReviewAppState(items: items)
+
+    state.setDayOrganizationMode(.daysAndBursts)
+    state.showGroupedReview()
+    let sections = state.groupedReviewSections
+
+    #expect(sections.count >= 2)
+    state.focusInlineSection(sections[0].id)
+    #expect(state.isGroupedSectionKeyboardTargetActive)
+
+    state.handleReviewArrowKey(dx: 0, dy: 1, extending: false)
+
+    #expect(state.focusedInlineSectionID == sections[1].id)
+
+    state.handleReviewArrowKey(dx: -1, dy: 0, extending: false)
+    #expect(!state.expandedInlineSectionIDs.contains(sections[1].id))
+
+    state.handleReviewArrowKey(dx: 1, dy: 0, extending: false)
+    #expect(state.expandedInlineSectionIDs.contains(sections[1].id))
+}
+
+@MainActor
+@Test func plainArrowKeysStillMoveBetweenItemsWhenItemTargetIsActive() {
+    let items = makeSelectionItems(count: 4)
+    let state = makeReviewAppState(items: items)
+
+    state.focusReviewSurface()
+    let firstFocusedID = state.focusedReviewItemID
+
+    state.handleReviewArrowKey(dx: 1, dy: 0, extending: false)
+
+    #expect(!state.isGroupedSectionKeyboardTargetActive)
+    #expect(state.focusedReviewItemID != firstFocusedID)
+    #expect(state.pendingReviewScrollTargetID == state.focusedReviewItemID)
+}
+
+@MainActor
 @Test func keyboardSelectionMovementRequestsScrollToFocusedItem() {
     let items = makeSelectionItems(count: 4)
     let state = makeReviewAppState(items: items)

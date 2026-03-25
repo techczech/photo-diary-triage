@@ -5,65 +5,104 @@ struct KeyboardHelpSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Keyboard Shortcuts")
-                    .font(.title3.weight(.semibold))
-                Spacer()
-            }
-
-            shortcut("I", "Mark selected photos for import when the review grid is focused")
-            shortcut("D", "Unmark selected photos when the review grid is focused")
-            shortcut("R", "Toggle RAW companion import when the review grid is focused")
-            shortcut("S", "Select only the focused photo when the review grid is focused")
-            shortcut("A", "Select all visible photos when the review grid is focused")
-            shortcut("Space", "Toggle focused photo selection")
-            shortcut("Arrow Keys", "Move grid focus; hold Shift to extend selection")
-            shortcut("Option + Up / Down", "Move between grouped sections when grouped review is active")
-            shortcut("Option + Left / Right", "Collapse or expand the focused grouped section")
-            shortcut("Return", "Open focused photo preview")
-            shortcut("C", "Open side-by-side compare for the current photo selection")
-            shortcut("Escape", "Exit review-grid keyboard focus before using parent navigation")
-            shortcut("+ / - / 0", "Resize review cards when the grid is focused, or change compare layout density when compare is open")
-            shortcut("Option + / - / 0", "Zoom images inside compare without changing the compare card layout")
-            shortcut("Cmd-O", "Choose source folder")
-            shortcut("Cmd-1 / Cmd-2", "Focus sidebar navigation or jump straight into the review grid")
-            shortcut("Cmd-3 / Cmd-4", "Switch flat review or grouped review")
-            shortcut("Cmd-Option-G / Cmd-Option-L", "Switch grid or list layout")
-            shortcut("Cmd-Option-[ / ]", "Collapse or expand all grouped sections")
-            shortcut("Cmd-Option-Up / Down", "Move grouped-section focus from anywhere")
-            shortcut("Cmd-Option-Left / Right", "Collapse or expand the focused grouped section from the menu shortcut path")
-            shortcut("Cmd-Control-1...4", "Switch grouped review organization mode")
-            shortcut("Cmd-Option-I", "Toggle the right-side inspector")
-            shortcut("Cmd-I", "Mark current selection for import")
-            shortcut("Cmd-Shift-I", "Remove current selection from import")
-            shortcut("Cmd-Shift-M", "Copy marked files into the archive")
-            shortcut("Cmd-Shift-B", "Confirm backup and enable cleanup")
-            shortcut("Cmd-Shift-K", "Clean imported files from the SSD")
-            shortcut("Cmd-Option-R", "Toggle RAW companion import for selected photos")
-            shortcut("Cmd-Shift-C", "Open compare from the menu command path")
-            shortcut("Cmd-Return", "Open the current focused item or jump from the sidebar into the review surface")
-            shortcut("Cmd-Option-S", "Toggle the left sidebar")
-            shortcut("Cmd-Shift-/", "Show this shortcuts panel")
-
-            HStack {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Keyboard Shortcuts")
+                        .font(.title2.weight(.bold))
+                    Text("Review, grouped navigation, compare, and global commands.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
                 Spacer()
                 Button("Close") {
                     dismiss()
                 }
+                .keyboardShortcut(.cancelAction)
+            }
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    shortcutSection("Review Selection", rows: [
+                        ("Arrow Keys", "Move grid focus; hold Shift to extend selection."),
+                        ("Space", "Toggle the focused photo selection."),
+                        ("I", "Mark the current selection for import."),
+                        ("D", "Unmark the current selection."),
+                        ("R", "Toggle RAW companion import for the current selection."),
+                        ("S", "Keep only the focused photo selected."),
+                        ("A", "Select all visible photos."),
+                        ("C", "Open compare for the current selection."),
+                        ("Return", "Open the focused photo preview."),
+                        ("Escape", "Exit review-grid keyboard focus.")
+                    ])
+
+                    shortcutSection("Grouped Review", rows: [
+                        ("Up / Down", "When a group header is focused, move between grouped sections."),
+                        ("Left / Right", "When a group header is focused, collapse or expand that section."),
+                        ("Option + Up / Down", "Jump into grouped-section navigation from item focus."),
+                        ("Option + Left / Right", "Collapse or expand the focused grouped section from item focus."),
+                        ("Cmd-Option-[ / ]", "Collapse or expand all grouped sections."),
+                        ("Cmd-Control-1...4", "Switch grouped review organization mode.")
+                    ])
+
+                    shortcutSection("View And Compare", rows: [
+                        ("+ / - / 0", "Resize review cards, or change compare layout density when compare is open."),
+                        ("Option + + / - / 0", "Zoom compare images without changing the compare layout density."),
+                        ("Cmd-3 / Cmd-4", "Switch flat review or grouped review."),
+                        ("Cmd-Option-G / Cmd-Option-L", "Switch grid or list layout."),
+                        ("Cmd-Shift-C", "Open compare from the command menu path.")
+                    ])
+
+                    shortcutSection("Focus And Global Commands", rows: [
+                        ("Cmd-O", "Choose a source folder."),
+                        ("Cmd-1 / Cmd-2", "Focus sidebar navigation or jump into the review grid."),
+                        ("Cmd-Return", "Open the current item or jump from sidebar into review."),
+                        ("Cmd-Option-I", "Toggle the right-side inspector."),
+                        ("Cmd-Option-S", "Toggle the left sidebar."),
+                        ("Cmd-I", "Mark the current selection for import."),
+                        ("Cmd-Shift-I", "Remove the current selection from import."),
+                        ("Cmd-Shift-M", "Copy marked files into the archive."),
+                        ("Cmd-Shift-B", "Confirm backup and enable cleanup."),
+                        ("Cmd-Shift-K", "Clean imported files from the SSD."),
+                        ("Cmd-Shift-/", "Open this shortcuts panel.")
+                    ])
+                }
+                .padding(.trailing, 8)
             }
         }
         .padding(24)
-        .frame(width: 620, height: 520)
+        .frame(minWidth: 760, minHeight: 620)
     }
 
-    private func shortcut(_ key: String, _ description: String) -> some View {
-        HStack(alignment: .top) {
+    private func shortcutSection(_ title: String, rows: [(String, String)]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.headline.weight(.semibold))
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                shortcutRow(row.0, row.1)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.45), in: RoundedRectangle(cornerRadius: 16))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.secondary.opacity(0.16), lineWidth: 1)
+        }
+    }
+
+    private func shortcutRow(_ key: String, _ description: String) -> some View {
+        HStack(alignment: .top, spacing: 14) {
             Text(key)
-                .font(.system(.body, design: .monospaced))
-                .frame(width: 150, alignment: .leading)
+                .font(.system(.body, design: .monospaced).weight(.bold))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                .frame(width: 190, alignment: .leading)
             Text(description)
-            Spacer()
+                .font(.body)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
         }
     }
 }
@@ -239,18 +278,21 @@ struct FullPhotoSheet: View {
                 }
                 .disabled(!appState.canNavigatePreviewBackward)
                 .keyboardShortcut(.leftArrow, modifiers: [])
+                .help("Show the previous visible photo (Left Arrow)")
 
                 Button("Next") {
                     appState.navigatePreview(by: 1)
                 }
                 .disabled(!appState.canNavigatePreviewForward)
                 .keyboardShortcut(.rightArrow, modifiers: [])
+                .help("Show the next visible photo (Right Arrow)")
 
                 ZoomToolbar(zoom: $zoom)
                 Button("Close") {
                     dismiss()
                 }
                 .keyboardShortcut(.cancelAction)
+                .help("Close preview (Escape)")
             }
 
             ZoomableImageCanvas(imageURL: item.sourceURL, zoom: zoom)
@@ -285,6 +327,7 @@ struct CompareSheet: View {
                         onClose()
                     }
                     .keyboardShortcut(.cancelAction)
+                    .help("Close compare (Escape)")
                 }
 
                 if items.isEmpty {
@@ -414,15 +457,18 @@ struct CompareItemCard: View {
                 Button("Select Only") {
                     appState.selectMediaItems([item.id])
                 }
+                .help("Select only this item")
 
                 Button("Toggle Selection") {
                     appState.toggleSelectionForComparisonItem(item.id)
                 }
+                .help("Toggle this item in the current selection")
 
                 Button("Preview") {
                     appState.selectMediaItems([item.id])
                     appState.openFocusedReviewItem()
                 }
+                .help("Open this item in preview")
             }
             .buttonStyle(.bordered)
 
@@ -437,6 +483,7 @@ struct CompareItemCard: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
+                    .help(item.selectionState == .selected ? "Remove this item from import" : "Mark this item for import")
 
                     if !item.companionFiles.isEmpty {
                         Toggle("RAW", isOn: Binding(
@@ -444,6 +491,7 @@ struct CompareItemCard: View {
                             set: { appState.setImportRawCompanions(for: item, enabled: $0) }
                         ))
                         .toggleStyle(.switch)
+                        .help("Include RAW companions for this compare item")
                     }
 
                     Spacer()
@@ -481,16 +529,19 @@ struct ZoomToolbar: View {
                 zoom = max(0.25, zoom - 0.25)
             }
             .keyboardShortcut("-", modifiers: keyboardModifiers)
+            .help(keyboardModifiers.isEmpty ? "Zoom out (-)" : "Zoom out (Option--)")
 
             Button("100%") {
                 zoom = 1
             }
             .keyboardShortcut("0", modifiers: keyboardModifiers)
+            .help(keyboardModifiers.isEmpty ? "Reset zoom (0)" : "Reset compare zoom (Option-0)")
 
             Button("+") {
                 zoom = min(4, zoom + 0.25)
             }
             .keyboardShortcut("+", modifiers: keyboardModifiers)
+            .help(keyboardModifiers.isEmpty ? "Zoom in (+)" : "Zoom in (Option-+)")
 
             Text("\(Int(zoom * 100))%")
                 .font(.caption.monospacedDigit())
