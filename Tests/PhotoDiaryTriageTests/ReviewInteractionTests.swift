@@ -324,6 +324,7 @@ import Testing
     #expect(state.drilledInlineSectionID == nil)
     #expect(state.dayDetailDisplayMode == .sections)
     #expect(state.focusedInlineSectionID == sections[0].id)
+    #expect(state.visibleMediaItems.count == items.count)
 }
 
 @MainActor
