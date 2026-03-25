@@ -29,18 +29,18 @@ private struct ShortcutHintModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .help(helpText)
-            .overlay(alignment: alignment) {
-                if isHovering {
-                    ShortcutHintBubble(shortcut: shortcut)
-                        .offset(y: alignment == .bottom ? 12 : -12)
-                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
-                        .zIndex(10)
-                }
-            }
             .onHover { hovering in
                 withAnimation(.easeOut(duration: 0.12)) {
                     isHovering = hovering
                 }
+            }
+            .popover(
+                isPresented: $isHovering,
+                attachmentAnchor: .point(alignment == .bottom ? .bottom : .top),
+                arrowEdge: alignment == .bottom ? .bottom : .top
+            ) {
+                ShortcutHintBubble(shortcut: shortcut)
+                    .padding(8)
             }
     }
 }

@@ -862,8 +862,9 @@ final class AppState: ObservableObject {
         if let drilledInlineSectionID {
             drilledInlineSectionMediaItemIDs = []
             self.drilledInlineSectionID = nil
-            dayDetailDisplayMode = .sections
+            setDayDetailDisplayMode(.sections)
             focusInlineSection(drilledInlineSectionID)
+            requestVisibleThumbnails()
             statusMessage = "Returned to grouped section selection."
             return
         }
