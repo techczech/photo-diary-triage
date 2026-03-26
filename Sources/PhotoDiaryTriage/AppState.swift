@@ -6,12 +6,22 @@ enum ReviewKeyboardTarget {
     case sections
 }
 
+private enum CurrentSessionUpdateKind {
+    case full
+    case sessionOnly
+}
+
 @MainActor
 final class AppState: ObservableObject {
     @Published var settings: AppSettings
     @Published var currentSession: ImportSession? {
         didSet {
-            rebuildDerivedStateCaches()
+            let updateKind = currentSessionUpdateKind
+            currentSessionUpdateKind = .full
+            rebuildSessionCaches(clearThumbnailCache: updateKind == .full)
+            if updateKind == .full {
+                rebuildBrowserCaches()
+            }
         }
     }
     @Published var burstGroups: [BurstGroup] = [] {
@@ -91,10 +101,10 @@ final class AppState: ObservableObject {
     private var browserViewModel: BrowserViewModel
     private let selectionManager = SelectionManager()
     private let backupStore = BackupStore()
-    private let archivePlanner = ArchivePlanner()
     private let fileManager: FileManager
     private let supportRoot: URL
     private let logger = AppLogger.appState
+    private let sessionPersistenceQueue = DispatchQueue(label: "PhotoDiaryTriage.session-persistence", qos: .utility)
     private let thumbnailScheduler = ThumbnailScheduler()
     private let thumbnailImageCache = NSCache<NSURL, NSImage>()
     private var thumbnailDecodeTasks: [String: Task<Void, Never>] = [:]
@@ -109,6 +119,8 @@ final class AppState: ObservableObject {
     private var hasAttemptedInitialAutoLoad = false
     private var lastMeasuredReviewPaneWidth: Double = 0
     private var reviewKeyboardTarget: ReviewKeyboardTarget = .items
+    private var currentSessionUpdateKind: CurrentSessionUpdateKind = .full
+    private var pendingSessionPersistenceWorkItem: DispatchWorkItem?
     private var inlineSectionCacheGeneration: Int = 0
     private var cachedInlineDaySectionsGeneration: Int = -1
     private var cachedInlineDaySectionsNodeID: String?
@@ -497,7 +509,7 @@ final class AppState: ObservableObject {
                 using: sessionManager,
                 store: sessionStore
             )
-            currentSession = opened.session
+            setCurrentSession(opened.session, updateKind: .full)
             burstGroups = opened.bursts
             timeClusters = opened.clusters
             selectedSidebarNodeID = browserViewModel.preferredInitialSidebarNodeID(for: opened.session, bursts: opened.bursts, clusters: opened.clusters)
@@ -555,8 +567,8 @@ final class AppState: ObservableObject {
                         self.statusMessage = "Importing \(progress.current)/\(progress.total)..."
                     }
                 }
-                currentSession = result.session
-                persistCurrentSession()
+                setCurrentSession(result.session, updateKind: .sessionOnly)
+                persistCurrentSession(immediately: true)
                 importProgress = nil
                 statusMessage = "Imported \(result.fileManifests.count) marked items and wrote manifests."
             } catch {
@@ -573,8 +585,8 @@ final class AppState: ObservableObject {
             do {
                 statusMessage = "Cleaning imported source files from SSD..."
                 let cleaned = try await importWorkflow.cleanupImportedSources(in: session)
-                currentSession = cleaned
-                persistCurrentSession()
+                setCurrentSession(cleaned, updateKind: .sessionOnly)
+                persistCurrentSession(immediately: true)
                 statusMessage = "Removed verified imported files from the source SSD."
             } catch {
                 statusMessage = error.localizedDescription
@@ -1350,7 +1362,7 @@ final class AppState: ObservableObject {
         session.mediaItems = grouped.items
         burstGroups = grouped.burstGroups
         timeClusters = grouped.timeClusters
-        currentSession = session
+        setCurrentSession(session, updateKind: .sessionOnly)
 
         let fallbackSidebarNodeID = browserViewModel.preferredInitialSidebarNodeID(for: session, bursts: grouped.burstGroups, clusters: grouped.timeClusters)
         selectedSidebarNodeID = previousSidebarNodeID.flatMap { browserNodeMap[$0] == nil ? nil : $0 } ?? fallbackSidebarNodeID
@@ -1440,7 +1452,7 @@ final class AppState: ObservableObject {
                 from: sessionStore,
                 using: sessionManager
             ) else { return }
-            currentSession = latest.session
+            setCurrentSession(latest.session, updateKind: .full)
             burstGroups = latest.bursts
             timeClusters = latest.clusters
         } catch {
@@ -1456,20 +1468,30 @@ final class AppState: ObservableObject {
         statusMessage = "Recovered most recent session from local SQLite store."
     }
 
-    private func persistCurrentSession() {
+    private func persistCurrentSession(immediately: Bool = false) {
         guard let currentSession else { return }
-        do {
-            try sessionLifecycleCoordinator.persistCurrentSession(
-                currentSession,
-                bursts: burstGroups,
-                clusters: timeClusters,
-                using: sessionManager,
-                to: sessionStore
-            )
-        } catch {
-            logger.error("Failed to persist current session: \(error.localizedDescription, privacy: .public)")
-            statusMessage = "Session save failed: \(error.localizedDescription)"
+        let session = currentSession
+        let bursts = burstGroups
+        let clusters = timeClusters
+        let sessionManager = self.sessionManager
+        let sessionStore = self.sessionStore
+        let logger = self.logger
+
+        pendingSessionPersistenceWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            do {
+                try sessionManager.save(session, bursts: bursts, clusters: clusters, to: sessionStore)
+            } catch {
+                logger.error("Failed to persist current session: \(error.localizedDescription, privacy: .public)")
+                DispatchQueue.main.async {
+                    self?.statusMessage = "Session save failed: \(error.localizedDescription)"
+                }
+            }
         }
+        pendingSessionPersistenceWorkItem = workItem
+
+        let deadline: DispatchTime = immediately ? .now() : .now() + .milliseconds(160)
+        sessionPersistenceQueue.asyncAfter(deadline: deadline, execute: workItem)
     }
 
     private func persistSettings() {
@@ -1484,7 +1506,7 @@ final class AppState: ObservableObject {
     private func save(_ session: ImportSession) {
         var mutableSession = session
         mutableSession.lastUpdatedAt = Date()
-        currentSession = mutableSession
+        setCurrentSession(mutableSession, updateKind: .sessionOnly)
         persistCurrentSession()
     }
 
@@ -1556,35 +1578,40 @@ final class AppState: ObservableObject {
         return navigationItems[targetIndex].id
     }
 
-    private func rebuildDerivedStateCaches() {
-        rebuildSessionCaches()
-        rebuildBrowserCaches()
-    }
-
-    private func rebuildSessionCaches() {
+    private func rebuildSessionCaches(clearThumbnailCache: Bool) {
         sessionVisibleMediaCacheByNodeID.removeAll()
 
         guard let currentSession else {
             sessionMediaByID = [:]
             archivePreviewByMediaItemID = [:]
-            thumbnailDecodeTasks.values.forEach { $0.cancel() }
-            thumbnailDecodeTasks.removeAll()
-            missingThumbnailPaths.removeAll()
-            thumbnailImageCache.removeAllObjects()
+            if clearThumbnailCache {
+                thumbnailDecodeTasks.values.forEach { $0.cancel() }
+                thumbnailDecodeTasks.removeAll()
+                missingThumbnailPaths.removeAll()
+                thumbnailImageCache.removeAllObjects()
+            }
             return
         }
 
         sessionMediaByID = Dictionary(uniqueKeysWithValues: currentSession.mediaItems.map { ($0.id, $0) })
-        let plan = archivePlanner.plan(for: currentSession)
         var previews: [UUID: [String]] = [:]
-        for entry in plan.entries {
-            previews[entry.mediaItemID, default: []].append(entry.destinationURL.path)
+        for item in currentSession.mediaItems {
+            if let destinationURL = item.destinationURL {
+                previews[item.id, default: []].append(destinationURL.path)
+            }
+            for companion in item.companionFiles {
+                if let destinationURL = companion.destinationURL {
+                    previews[item.id, default: []].append(destinationURL.path)
+                }
+            }
         }
         archivePreviewByMediaItemID = previews.mapValues { $0.joined(separator: "\n") }
-        thumbnailDecodeTasks.values.forEach { $0.cancel() }
-        thumbnailDecodeTasks.removeAll()
-        missingThumbnailPaths.removeAll()
-        thumbnailImageCache.removeAllObjects()
+        if clearThumbnailCache {
+            thumbnailDecodeTasks.values.forEach { $0.cancel() }
+            thumbnailDecodeTasks.removeAll()
+            missingThumbnailPaths.removeAll()
+            thumbnailImageCache.removeAllObjects()
+        }
     }
 
     private func rebuildBrowserCaches() {
@@ -1824,10 +1851,10 @@ final class AppState: ObservableObject {
                 archiveMediaCache: archiveMediaCache,
                 settings: settings
             ) else { return }
-            let sortedItems = loadResult.items.sorted(by: Self.mediaSort)
-            archiveMediaCache[loadResult.nodeID] = sortedItems
-            requestVisibleThumbnails(prefetching: sortedItems)
-            statusMessage = loadResult.statusMessage
+        let sortedItems = loadResult.items.sorted(by: Self.mediaSort)
+        archiveMediaCache[loadResult.nodeID] = sortedItems
+        requestVisibleThumbnails(prefetching: sortedItems)
+        statusMessage = loadResult.statusMessage
         } catch {
             statusMessage = "Failed to load archive folder: \(error.localizedDescription)"
         }
@@ -1852,6 +1879,11 @@ final class AppState: ObservableObject {
             return String(format: "%.0fm", minutes)
         }
         return String(format: "%.1fm", minutes)
+    }
+
+    private func setCurrentSession(_ session: ImportSession?, updateKind: CurrentSessionUpdateKind) {
+        currentSessionUpdateKind = updateKind
+        currentSession = session
     }
 
     private static func thumbnailDecodeCacheKey(for imageURL: URL) -> String {
