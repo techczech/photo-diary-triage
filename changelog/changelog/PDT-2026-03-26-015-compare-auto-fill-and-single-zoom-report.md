@@ -1,0 +1,26 @@
+# PDT-2026-03-26-015 Compare auto-fill and single zoom report
+
+- item ID: PDT-2026-03-26-015
+- summary of what changed:
+  - Removed the compare-specific layout-size state and toolbar controls so compare now exposes a single zoom control instead of separate layout and image sizing modes.
+  - Reworked `CompareGridMetrics` to auto-fit compare cards from the actual available compare viewport and current item count, favoring balanced layouts that keep compared images large.
+  - Updated the compare sheet so removing items causes the remaining items to reflow and use the reclaimed space automatically.
+  - Made the locked compare canvas recompute its fit scale whenever its viewport changes so the compare image and container stay in sync during resize and reflow.
+  - Tightened compare card chrome and updated compare metric tests to cover the new auto-fill behavior.
+- files changed:
+  - `Sources/PhotoDiaryTriage/AppState.swift`
+  - `Sources/PhotoDiaryTriage/ContentAuxiliaryViews.swift`
+  - `Sources/PhotoDiaryTriage/ReviewInteractionSupport.swift`
+  - `Tests/PhotoDiaryTriageTests/ReviewInteractionTests.swift`
+  - `changelog/backlog/PDT-2026-03-26-015-compare-auto-fill-and-single-zoom.md`
+  - `changelog/backlog.jsonl`
+  - `changelog/changelog.jsonl`
+  - `APP_RELEASE.env`
+- verification performed:
+  - `swift build`
+  - `swift test`
+- known gaps or follow-up items:
+  - grouped review escape behavior is still a separate known bug track
+  - compare card chrome is denser than before, but may still need later visual polish once the rest of the triage workflow is complete
+- shipped release version: 0.1.53
+- shipped feature slug: compare-auto-fill-and-single-zoom

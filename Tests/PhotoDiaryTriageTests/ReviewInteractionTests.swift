@@ -10,22 +10,32 @@ import Testing
     #expect(wide.columnCount == 4)
 }
 
-@Test func compareGridMetricsReflowMoreItemsWhenTargetCardWidthShrinks() {
-    let roomy = CompareGridMetrics(availableWidth: 1_600, targetCardWidth: 520, itemCount: 4)
-    let dense = CompareGridMetrics(availableWidth: 1_600, targetCardWidth: 320, itemCount: 4)
+@Test func compareGridMetricsChooseBalancedAutoFillLayout() {
+    let metrics = CompareGridMetrics(
+        availableSize: CGSize(width: 1_600, height: 900),
+        itemCount: 4
+    )
 
-    #expect(roomy.columnCount == 2)
-    #expect(dense.columnCount == 4)
-    #expect(dense.cardWidth < roomy.cardWidth)
+    #expect(metrics.columnCount == 2)
+    #expect(metrics.rowCount == 2)
+    #expect(metrics.cardWidth > 700)
+    #expect(metrics.imageHeight > 250)
 }
 
-@Test func compareGridMetricsZoomAlsoChangesCardWidth() {
-    let defaultZoom = CompareGridMetrics(availableWidth: 1_600, targetCardWidth: 320, itemCount: 4, zoomScale: 1)
-    let zoomedOut = CompareGridMetrics(availableWidth: 1_600, targetCardWidth: 320, itemCount: 4, zoomScale: 0.5)
-    let zoomedIn = CompareGridMetrics(availableWidth: 1_600, targetCardWidth: 320, itemCount: 4, zoomScale: 1.5)
+@Test func compareGridMetricsMakeRemainingItemsLargerAfterNarrowing() {
+    let fourUp = CompareGridMetrics(
+        availableSize: CGSize(width: 1_600, height: 900),
+        itemCount: 4
+    )
+    let twoUp = CompareGridMetrics(
+        availableSize: CGSize(width: 1_600, height: 900),
+        itemCount: 2
+    )
 
-    #expect(zoomedOut.cardWidth < defaultZoom.cardWidth)
-    #expect(zoomedIn.cardWidth > defaultZoom.cardWidth)
+    #expect(twoUp.columnCount == 2)
+    #expect(twoUp.rowCount == 1)
+    #expect(twoUp.cardWidth >= fourUp.cardWidth)
+    #expect(twoUp.imageHeight > fourUp.imageHeight)
 }
 
 @Test func compareViewportRoundTripsNormalizedAndContentOrigins() {

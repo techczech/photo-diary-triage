@@ -66,7 +66,6 @@ final class AppState: ObservableObject {
     @Published var previewingMediaItemID: UUID?
     @Published var comparingMediaItemIDs: [UUID] = []
     @Published var compareSheetTitle: String = "Compare Selection"
-    @Published var compareGridCardWidth: Double = CompareGridMetrics.defaultCardWidth
     @Published var reviewGridColumnCount: Int = 1
     @Published var statusMessage: String = "Choose a source folder on the SSD to begin."
     @Published var thumbnailFailures: Set<UUID> = []
@@ -667,18 +666,6 @@ final class AppState: ObservableObject {
         setReviewGridCardWidth(ReviewGridMetrics.defaultCardWidth)
     }
 
-    func increaseCompareGridCardWidth() {
-        compareGridCardWidth = min(compareGridCardWidth + CompareGridMetrics.cardWidthStep, CompareGridMetrics.maxCardWidth)
-    }
-
-    func decreaseCompareGridCardWidth() {
-        compareGridCardWidth = max(compareGridCardWidth - CompareGridMetrics.cardWidthStep, CompareGridMetrics.minCardWidth)
-    }
-
-    func resetCompareGridCardWidth() {
-        compareGridCardWidth = CompareGridMetrics.defaultCardWidth
-    }
-
     func setBurstThresholdSeconds(_ threshold: TimeInterval) {
         let clamped = min(max(threshold, 0.5), 10)
         guard settings.burstThresholdSeconds != clamped else { return }
@@ -1099,7 +1086,6 @@ final class AppState: ObservableObject {
         }
         guard deduplicatedIDs.count >= 2 else { return }
         reviewGridHasFocus = false
-        compareGridCardWidth = CompareGridMetrics.defaultCardWidth
         compareSheetTitle = title
         comparingMediaItemIDs = deduplicatedIDs
         statusMessage = "Opened compare view for \(deduplicatedIDs.count) item(s)."
@@ -1107,7 +1093,6 @@ final class AppState: ObservableObject {
 
     func closeComparison() {
         comparingMediaItemIDs.removeAll()
-        compareGridCardWidth = CompareGridMetrics.defaultCardWidth
     }
 
     func removeItemFromComparison(_ itemID: UUID) {
