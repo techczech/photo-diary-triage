@@ -157,7 +157,7 @@ struct PhotoDiaryCommands: Commands {
 
             Divider()
 
-            Button("Include Selection For Import") {
+            Button("Select Selection For Import") {
                 appState.markCurrentSelectionForImport()
             }
             .keyboardShortcut("i", modifiers: [.command])

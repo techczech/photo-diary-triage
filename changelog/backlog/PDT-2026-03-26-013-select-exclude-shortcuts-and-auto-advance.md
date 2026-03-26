@@ -1,0 +1,27 @@
+# PDT-2026-03-26-013 Select/exclude shortcuts and auto-advance
+
+- item ID: PDT-2026-03-26-013
+- title: Select/exclude shortcuts and auto-advance
+- user request summary:
+  - The new exclude action is useful, but the `X` keyboard shortcut does not work in practice.
+  - Fast triage should auto-advance after marking an item so the user can move through a set without extra arrow presses.
+  - The positive action should use `S` for “Select” instead of `I`, so `S` and `X` sit close together on the keyboard.
+- constraints:
+  - Preserve the current speed baseline and working review focus behavior.
+  - Keep explicit triage states and filters introduced in `0.1.50`.
+  - Avoid regressing compare, grouped review, or command-menu keyboard coverage.
+- implementation intent:
+  - Fix single-key review handling for exclude.
+  - Remap the fast positive triage action to `S` while keeping a safe command-menu path for the same action.
+  - Auto-advance focus after select or exclude so repeated triage is faster in flat review, grouped review, and compare.
+- test conditions:
+  - manual review of `S`, `X`, and auto-advance behavior
+  - `swift build`
+  - `swift test`
+- success criteria:
+  - `X` reliably excludes the current selection from the review surface.
+  - `S` selects the current item for import.
+  - after select or exclude, focus moves to the next review item automatically when possible.
+- current status: draft
+- target release version: 0.1.51
+- target feature slug: select-exclude-shortcuts-and-auto-advance

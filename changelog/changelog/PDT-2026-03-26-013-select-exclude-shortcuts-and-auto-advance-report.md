@@ -1,0 +1,24 @@
+# PDT-2026-03-26-013 Select/exclude shortcuts and auto-advance report
+
+- item ID: PDT-2026-03-26-013
+- summary of what changed:
+  - Fixed the broken single-key `X` exclude path by wiring it through the review key responder.
+  - Remapped the fast positive triage shortcut from `I` to `S` and updated review labels to “Select”.
+  - Added auto-advance after select or exclude so focused-item triage moves to the next review item automatically.
+  - Updated focused-item triage fallback so single-key actions operate on the focused review item even when there is no explicit multi-selection.
+- files changed:
+  - `Sources/PhotoDiaryTriage/AppCommands.swift`
+  - `Sources/PhotoDiaryTriage/AppState.swift`
+  - `Sources/PhotoDiaryTriage/ContentAuxiliaryViews.swift`
+  - `Sources/PhotoDiaryTriage/ContentReviewItemViews.swift`
+  - `Sources/PhotoDiaryTriage/ContentViewBrowserSections.swift`
+  - `Tests/PhotoDiaryTriageTests/ReviewInteractionTests.swift`
+  - `APP_RELEASE.env`
+- verification performed:
+  - `swift build`
+  - `swift test`
+- known gaps or follow-up items:
+  - compare locked zoom/pan and compare narrowing remain the next major decision-flow slice
+  - command-menu positive triage remains `Cmd-I` to avoid colliding with standard save semantics while the fast single-key path is now `S`
+- shipped release version: 0.1.51
+- shipped feature slug: select-exclude-shortcuts-and-auto-advance

@@ -32,10 +32,10 @@ struct ReviewGridCard: View {
 
             HStack {
                 if canMutateImportSelection {
-                    Button("Include (I)", action: includeForImport)
+                    Button("Select (S)", action: includeForImport)
                         .buttonStyle(.bordered)
                         .disabled(item.selectionState.isIncluded)
-                        .shortcutHint("I / Cmd-I", help: "Include this item for import (I / Cmd-I)")
+                        .shortcutHint("S / Cmd-I", help: "Select this item for import (S / Cmd-I)")
 
                     Button("Exclude (X)", action: excludeFromImport)
                         .buttonStyle(.bordered)
@@ -218,10 +218,10 @@ struct MediaItemRow: View {
 
             HStack {
                 if canMutateImportSelection {
-                    Button("Include (I)", action: includeForImport)
+                    Button("Select (S)", action: includeForImport)
                         .buttonStyle(.bordered)
                         .disabled(item.selectionState.isIncluded)
-                        .shortcutHint("I / Cmd-I", help: "Include this item for import (I / Cmd-I)")
+                        .shortcutHint("S / Cmd-I", help: "Select this item for import (S / Cmd-I)")
 
                     Button("Exclude (X)", action: excludeFromImport)
                         .buttonStyle(.bordered)
