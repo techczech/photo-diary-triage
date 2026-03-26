@@ -1110,6 +1110,24 @@ final class AppState: ObservableObject {
         compareGridCardWidth = CompareGridMetrics.defaultCardWidth
     }
 
+    func removeItemFromComparison(_ itemID: UUID) {
+        comparingMediaItemIDs.removeAll { $0 == itemID }
+        if comparingMediaItemIDs.isEmpty {
+            closeComparison()
+            statusMessage = "Removed the last compare item and closed compare."
+            return
+        }
+
+        if selectedMediaItemIDs.contains(itemID) {
+            selectedMediaItemIDs.remove(itemID)
+        }
+        if focusedReviewItemID == itemID {
+            focusedReviewItemID = comparingMediaItemIDs.first
+        }
+
+        statusMessage = "Removed item from compare. \(comparingMediaItemIDs.count) item(s) remain."
+    }
+
     func focusComparisonItem(_ itemID: UUID, extendingSelection: Bool = false) {
         let modifiers: NSEvent.ModifierFlags = extendingSelection ? [.shift] : []
         handleGridSelection(for: itemID, modifiers: modifiers)

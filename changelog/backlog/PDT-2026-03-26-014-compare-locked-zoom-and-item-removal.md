@@ -1,0 +1,27 @@
+# PDT-2026-03-26-014 Compare locked zoom and item removal
+
+- item ID: PDT-2026-03-26-014
+- title: Compare locked zoom and item removal
+- user request summary:
+  - The main grid triage flow is now working well enough to focus on compare.
+  - Compare needs locked zoom and locked panning so multiple images stay aligned on the same detail area while inspecting quality.
+  - Compare also needs per-item removal so the user can narrow a set without closing compare and reopening it.
+- constraints:
+  - Preserve the current fullscreen compare layout and working triage actions.
+  - Keep compare responsive for 2 to 4 items.
+  - Do not regress current selection, include/exclude, or compare sizing behavior.
+- implementation intent:
+  - Add a compare interaction mode that can keep scroll positions synchronized across compared images.
+  - Add direct remove controls on compare cards and keep the remaining compare set open.
+  - Keep compare edits writing back to the same triage state and selection state.
+- test conditions:
+  - manual compare review of locked zoom/pan and remove-without-close flow
+  - `swift build`
+  - `swift test`
+- success criteria:
+  - when locked compare navigation is enabled, zoomed images pan together to the same relative position
+  - removing one compare item leaves compare open on the remaining items
+  - compare remains usable as a narrowing workflow instead of a dead-end viewer
+- current status: draft
+- target release version: 0.1.52
+- target feature slug: compare-locked-zoom-and-item-removal
