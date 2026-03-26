@@ -341,7 +341,7 @@ struct ImportSession: Identifiable, Codable, Hashable, Sendable {
         lastUpdatedAt = try container.decodeIfPresent(Date.self, forKey: .lastUpdatedAt) ?? startedAt
         walkMetadata = try container.decodeIfPresent(WalkMetadata.self, forKey: .walkMetadata) ?? .empty
         archiveRoot = try container.decode(URL.self, forKey: .archiveRoot)
-        sessionKind = try container.decodeIfPresent(SessionKind.self, forKey: .sessionKind) ?? .walkDraft
+        sessionKind = try container.decodeIfPresent(SessionKind.self, forKey: .sessionKind) ?? .inbox
         status = try container.decodeIfPresent(String.self, forKey: .status) ?? "draft"
         mediaItems = try container.decodeIfPresent([MediaItem].self, forKey: .mediaItems) ?? []
     }
