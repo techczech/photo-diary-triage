@@ -12,6 +12,7 @@ struct FileScanner {
     func scanFolder(_ folder: URL, settings: AppSettings) throws -> [MediaItem] {
         let resourceKeys: Set<URLResourceKey> = [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]
         let enumerator = fileManager.enumerator(at: folder, includingPropertiesForKeys: Array(resourceKeys))!
+        let baseFolder = folder.resolvingSymlinksInPath().standardizedFileURL
         var candidates: [ScanCandidate] = []
 
         for case let fileURL as URL in enumerator {
@@ -22,7 +23,7 @@ struct FileScanner {
             guard settings.supportedExtensions.contains(ext) else { continue }
 
             let metadata = metadataExtractor.extract(from: fileURL)
-            let relativePath = fileURL.path.replacingOccurrences(of: folder.path + "/", with: "")
+            let relativePath = relativePath(for: fileURL, relativeTo: baseFolder)
             let fileSize = Int64(values.fileSize ?? 0)
             let baseName = fileURL.deletingPathExtension().lastPathComponent
             let relativeDirectory = URL(fileURLWithPath: relativePath).deletingLastPathComponent().path
@@ -113,6 +114,18 @@ struct FileScanner {
         case .raw:
             return 3
         }
+    }
+
+    private func relativePath(for fileURL: URL, relativeTo folder: URL) -> String {
+        let resolvedFileURL = fileURL.resolvingSymlinksInPath().standardizedFileURL
+        let folderComponents = folder.pathComponents
+        let fileComponents = resolvedFileURL.pathComponents
+
+        if fileComponents.starts(with: folderComponents) {
+            return fileComponents.dropFirst(folderComponents.count).joined(separator: "/")
+        }
+
+        return resolvedFileURL.lastPathComponent
     }
 }
 
