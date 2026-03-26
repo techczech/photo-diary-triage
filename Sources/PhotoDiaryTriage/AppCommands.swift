@@ -135,13 +135,13 @@ struct PhotoDiaryCommands: Commands {
 
             Divider()
 
-            Button("Mark Selection For Import") {
+            Button("Include Selection For Import") {
                 appState.markCurrentSelectionForImport()
             }
             .keyboardShortcut("i", modifiers: [.command])
             .disabled(!appState.canMarkSelectionForImport)
 
-            Button("Remove Selection From Import") {
+            Button("Clear Selection To Undecided") {
                 appState.unmarkCurrentSelectionForImport()
             }
             .keyboardShortcut("I", modifiers: [.command, .shift])
@@ -181,7 +181,7 @@ struct PhotoDiaryCommands: Commands {
 
             Divider()
 
-            Button("Copy Marked Files Into Archive") {
+            Button("Copy Included Files Into Archive") {
                 appState.commitImport()
             }
             .keyboardShortcut("m", modifiers: [.command, .shift])

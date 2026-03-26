@@ -25,7 +25,7 @@ struct SidebarPaneView: View {
                             .textSelection(.enabled)
                         Text("\(session.mediaItems.count) visible items")
                             .font(.caption)
-                        Text("\(session.mediaItems.filter { $0.selectionState == .selected }.count) marked for import")
+                        Text("\(session.mediaItems.filter { $0.selectionState.isIncluded }.count) included for import")
                             .font(.caption)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -172,7 +172,7 @@ struct ActionButtonsPaneView: View {
 
     private var actionButtons: some View {
         Group {
-            Button("Copy Marked Files Into Archive") {
+            Button("Copy Included Files Into Archive") {
                 appState.commitImport()
             }
             .disabled(!appState.canCommitImport)

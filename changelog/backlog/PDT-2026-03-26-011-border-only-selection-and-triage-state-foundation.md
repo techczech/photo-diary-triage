@@ -1,0 +1,27 @@
+# PDT-2026-03-26-011 Border-only selection and triage-state foundation
+
+- item ID: PDT-2026-03-26-011
+- title: Border-only selection and triage-state foundation
+- user request summary:
+  - Selected review items should not be dimmed by a tinted overlay; the image should remain clear and selection should be communicated by borders.
+  - The app needs to move away from the old binary mark/unmark model and establish the explicit triage-state foundation needed for include/exclude workflows and filters.
+- constraints:
+  - Preserve the current speed, keyboard, and layout baseline from `0.1.48`.
+  - Keep existing saved sessions readable after the selection-state change.
+  - Do not attempt the full filter or compare redesign in this slice.
+- implementation intent:
+  - Remove tinted selection fills from review and compare cards.
+  - Replace the binary `selected`/`skipped` triage state with backward-compatible `included`/`undecided`/`excluded`.
+  - Update current include/clear actions to use the new semantics while keeping the import pipeline behavior unchanged for included items.
+- test conditions:
+  - `swift build`
+  - `swift test`
+  - legacy saved triage state values decode correctly
+  - included items still drive import planning and progress counts
+- success criteria:
+  - Selected items remain visually readable without image tinting.
+  - The codebase uses explicit triage states.
+  - Existing saved sessions using `selected`/`skipped` still load correctly.
+- current status: awaiting_user_review
+- target release version: 0.1.49
+- target feature slug: border-only-selection-and-triage-state-foundation

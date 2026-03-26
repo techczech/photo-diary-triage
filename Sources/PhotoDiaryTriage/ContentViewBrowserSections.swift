@@ -329,7 +329,7 @@ struct ReviewPaneView: View {
                             toggleImport: {
                                 guard appState.canMutateImportSelection else { return }
                                 appState.selectMediaItems([item.id])
-                                if item.selectionState == .selected {
+                                if item.selectionState.isIncluded {
                                     appState.unmarkCurrentSelectionForImport()
                                 } else {
                                     appState.markCurrentSelectionForImport()
@@ -493,12 +493,12 @@ struct ReviewPaneView: View {
             .disabled(appState.selectedMediaItemIDs.isEmpty)
 
             if appState.canMutateImportSelection {
-                Button("Mark For Import") {
+                Button("Include For Import") {
                     appState.markCurrentSelectionForImport()
                 }
                 .disabled(!appState.canMarkSelectionForImport)
 
-                Button("Unmark") {
+                Button("Clear To Undecided") {
                     appState.unmarkCurrentSelectionForImport()
                 }
                 .disabled(!appState.canUnmarkSelectionForImport)
@@ -530,7 +530,7 @@ struct ReviewPaneView: View {
                     toggleImport: {
                         guard appState.canMutateImportSelection else { return }
                         appState.selectMediaItems([item.id])
-                        if item.selectionState == .selected {
+                        if item.selectionState.isIncluded {
                             appState.unmarkCurrentSelectionForImport()
                         } else {
                             appState.markCurrentSelectionForImport()
@@ -772,7 +772,7 @@ private struct GroupedReviewSectionNodeView: View {
             toggleImport: {
                 guard appState.canMutateImportSelection else { return }
                 appState.selectMediaItems([item.id])
-                if item.selectionState == .selected {
+                if item.selectionState.isIncluded {
                     appState.unmarkCurrentSelectionForImport()
                 } else {
                     appState.markCurrentSelectionForImport()
@@ -796,7 +796,7 @@ private struct GroupedReviewSectionNodeView: View {
             toggleImport: {
                 guard appState.canMutateImportSelection else { return }
                 appState.selectMediaItems([item.id])
-                if item.selectionState == .selected {
+                if item.selectionState.isIncluded {
                     appState.unmarkCurrentSelectionForImport()
                 } else {
                     appState.markCurrentSelectionForImport()

@@ -380,7 +380,7 @@ final class AppState: ObservableObject {
     }
 
     var canCommitImport: Bool {
-        currentSession?.mediaItems.contains { $0.selectionState == .selected } ?? false
+        currentSession?.mediaItems.contains { $0.selectionState.isIncluded } ?? false
     }
 
     var canConfirmBackup: Bool {
@@ -1124,13 +1124,13 @@ final class AppState: ObservableObject {
     func markCurrentSelectionForImport() {
         guard canMutateImportSelection else { return }
         updateImportState(for: currentSelectionMediaIDs(), selected: true)
-        statusMessage = "Marked \(currentSelectionMediaIDs().count) item(s) for import."
+        statusMessage = "Included \(currentSelectionMediaIDs().count) item(s) for import."
     }
 
     func unmarkCurrentSelectionForImport() {
         guard canMutateImportSelection else { return }
         updateImportState(for: currentSelectionMediaIDs(), selected: false)
-        statusMessage = "Removed \(currentSelectionMediaIDs().count) item(s) from import."
+        statusMessage = "Cleared \(currentSelectionMediaIDs().count) item(s) back to undecided."
     }
 
     func toggleRawForCurrentMediaSelection() {

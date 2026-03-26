@@ -30,9 +30,9 @@ struct ReviewGridCard: View {
 
             HStack {
                 if canMutateImportSelection {
-                    Button(item.selectionState == .selected ? "Unmark (D)" : "Mark (I)", action: toggleImport)
+                    Button(item.selectionState.isIncluded ? "Clear (D)" : "Include (I)", action: toggleImport)
                         .buttonStyle(.borderedProminent)
-                        .shortcutHint(item.selectionState == .selected ? "D / Cmd-Shift-I" : "I / Cmd-I", help: item.selectionState == .selected ? "Remove this item from import (D / Cmd-Shift-I)" : "Mark this item for import (I / Cmd-I)")
+                        .shortcutHint(item.selectionState.isIncluded ? "D / Cmd-Shift-I" : "I / Cmd-I", help: item.selectionState.isIncluded ? "Clear this item back to undecided (D / Cmd-Shift-I)" : "Include this item for import (I / Cmd-I)")
                 }
                 Spacer()
             }
@@ -43,12 +43,6 @@ struct ReviewGridCard: View {
         .overlay {
             RoundedRectangle(cornerRadius: 16)
                 .stroke(Color.secondary.opacity(0.16), lineWidth: 1)
-        }
-        .overlay {
-            if isSelected {
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(Color.accentColor.opacity(0.08))
-            }
         }
         .overlay {
             RoundedRectangle(cornerRadius: 16)
@@ -85,11 +79,11 @@ struct ReviewGridCard: View {
                     .font(.headline)
                     .lineLimit(1)
                 Spacer()
-                Text(item.selectionState == .selected ? "Marked" : "Not Marked")
+                Text(item.selectionState.statusLabel)
                     .font(.caption2)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(item.selectionState == .selected ? Color.accentColor.opacity(0.15) : Color.secondary.opacity(0.12))
+                    .background(statusBadgeColor)
                     .clipShape(Capsule())
             }
 
@@ -104,7 +98,7 @@ struct ReviewGridCard: View {
                     .foregroundStyle(.secondary)
             }
 
-            if item.selectionState == .selected, !archivePreview.isEmpty {
+            if item.selectionState.isIncluded, !archivePreview.isEmpty {
                 Text(archivePreview)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -115,6 +109,17 @@ struct ReviewGridCard: View {
         .shortcutHint("Shift-click / Cmd-click / Double-click", help: "Click to select. Shift-click extends the selection, Command-click toggles selection, and double-click opens preview.")
         .overlay {
             ReviewGridClickTarget(onClick: onClick)
+        }
+    }
+
+    private var statusBadgeColor: Color {
+        switch item.selectionState {
+        case .included:
+            return Color.accentColor.opacity(0.15)
+        case .excluded:
+            return Color.red.opacity(0.14)
+        case .undecided:
+            return Color.secondary.opacity(0.12)
         }
     }
 
@@ -165,11 +170,11 @@ struct MediaItemRow: View {
                         Text(item.fileName)
                             .font(.headline)
                         Spacer()
-                        Text(item.selectionState == .selected ? "Marked" : "Not Marked")
+                        Text(item.selectionState.statusLabel)
                             .font(.caption2)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
-                            .background(item.selectionState == .selected ? Color.accentColor.opacity(0.15) : Color.secondary.opacity(0.12))
+                            .background(statusBadgeColor)
                             .clipShape(Capsule())
                     }
 
@@ -197,14 +202,14 @@ struct MediaItemRow: View {
 
             HStack {
                 if canMutateImportSelection {
-                    Button(item.selectionState == .selected ? "Unmark (D)" : "Mark (I)", action: toggleImport)
+                    Button(item.selectionState.isIncluded ? "Clear (D)" : "Include (I)", action: toggleImport)
                         .buttonStyle(.borderedProminent)
-                        .shortcutHint(item.selectionState == .selected ? "D / Cmd-Shift-I" : "I / Cmd-I", help: item.selectionState == .selected ? "Remove this item from import (D / Cmd-Shift-I)" : "Mark this item for import (I / Cmd-I)")
+                        .shortcutHint(item.selectionState.isIncluded ? "D / Cmd-Shift-I" : "I / Cmd-I", help: item.selectionState.isIncluded ? "Clear this item back to undecided (D / Cmd-Shift-I)" : "Include this item for import (I / Cmd-I)")
                 }
                 Spacer()
             }
 
-            if item.selectionState == .selected, !archivePreview.isEmpty {
+            if item.selectionState.isIncluded, !archivePreview.isEmpty {
                 Text(archivePreview)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -214,7 +219,6 @@ struct MediaItemRow: View {
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
-        .background(rowBackground, in: RoundedRectangle(cornerRadius: 12))
         .overlay {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(Color.secondary.opacity(0.14), lineWidth: 1)
@@ -225,14 +229,15 @@ struct MediaItemRow: View {
         }
     }
 
-    private var rowBackground: Color {
-        if isSelected {
-            return Color.accentColor.opacity(0.08)
+    private var statusBadgeColor: Color {
+        switch item.selectionState {
+        case .included:
+            return Color.accentColor.opacity(0.15)
+        case .excluded:
+            return Color.red.opacity(0.14)
+        case .undecided:
+            return Color.secondary.opacity(0.12)
         }
-        if isFocused {
-            return Color.accentColor.opacity(0.04)
-        }
-        return Color.clear
     }
 
     @ViewBuilder

@@ -58,7 +58,7 @@ func makeTestMediaItem(
     sourceRoot: URL,
     fileName: String,
     capturedAt: Date,
-    selectionState: SelectionState = .skipped,
+    selectionState: SelectionState = .undecided,
     importRawCompanions: Bool = false,
     companionFiles: [CompanionFile] = [],
     lifecycleState: LifecycleState = .discovered

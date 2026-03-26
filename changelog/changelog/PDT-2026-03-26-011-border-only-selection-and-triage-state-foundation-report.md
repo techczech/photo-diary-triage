@@ -1,0 +1,33 @@
+# PDT-2026-03-26-011 Border-only selection and triage-state foundation report
+
+- item ID: PDT-2026-03-26-011
+- summary of what changed:
+  - removed tinted selection fills from the main review cards and compare cards so selection is communicated by borders instead of dimming the image
+  - replaced the old binary `selected` / `skipped` triage model with explicit `included` / `undecided` / `excluded` states
+  - kept existing saved sessions compatible by decoding legacy `selected` and `skipped` values into the new triage states
+  - updated current include/clear actions and import-path checks to use the new triage semantics while preserving existing included-item import behavior
+- files changed:
+  - `Sources/PhotoDiaryTriage/Models.swift`
+  - `Sources/PhotoDiaryTriage/SessionMutationCoordinator.swift`
+  - `Sources/PhotoDiaryTriage/AppState.swift`
+  - `Sources/PhotoDiaryTriage/ArchivePlanner.swift`
+  - `Sources/PhotoDiaryTriage/ImportCoordinator.swift`
+  - `Sources/PhotoDiaryTriage/StateSupport.swift`
+  - `Sources/PhotoDiaryTriage/ContentReviewItemViews.swift`
+  - `Sources/PhotoDiaryTriage/ContentAuxiliaryViews.swift`
+  - `Sources/PhotoDiaryTriage/ContentViewBrowserSections.swift`
+  - `Sources/PhotoDiaryTriage/ContentViewSections.swift`
+  - `Sources/PhotoDiaryTriage/AppCommands.swift`
+  - `Sources/PhotoDiaryTriage/ContentInspectorViews.swift`
+  - `Tests/PhotoDiaryTriageTests/PhotoDiaryTriageTests.swift`
+  - `Tests/PhotoDiaryTriageTests/ImportWorkflowTests.swift`
+  - `Tests/PhotoDiaryTriageTests/TestSupport.swift`
+  - `APP_RELEASE.env`
+- verification performed:
+  - `swift build`
+  - `swift test`
+- known gaps or follow-up items:
+  - filters, explicit exclude actions, and compare narrowing are not part of this tranche yet
+  - locked compare zoom/pan remains a follow-up item
+- shipped release version: 0.1.49
+- shipped feature slug: border-only-selection-and-triage-state-foundation

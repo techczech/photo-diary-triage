@@ -46,8 +46,53 @@ enum LifecycleTransitionError: LocalizedError, Sendable {
 }
 
 enum SelectionState: String, Codable, CaseIterable, Sendable {
-    case skipped
-    case selected
+    case undecided
+    case included
+    case excluded
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawValue = try container.decode(String.self)
+
+        switch rawValue {
+        case "selected", "included":
+            self = .included
+        case "skipped", "undecided":
+            self = .undecided
+        case "excluded":
+            self = .excluded
+        default:
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unknown selection state: \(rawValue)")
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+
+    var isIncluded: Bool {
+        self == .included
+    }
+
+    var isExcluded: Bool {
+        self == .excluded
+    }
+
+    var isUndecided: Bool {
+        self == .undecided
+    }
+
+    var statusLabel: String {
+        switch self {
+        case .undecided:
+            return "Undecided"
+        case .included:
+            return "Included"
+        case .excluded:
+            return "Excluded"
+        }
+    }
 }
 
 enum MediaKind: String, Codable, CaseIterable, Sendable {
@@ -254,7 +299,7 @@ struct MediaItem: Identifiable, Codable, Hashable, Sendable {
         capturedAt: Date?,
         metadata: MediaMetadata,
         thumbnailCacheKey: String,
-        selectionState: SelectionState = .skipped,
+        selectionState: SelectionState = .undecided,
         importRawCompanions: Bool = false,
         companionFiles: [CompanionFile] = [],
         lifecycleState: LifecycleState = .discovered,

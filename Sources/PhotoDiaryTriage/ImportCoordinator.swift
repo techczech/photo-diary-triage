@@ -90,7 +90,7 @@ struct ImportCoordinator: ImportCoordinating {
     func cleanupImportedSources(in session: ImportSession) async throws -> ImportSession {
         var updatedSession = session
         let cleanupAllowed = !session.mediaItems.contains {
-            $0.selectionState == .selected && $0.lifecycleState != .sourceCleanupPending && $0.lifecycleState != .sourceCleaned
+            $0.selectionState.isIncluded && $0.lifecycleState != .sourceCleanupPending && $0.lifecycleState != .sourceCleaned
         }
         guard cleanupAllowed else { return session }
 
@@ -113,7 +113,7 @@ struct ImportCoordinator: ImportCoordinating {
     }
 
     private func verifyImportedFiles(in session: inout ImportSession, events: inout [SessionLogEvent]) throws {
-        for index in session.mediaItems.indices where session.mediaItems[index].selectionState == .selected {
+        for index in session.mediaItems.indices where session.mediaItems[index].selectionState.isIncluded {
             guard let destinationURL = session.mediaItems[index].destinationURL else { continue }
             let sourceAttributes = try fileManager.attributesOfItem(atPath: session.mediaItems[index].sourceURL.path)
             let destinationAttributes = try fileManager.attributesOfItem(atPath: destinationURL.path)
@@ -177,7 +177,7 @@ struct ImportCoordinator: ImportCoordinating {
 
     private func buildFileManifests(for session: ImportSession) -> [FileManifest] {
         session.mediaItems
-            .filter { $0.selectionState == .selected }
+            .filter { $0.selectionState.isIncluded }
             .compactMap { item in
                 guard let destinationURL = item.destinationURL else { return nil }
                 return FileManifest(

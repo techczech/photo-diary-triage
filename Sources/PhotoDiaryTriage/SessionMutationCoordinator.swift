@@ -67,19 +67,27 @@ final class SessionMutationCoordinator {
         mediaIDs: Set<UUID>,
         selected: Bool
     ) -> ImportSession {
+        sessionByUpdatingTriageState(session, mediaIDs: mediaIDs, selectionState: selected ? .included : .undecided)
+    }
+
+    func sessionByUpdatingTriageState(
+        _ session: ImportSession,
+        mediaIDs: Set<UUID>,
+        selectionState: SelectionState
+    ) -> ImportSession {
         var updatedSession = session
 
         for index in updatedSession.mediaItems.indices where mediaIDs.contains(updatedSession.mediaItems[index].id) {
             do {
-                let targetState: LifecycleState = selected ? .selectedForImport : .discovered
+                let targetState: LifecycleState = selectionState.isIncluded ? .selectedForImport : .discovered
                 updatedSession.mediaItems[index].lifecycleState = try updatedSession.mediaItems[index].lifecycleState.transition(to: targetState)
             } catch {
                 logger.error("Failed to update import selection for \(updatedSession.mediaItems[index].sourceURL.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
                 continue
             }
 
-            updatedSession.mediaItems[index].selectionState = selected ? .selected : .skipped
-            if selected == false {
+            updatedSession.mediaItems[index].selectionState = selectionState
+            if selectionState.isIncluded == false {
                 updatedSession.mediaItems[index].importRawCompanions = false
             }
         }
