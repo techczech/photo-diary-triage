@@ -11,6 +11,11 @@ private enum CurrentSessionUpdateKind {
     case sessionOnly
 }
 
+private struct CompareSelectionBackup {
+    let selectionState: ReviewSelectionState
+    let keyboardTarget: ReviewKeyboardTarget
+}
+
 @MainActor
 final class AppState: ObservableObject {
     @Published var settings: AppSettings {
@@ -258,6 +263,7 @@ final class AppState: ObservableObject {
     private let supportRoot: URL
     private let logger = AppLogger.appState
     private let latencyRecorder = LatencyRecorder()
+    private var compareSelectionBackup: CompareSelectionBackup?
     private let sessionPersistenceQueue = DispatchQueue(label: "PhotoDiaryTriage.session-persistence", qos: .utility)
     private let thumbnailScheduler = ThumbnailScheduler()
     private let thumbnailImageCache = NSCache<NSURL, NSImage>()
@@ -1391,7 +1397,19 @@ final class AppState: ObservableObject {
         }
         guard deduplicatedIDs.count >= 2 else { return }
         latencyRecorder.begin("compare.open")
-        reviewGridHasFocus = false
+        if compareSelectionBackup == nil {
+            compareSelectionBackup = CompareSelectionBackup(
+                selectionState: reviewSelectionState(),
+                keyboardTarget: reviewKeyboardTarget
+            )
+        }
+        reviewKeyboardTarget = .items
+        reviewGridHasFocus = true
+        if let firstID = deduplicatedIDs.first {
+            selectedMediaItemIDs = [firstID]
+            focusedReviewItemID = firstID
+            reviewSelectionAnchorID = firstID
+        }
         compareGridColumnCount = CompareGridMetrics.defaultColumnCount(for: deduplicatedIDs.count)
         compareSheetTitle = title
         comparingMediaItemIDs = deduplicatedIDs
@@ -1405,6 +1423,15 @@ final class AppState: ObservableObject {
         latencyRecorder.begin("compare.close")
         comparingMediaItemIDs.removeAll()
         compareGridColumnCount = CompareGridMetrics.defaultColumnCount(for: 0)
+        if let backup = compareSelectionBackup {
+            selectedMediaItemIDs = backup.selectionState.selectedMediaItemIDs
+            focusedReviewItemID = backup.selectionState.focusedReviewItemID
+            reviewSelectionAnchorID = backup.selectionState.reviewSelectionAnchorID
+            reviewGridHasFocus = backup.selectionState.reviewGridHasFocus
+            reviewKeyboardTarget = backup.keyboardTarget
+            activePane = backup.selectionState.activePane
+            compareSelectionBackup = nil
+        }
         DispatchQueue.main.async { [weak self] in
             self?.latencyRecorder.end("compare.close")
         }
@@ -1418,20 +1445,41 @@ final class AppState: ObservableObject {
             return
         }
 
-        if selectedMediaItemIDs.contains(itemID) {
+        let replacementID = comparingMediaItemIDs.first(where: { selectedMediaItemIDs.contains($0) }) ?? comparingMediaItemIDs.first
+        let selectionStillReferencesCompareItems = selectedMediaItemIDs.contains { comparingMediaItemIDs.contains($0) }
+        if focusedReviewItemID == itemID || !selectionStillReferencesCompareItems {
+            if let replacementID {
+                selectedMediaItemIDs = [replacementID]
+                focusedReviewItemID = replacementID
+                reviewSelectionAnchorID = replacementID
+            }
+        } else if selectedMediaItemIDs.contains(itemID) {
             selectedMediaItemIDs.remove(itemID)
-        }
-        if focusedReviewItemID == itemID {
-            focusedReviewItemID = comparingMediaItemIDs.first
         }
         compareGridColumnCount = min(compareGridColumnCount, max(comparingMediaItemIDs.count, 1))
 
         statusMessage = "Removed item from compare. \(comparingMediaItemIDs.count) item(s) remain."
     }
 
-    func focusComparisonItem(_ itemID: UUID, extendingSelection: Bool = false) {
-        let modifiers: NSEvent.ModifierFlags = extendingSelection ? [.shift] : []
-        handleGridSelection(for: itemID, modifiers: modifiers)
+    func focusComparisonItem(_ itemID: UUID, extendingSelection _: Bool = false) {
+        guard comparingMediaItemIDs.contains(itemID) else { return }
+        selectedMediaItemIDs = [itemID]
+        focusedReviewItemID = itemID
+        reviewSelectionAnchorID = itemID
+        reviewKeyboardTarget = .items
+        reviewGridHasFocus = true
+        activePane = .media
+    }
+
+    func moveComparisonFocus(dx: Int, dy: Int) {
+        guard !comparingMediaItemIDs.isEmpty else { return }
+        let currentID = focusedReviewItemID ?? selectedMediaItemIDs.first ?? comparingMediaItemIDs.first
+        guard let currentID else { return }
+        let currentIndex = comparingMediaItemIDs.firstIndex(of: currentID) ?? 0
+        let columns = max(compareGridColumnCount, 1)
+        let offset = dx != 0 ? dx : dy * columns
+        let targetIndex = min(max(currentIndex + offset, 0), comparingMediaItemIDs.count - 1)
+        focusComparisonItem(comparingMediaItemIDs[targetIndex])
     }
 
     func toggleSelectionForComparisonItem(_ itemID: UUID) {
