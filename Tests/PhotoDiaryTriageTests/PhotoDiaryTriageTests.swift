@@ -20,6 +20,31 @@ import Testing
     #expect(currentExcluded == .excluded)
 }
 
+@Test func importSessionDecodesLegacyPayloadAsInbox() throws {
+    let decoder = JSONDecoder()
+    let json = """
+    {
+      "id": "9CC354E7-7E2D-4F23-9363-2B23783B0D8B",
+      "sourceFolder": "file:///Volumes/EOS_DIGITAL/DCIM/",
+      "archiveRoot": "file:///tmp/archive/",
+      "startedAt": 1000,
+      "lastUpdatedAt": 1001,
+      "walkMetadata": {
+        "title": "",
+        "location": "",
+        "notes": ""
+      },
+      "status": "draft",
+      "mediaItems": []
+    }
+    """
+
+    let decoded = try decoder.decode(ImportSession.self, from: Data(json.utf8))
+
+    #expect(decoded.sessionKind == .inbox)
+    #expect(decoded.workspaceSourceFolder.path == "/Volumes/EOS_DIGITAL/DCIM")
+}
+
 @Test func archivePlannerBuildsDateBasedFolderAndHandlesCollisions() throws {
     let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
     try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true, attributes: nil)

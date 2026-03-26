@@ -1,0 +1,23 @@
+# PDT-2026-03-26-031 Legacy Session Kind Default Fix
+
+- Item ID: `PDT-2026-03-26-031`
+- Title: `Legacy session kind default fix`
+- User request summary: `Restore source-folder loading on the real EOS SSD by fixing the migration path for legacy persisted sessions. Older sessions saved before walk drafts existed must not claim ownership of the whole source card.`
+- Constraints:
+  - Preserve explicit saved walk drafts created in current versions.
+  - Do not discard or corrupt existing persisted sessions.
+  - Restore source access without removing the multi-walk draft feature.
+- Implementation intent:
+  - Decode legacy sessions without `sessionKind` as `.inbox`, not `.walkDraft`.
+  - Add regression coverage for decoding pre-draft session JSON and for legacy sessions not subtracting all source files from a rescanned inbox.
+  - Keep explicit current-format draft sessions behaving unchanged.
+- Test conditions:
+  - A legacy session payload with no `sessionKind` decodes as `.inbox`.
+  - Rescanning a source folder with only legacy sessions still shows files.
+  - Explicit modern walk drafts still subtract their owned files from the inbox.
+- Success criteria:
+  - `/Volumes/EOS_DIGITAL/DCIM` loads again on machines with old persisted sessions.
+  - Saved walks created after the draft-library feature still behave normally.
+- Current status: `approved_for_implementation`
+- Target release version: `0.1.69`
+- Target feature slug: `legacy-session-kind-default-fix`
