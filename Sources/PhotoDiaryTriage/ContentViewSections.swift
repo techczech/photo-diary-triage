@@ -90,7 +90,7 @@ struct SidebarPaneView: View {
             SidebarStatusView(state: state, appRelease: appRelease)
         }
         .padding()
-        .frame(minWidth: 300)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var utilityButtons: some View {

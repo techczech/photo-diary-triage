@@ -27,7 +27,7 @@ struct ContentView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
+        HStack(spacing: 0) {
             SidebarPaneView(
                 appState: appState,
                 state: sidebarState,
@@ -37,8 +37,17 @@ struct ContentView: View {
                 summary: walkDetailsSummary,
                 appRelease: appRelease
             )
-        } detail: {
+            .frame(width: sidebarState.snapshot.isVisible ? 320 : 0, alignment: .leading)
+            .opacity(sidebarState.snapshot.isVisible ? 1 : 0)
+            .allowsHitTesting(sidebarState.snapshot.isVisible)
+            .clipped()
+
+            Divider()
+                .frame(width: sidebarState.snapshot.isVisible ? 1 : 0)
+                .opacity(sidebarState.snapshot.isVisible ? 1 : 0)
+
             detailPane
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .overlay {
             if !compareState.snapshot.itemIDs.isEmpty {
@@ -67,13 +76,8 @@ struct ContentView: View {
                 .layoutPriority(1)
 
             DetailsInspectorView(appState: appState, state: inspectorState)
-                .frame(
-                    minWidth: inspectorState.snapshot.isVisible ? 300 : 0,
-                    idealWidth: inspectorState.snapshot.isVisible ? 340 : 0,
-                    maxWidth: inspectorState.snapshot.isVisible ? 380 : 0,
-                    maxHeight: .infinity,
-                    alignment: .top
-                )
+                .frame(width: inspectorState.snapshot.isVisible ? 340 : 0, alignment: .top)
+                .frame(maxHeight: .infinity, alignment: .top)
                 .opacity(inspectorState.snapshot.isVisible ? 1 : 0)
                 .allowsHitTesting(inspectorState.snapshot.isVisible)
                 .clipped()

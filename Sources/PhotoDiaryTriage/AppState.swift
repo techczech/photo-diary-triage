@@ -104,6 +104,11 @@ final class AppState: ObservableObject {
             refreshSidebarState()
         }
     }
+    @Published var isSidebarVisible = true {
+        didSet {
+            refreshSidebarState()
+        }
+    }
     @Published var reviewFilter: ReviewFilter = .all {
         didSet {
             guard reviewFilter != oldValue else { return }
@@ -660,6 +665,10 @@ final class AppState: ObservableObject {
         reviewNavigationState.generation
     }
 
+    var inspectorSnapshotGeneration: Int {
+        inspectorState.generation
+    }
+
     func beginLatencyMeasurement(_ action: String) {
         latencyRecorder.begin(action)
     }
@@ -993,16 +1002,13 @@ final class AppState: ObservableObject {
 
     func toggleSidebarVisibility() {
         latencyRecorder.begin("sidebar.toggle")
-        let selector = #selector(NSSplitViewController.toggleSidebar(_:))
-        if NSApp.sendAction(selector, to: nil, from: nil) {
-            DispatchQueue.main.async { [weak self] in
-                self?.latencyRecorder.end("sidebar.toggle")
+        isSidebarVisible.toggle()
+        if !isSidebarVisible, activePane == .sidebar {
+            if canFocusReviewSurface {
+                focusReviewSurface()
+            } else if !selectedFolderNodeIDs.isEmpty || !detailFolderNodes.isEmpty {
+                activePane = .folders
             }
-            return
-        }
-
-        if let window = NSApp.keyWindow, let firstResponder = window.firstResponder {
-            _ = firstResponder.tryToPerform(selector, with: nil)
         }
         DispatchQueue.main.async { [weak self] in
             self?.latencyRecorder.end("sidebar.toggle")
@@ -1010,10 +1016,15 @@ final class AppState: ObservableObject {
     }
 
     func focusSidebarNavigation() {
+        if !isSidebarVisible {
+            isSidebarVisible = true
+        }
         activePane = .sidebar
         reviewGridHasFocus = false
         reviewKeyboardTarget = .items
-        DispatchQueue.main.async {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            guard self.isSidebarVisible, self.activePane == .sidebar else { return }
             self.focusSidebarFirstResponder()
         }
     }
@@ -1921,6 +1932,7 @@ final class AppState: ObservableObject {
         }
 
         let snapshot = SidebarSnapshot(
+            isVisible: isSidebarVisible,
             sessionSummary: summary,
             canMutateImportSelection: canMutateImportSelection,
             isWalkDetailsExpanded: isWalkDetailsExpanded,
@@ -1989,6 +2001,20 @@ final class AppState: ObservableObject {
     }
 
     private func refreshInspectorState() {
+        guard isDetailsInspectorVisible else {
+            inspectorState.update(
+                InspectorSnapshot(
+                    isVisible: false,
+                    browserNode: nil,
+                    fallbackFolderPath: nil,
+                    walkTitle: nil,
+                    walkLocation: nil,
+                    mediaItem: nil
+                )
+            )
+            return
+        }
+
         let snapshot = InspectorSnapshot(
             isVisible: isDetailsInspectorVisible,
             browserNode: inspectorBrowserNode,
@@ -2225,8 +2251,9 @@ final class AppState: ObservableObject {
     }
 
     private func focusSidebarFirstResponder() {
-        guard let window = NSApp.keyWindow,
-              let contentView = window.contentView else { return }
+        guard let window = NSApp.keyWindow else { return }
+        guard let contentView = window.contentViewController?.view
+            ?? (window.value(forKey: "contentView") as? NSView) else { return }
 
         if let outlineView = firstSubview(in: contentView, matching: { $0 is NSOutlineView }) as? NSOutlineView {
             window.makeFirstResponder(outlineView)

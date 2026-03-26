@@ -29,6 +29,7 @@ struct ReviewItemSnapshot: Identifiable, Equatable, Sendable {
 }
 
 struct SidebarSnapshot: Equatable, Sendable {
+    let isVisible: Bool
     let sessionSummary: SessionSummary?
     let canMutateImportSelection: Bool
     let isWalkDetailsExpanded: Bool
@@ -39,6 +40,7 @@ struct SidebarSnapshot: Equatable, Sendable {
     let importProgress: ImportProgress?
 
     static let empty = SidebarSnapshot(
+        isVisible: true,
         sessionSummary: nil,
         canMutateImportSelection: false,
         isWalkDetailsExpanded: true,
