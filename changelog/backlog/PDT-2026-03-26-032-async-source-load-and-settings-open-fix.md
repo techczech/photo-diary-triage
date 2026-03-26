@@ -1,0 +1,24 @@
+# PDT-2026-03-26-032 Async Source Load And Settings Open Fix
+
+- Item ID: `PDT-2026-03-26-032`
+- Title: `Async source load and settings open fix`
+- User request summary: `Fix the beachball and no-load behavior when choosing a source folder, and make the settings UI reliably open again from the app.`
+- Constraints:
+  - Preserve the current source inbox and saved-walk behavior.
+  - Do not regress keyboard-first triage or current review UI.
+  - Keep the app responsive while scanning large folders like `/Volumes/EOS_DIGITAL/DCIM`.
+- Implementation intent:
+  - Move source-folder scanning and grouping work off the main actor so choosing a source folder does not block the UI.
+  - Replace the sidebar settings button’s brittle AppKit action with a direct SwiftUI settings-opening path.
+  - Keep current inbox rebuild and legacy-session compatibility fixes intact.
+- Test conditions:
+  - Opening a large source folder no longer blocks the UI thread during scan.
+  - Choosing a local folder source still loads a session after scanning finishes.
+  - The settings button opens the settings UI reliably.
+- Success criteria:
+  - Source-folder selection no longer beachballs the app.
+  - Settings can be opened again from the main UI.
+  - Large source scans complete and show media instead of appearing to do nothing.
+- Current status: `approved_for_implementation`
+- Target release version: `0.1.70`
+- Target feature slug: `async-source-load-and-settings-open-fix`

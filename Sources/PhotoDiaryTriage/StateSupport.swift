@@ -42,13 +42,13 @@ struct AppStartupAlert: Identifiable, Equatable {
     let recoveryAction: RecoveryAction?
 }
 
-struct SessionLoadResult {
+struct SessionLoadResult: Sendable {
     let session: ImportSession
     let bursts: [BurstGroup]
     let clusters: [TimeCluster]
 }
 
-struct SessionOpenResult {
+struct SessionOpenResult: Sendable {
     let session: ImportSession
     let bursts: [BurstGroup]
     let clusters: [TimeCluster]

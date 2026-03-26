@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 
 struct SidebarPaneView: View {
+    @Environment(\.openSettings) private var openSettings
     let appState: AppState
     @ObservedObject var state: SidebarState
     @Binding var walkTitle: String
@@ -120,7 +121,7 @@ struct SidebarPaneView: View {
             }
 
             Button("Settings") {
-                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                openSettings()
             }
 
             Button("Shortcuts") {
