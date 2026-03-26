@@ -361,7 +361,7 @@ import Testing
     #expect(state.activePane == .media)
     #expect(state.reviewGridHasFocus)
     #expect(state.focusedReviewItemID != nil)
-    #expect(state.pendingReviewScrollTargetID == state.focusedReviewItemID)
+    #expect(state.pendingReviewScrollTargetID == nil)
 }
 
 @MainActor
@@ -432,7 +432,7 @@ import Testing
 
     #expect(!state.isGroupedSectionKeyboardTargetActive)
     #expect(state.focusedReviewItemID != firstFocusedID)
-    #expect(state.pendingReviewScrollTargetID == state.focusedReviewItemID)
+    #expect(state.pendingReviewScrollTargetID == nil)
 }
 
 @MainActor
@@ -496,7 +496,23 @@ import Testing
     state.moveGridSelection(by: 1, extending: false)
 
     #expect(state.focusedReviewItemID != firstFocusedID)
-    #expect(state.pendingReviewScrollTargetID == state.focusedReviewItemID)
+    #expect(state.pendingReviewScrollTargetID == nil)
+}
+
+@MainActor
+@Test func keyboardSelectionRequestsScrollWhenFocusLeavesEstimatedVisiblePage() {
+    let items = makeSelectionItems(count: 20)
+    let state = makeReviewAppState(items: items)
+
+    state.focusReviewSurface()
+    state.pendingReviewScrollTargetID = nil
+
+    for _ in 0..<12 {
+        state.moveGridSelection(by: 1, extending: false)
+    }
+
+    #expect(state.focusedReviewItemID == items[12].id)
+    #expect(state.pendingReviewScrollTargetID == items[12].id)
 }
 
 @MainActor
@@ -582,6 +598,7 @@ private func makeReviewAppState(items: [MediaItem]) -> AppState {
     state.burstGroups = []
     state.timeClusters = []
     state.archiveMediaCache = [:]
+    state.updateReviewGridMetrics(availableWidth: 1_100, availableHeight: 900)
 
     if let leafID = state.browserNodeMap.values.first(where: { ($0.children?.isEmpty ?? true) && $0.mediaItemIDs.count == items.count })?.id {
         state.selectedSidebarNodeID = leafID
