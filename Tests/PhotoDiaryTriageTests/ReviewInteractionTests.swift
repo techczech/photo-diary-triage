@@ -529,6 +529,35 @@ import Testing
 }
 
 @MainActor
+@Test func toggleSidebarVisibilityUsesAppManagedState() {
+    let items = makeSelectionItems(count: 4)
+    let state = makeReviewAppState(items: items)
+
+    #expect(state.sidebarState.snapshot.isVisible)
+
+    state.toggleSidebarVisibility()
+    #expect(!state.sidebarState.snapshot.isVisible)
+
+    state.focusSidebarNavigation()
+    #expect(state.sidebarState.snapshot.isVisible)
+    #expect(state.activePane == .sidebar)
+}
+
+@MainActor
+@Test func hiddenInspectorDoesNotRefreshOnFocusMoves() {
+    let items = makeSelectionItems(count: 5)
+    let state = makeReviewAppState(items: items)
+    state.focusReviewSurface()
+    state.toggleDetailsInspector()
+
+    let hiddenGeneration = state.inspectorSnapshotGeneration
+    state.moveGridSelection(by: 1, extending: false)
+
+    #expect(!state.inspectorState.snapshot.isVisible)
+    #expect(state.inspectorSnapshotGeneration == hiddenGeneration)
+}
+
+@MainActor
 @Test func keyboardSelectionRequestsScrollWhenFocusLeavesEstimatedVisiblePage() {
     let items = makeSelectionItems(count: 20)
     let state = makeReviewAppState(items: items)

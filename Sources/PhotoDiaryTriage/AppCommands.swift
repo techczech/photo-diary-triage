@@ -4,8 +4,6 @@ struct PhotoDiaryCommands: Commands {
     @ObservedObject var appState: AppState
 
     var body: some Commands {
-        SidebarCommands()
-
         CommandGroup(after: .newItem) {
             Button("Choose Source Folder…") {
                 appState.pickSourceFolder()

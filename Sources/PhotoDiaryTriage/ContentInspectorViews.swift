@@ -39,28 +39,34 @@ struct DetailsInspectorView: View {
     @ObservedObject var state: InspectorState
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack {
-                    Text("Inspector")
-                        .font(.title3.weight(.semibold))
-                    Spacer()
-                    Button("Close") {
-                        appState.toggleDetailsInspector()
-                    }
-                }
+        Group {
+            if state.snapshot.isVisible {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        HStack {
+                            Text("Inspector")
+                                .font(.title3.weight(.semibold))
+                            Spacer()
+                            Button("Close") {
+                                appState.toggleDetailsInspector()
+                            }
+                        }
 
-                folderSection
-                photoSection
+                        folderSection
+                        photoSection
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
+                }
+                .frame(maxHeight: .infinity, alignment: .top)
+                .background(Color(nsColor: .controlBackgroundColor).opacity(0.55), in: RoundedRectangle(cornerRadius: 16))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
+                }
+            } else {
+                Color.clear
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
-        }
-        .frame(maxHeight: .infinity, alignment: .top)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.55), in: RoundedRectangle(cornerRadius: 16))
-        .overlay {
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
         }
     }
 
