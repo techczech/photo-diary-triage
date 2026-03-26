@@ -95,7 +95,6 @@ struct ReviewGridCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             selectionSurface
-            compactActionRow
         }
         .frame(width: cardWidth, alignment: .topLeading)
         .padding(10)
@@ -139,62 +138,65 @@ struct ReviewGridCard: View {
             .frame(height: CGFloat(ReviewGridMetrics.thumbnailHeight(for: cardWidth)))
             .clipShape(RoundedRectangle(cornerRadius: 12))
 
-            HStack {
+            HStack(alignment: .center, spacing: 6) {
                 Text(metadataSummary)
                     .font(.caption.weight(.semibold))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Spacer()
+
+                Spacer(minLength: 0)
+
                 Text(item.selectionState.statusLabel)
                     .font(.caption2)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(statusBadgeColor)
                     .clipShape(Capsule())
+
+                if canMutateImportSelection {
+                    Button("S", action: includeForImport)
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+                        .disabled(item.selectionState.isIncluded)
+                        .shortcutHint("S / Cmd-I", help: "Select this item for import (S / Cmd-I)")
+
+                    Button("X", action: excludeFromImport)
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+                        .disabled(item.selectionState.isExcluded)
+                        .shortcutHint("X / Cmd-Shift-X", help: "Exclude this item from import (X / Cmd-Shift-X)")
+
+                    if !item.selectionState.isUndecided {
+                        Button("D", action: clearTriageState)
+                            .buttonStyle(.bordered)
+                            .controlSize(.mini)
+                            .shortcutHint("D / Cmd-Shift-I", help: "Clear this item back to undecided (D / Cmd-Shift-I)")
+                    }
+
+                    if !item.companionFiles.isEmpty {
+                        if item.importRawCompanions {
+                            Button("R") {
+                                setIncludeRaw(false)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.mini)
+                            .shortcutHint("R / Cmd-Option-R", help: "Toggle RAW companions for this item (R / Cmd-Option-R)")
+                        } else {
+                            Button("R") {
+                                setIncludeRaw(true)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.mini)
+                            .shortcutHint("R / Cmd-Option-R", help: "Toggle RAW companions for this item (R / Cmd-Option-R)")
+                        }
+                    }
+                }
             }
         }
         .contentShape(RoundedRectangle(cornerRadius: 12))
         .shortcutHint("Shift-click / Cmd-click / Double-click", help: "Click to select. Shift-click extends the selection, Command-click toggles selection, and double-click opens preview.")
         .overlay {
             ReviewGridClickTarget(onClick: onClick)
-        }
-    }
-
-    @ViewBuilder
-    private var compactActionRow: some View {
-        if canMutateImportSelection {
-            HStack(spacing: 6) {
-                Button("S", action: includeForImport)
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(item.selectionState.isIncluded)
-                    .shortcutHint("S / Cmd-I", help: "Select this item for import (S / Cmd-I)")
-
-                Button("X", action: excludeFromImport)
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(item.selectionState.isExcluded)
-                    .shortcutHint("X / Cmd-Shift-X", help: "Exclude this item from import (X / Cmd-Shift-X)")
-
-                if !item.selectionState.isUndecided {
-                    Button("D", action: clearTriageState)
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .shortcutHint("D / Cmd-Shift-I", help: "Clear this item back to undecided (D / Cmd-Shift-I)")
-                }
-
-                if !item.companionFiles.isEmpty {
-                    Toggle("RAW", isOn: Binding(
-                        get: { item.importRawCompanions },
-                        set: setIncludeRaw
-                    ))
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-                    .shortcutHint("R / Cmd-Option-R", help: "Include RAW companions for this item (R / Cmd-Option-R)")
-                }
-
-                Spacer(minLength: 0)
-            }
         }
     }
 
