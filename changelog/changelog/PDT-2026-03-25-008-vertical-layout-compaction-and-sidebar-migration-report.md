@@ -1,0 +1,21 @@
+# PDT-2026-03-25-008 Vertical layout compaction and sidebar migration report
+
+- item ID: PDT-2026-03-25-008
+- summary of what changed:
+  - removed the extra detail-pane chrome so the main pane is now primarily the review surface plus optional inspector
+  - moved walk details, utility controls, import actions, version, and status into the left sidebar
+  - collapsed the review controls into a single horizontal strip and removed the collapsed inspector rail so hidden inspector state no longer consumes width
+- files changed:
+  - `Sources/PhotoDiaryTriage/ContentView.swift`
+  - `Sources/PhotoDiaryTriage/ContentViewSections.swift`
+  - `Sources/PhotoDiaryTriage/ContentViewBrowserSections.swift`
+  - `Tests/PhotoDiaryTriageTests/ReviewInteractionTests.swift`
+  - `APP_RELEASE.env`
+- verification performed:
+  - `swift build`
+  - `swift test`
+- known gaps or follow-up items:
+  - the grouped-review escape behavior remains a separate follow-up area
+  - this layout change needs direct user review for density and scanability on real sessions
+- shipped release version: 0.1.47
+- shipped feature slug: vertical-layout-compaction-and-sidebar-migration

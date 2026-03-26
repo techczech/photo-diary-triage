@@ -3,29 +3,53 @@ import SwiftUI
 
 struct SidebarPaneView: View {
     @ObservedObject var appState: AppState
+    @Binding var walkTitle: String
+    @Binding var walkLocation: String
+    @Binding var walkNotes: String
+    let summary: String
+    let appRelease: AppRelease
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Button("Choose SSD Source Folder") {
-                    appState.pickSourceFolder()
-                }
-                Spacer()
-                Button("Settings") {
-                    NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-                }
-            }
-
+        VStack(alignment: .leading, spacing: 10) {
             if let session = appState.currentSession {
-                GroupBox("Session") {
+                GroupBox("Current Session") {
                     VStack(alignment: .leading, spacing: 6) {
+                        utilityButtons
+
+                        Text(summary)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
                         Text(session.sourceFolder.path)
                             .font(.caption)
                             .textSelection(.enabled)
                         Text("\(session.mediaItems.count) visible items")
+                            .font(.caption)
                         Text("\(session.mediaItems.filter { $0.selectionState == .selected }.count) marked for import")
+                            .font(.caption)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            } else {
+                utilityButtons
+            }
+
+            if appState.canMutateImportSelection {
+                GroupBox("Walk Details") {
+                    WalkDetailsPaneView(
+                        appState: appState,
+                        walkTitle: $walkTitle,
+                        walkLocation: $walkLocation,
+                        walkNotes: $walkNotes,
+                        summary: summary,
+                        compact: true
+                    )
+                }
+            }
+
+            if appState.canMutateImportSelection {
+                GroupBox("Import Actions") {
+                    ActionButtonsPaneView(appState: appState, compact: true)
                 }
             }
 
@@ -54,9 +78,35 @@ struct SidebarPaneView: View {
                 SidebarNodeRow(node: node)
             }
             .listStyle(.sidebar)
+
+            SidebarStatusView(appState: appState, appRelease: appRelease)
         }
         .padding()
         .frame(minWidth: 300)
+    }
+
+    private var utilityButtons: some View {
+        HStack(spacing: 6) {
+            Button("Source") {
+                appState.pickSourceFolder()
+            }
+
+            Button("Settings") {
+                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            }
+
+            Button(appState.isDetailsInspectorVisible ? "Hide Inspector" : "Show Inspector") {
+                appState.toggleDetailsInspector()
+            }
+            .shortcutHint("Cmd-Option-I", help: "\(appState.isDetailsInspectorVisible ? "Hide" : "Show") inspector (Cmd-Option-I)")
+
+            Button("Shortcuts") {
+                appState.showKeyboardHelp = true
+            }
+            .shortcutHint("Cmd-Shift-/", help: "Show keyboard shortcuts (Cmd-Shift-/)")
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
     }
 }
 
@@ -66,6 +116,7 @@ struct WalkDetailsPaneView: View {
     @Binding var walkLocation: String
     @Binding var walkNotes: String
     let summary: String
+    var compact: Bool = false
 
     var body: some View {
         if appState.canMutateImportSelection {
@@ -89,36 +140,84 @@ struct WalkDetailsPaneView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .padding(12)
-            .background(Color(nsColor: .controlBackgroundColor).opacity(0.55), in: RoundedRectangle(cornerRadius: 12))
+            .padding(compact ? 0 : 12)
+            .background {
+                if !compact {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color(nsColor: .controlBackgroundColor).opacity(0.55))
+                }
+            }
+            .controlSize(compact ? .small : .regular)
         }
     }
 }
 
 struct ActionButtonsPaneView: View {
     @ObservedObject var appState: AppState
+    var compact: Bool = false
 
     var body: some View {
         Group {
             if appState.canMutateImportSelection {
-                HStack {
-                    Button("Copy Marked Files Into Archive") {
-                        appState.commitImport()
+                Group {
+                    if compact {
+                        VStack(alignment: .leading, spacing: 6) {
+                            actionButtons
+                        }
+                    } else {
+                        HStack {
+                            actionButtons
+                        }
                     }
-                    .disabled(!appState.canCommitImport)
-
-                    Button("Confirm Backup And Enable Cleanup") {
-                        appState.markBackupConfirmed()
-                    }
-                    .disabled(!appState.canConfirmBackup)
-
-                    Button("Clean Imported Files From Source SSD") {
-                        appState.cleanupImportedSources()
-                    }
-                    .disabled(!appState.canCleanupImportedSources)
                 }
+                .controlSize(compact ? .small : .regular)
             }
         }
+    }
+
+    private var actionButtons: some View {
+        Group {
+            Button("Copy Marked Files Into Archive") {
+                appState.commitImport()
+            }
+            .disabled(!appState.canCommitImport)
+
+            Button("Confirm Backup And Enable Cleanup") {
+                appState.markBackupConfirmed()
+            }
+            .disabled(!appState.canConfirmBackup)
+
+            Button("Clean Imported Files From Source SSD") {
+                appState.cleanupImportedSources()
+            }
+            .disabled(!appState.canCleanupImportedSources)
+        }
+    }
+}
+
+struct SidebarStatusView: View {
+    @ObservedObject var appState: AppState
+    let appRelease: AppRelease
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(appRelease.displayString)
+                .font(.caption2.monospaced())
+                .foregroundStyle(.secondary)
+
+            Text(appState.statusMessage)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
+
+            if let progress = appState.importProgress {
+                Text("\(progress.current)/\(progress.total)")
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 4)
     }
 }
 
