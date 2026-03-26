@@ -1,0 +1,22 @@
+# PDT-2026-03-26-014 Compare locked zoom and item removal report
+
+- item ID: PDT-2026-03-26-014
+- summary of what changed:
+  - Added locked compare panning through a compare-specific `NSScrollView` canvas that synchronizes a shared normalized viewport across compared images.
+  - Added a `Lock Pan` control in compare so aligned detail inspection can be toggled on and off.
+  - Added per-item remove controls on compare cards so users can narrow the compare set without closing compare.
+  - Added compare viewport math tests and compare-removal workflow tests.
+- files changed:
+  - `Sources/PhotoDiaryTriage/AppState.swift`
+  - `Sources/PhotoDiaryTriage/ContentAuxiliaryViews.swift`
+  - `Sources/PhotoDiaryTriage/ReviewInteractionSupport.swift`
+  - `Tests/PhotoDiaryTriageTests/ReviewInteractionTests.swift`
+  - `APP_RELEASE.env`
+- verification performed:
+  - `swift build`
+  - `swift test`
+- known gaps or follow-up items:
+  - compare narrowing is now possible through removal, but no dedicated “keep survivors” action exists yet
+  - grouped review escape behavior remains a separate follow-up track
+- shipped release version: 0.1.52
+- shipped feature slug: compare-locked-zoom-and-item-removal

@@ -368,6 +368,8 @@ struct CompareSheet: View {
     let items: [MediaItem]
     let onClose: () -> Void
     @State private var zoom: CGFloat = 1
+    @State private var isPanLocked = true
+    @State private var synchronizedViewport = CompareViewport.zero
 
     var body: some View {
         GeometryReader { proxy in
@@ -382,6 +384,10 @@ struct CompareSheet: View {
                     }
                     Spacer()
                     compareLayoutControls
+                    Toggle("Lock Pan", isOn: $isPanLocked)
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                        .help("Keep compare items panned to the same relative detail area")
                     ZoomToolbar(zoom: $zoom, keyboardModifiers: [.option])
                     Button("Close") {
                         onClose()
@@ -416,6 +422,8 @@ struct CompareSheet: View {
                                     appState: appState,
                                     item: item,
                                     zoom: zoom,
+                                    synchronizedViewport: $synchronizedViewport,
+                                    isPanLocked: isPanLocked,
                                     cardWidth: CGFloat(metrics.cardWidth),
                                     imageHeight: CGFloat(metrics.imageHeight)
                                 )
@@ -472,6 +480,8 @@ struct CompareItemCard: View {
     @ObservedObject var appState: AppState
     let item: MediaItem
     let zoom: CGFloat
+    @Binding var synchronizedViewport: CompareViewport
+    let isPanLocked: Bool
     let cardWidth: CGFloat
     let imageHeight: CGFloat
 
@@ -502,9 +512,23 @@ struct CompareItemCard: View {
                     .padding(.vertical, 4)
                     .background(statusBadgeColor(for: item.selectionState))
                     .clipShape(Capsule())
+
+                Button {
+                    appState.removeItemFromComparison(item.id)
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Remove this item from compare")
             }
 
-            ZoomableImageCanvas(imageURL: item.sourceURL, zoom: zoom)
+            LockedCompareImageCanvas(
+                imageURL: item.sourceURL,
+                zoom: zoom,
+                synchronizedViewport: $synchronizedViewport,
+                isPanLocked: isPanLocked
+            )
                 .frame(width: cardWidth - 22, height: imageHeight)
                 .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
                 .overlay {
@@ -659,6 +683,149 @@ struct ZoomableImageCanvas: View {
                     .overlay(Text("Unable to load full photo"))
             }
         }
+    }
+}
+
+struct LockedCompareImageCanvas: NSViewRepresentable {
+    let imageURL: URL
+    let zoom: CGFloat
+    @Binding var synchronizedViewport: CompareViewport
+    let isPanLocked: Bool
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeNSView(context: Context) -> LockedCompareCanvasView {
+        let view = LockedCompareCanvasView()
+        context.coordinator.attach(to: view)
+        return view
+    }
+
+    func updateNSView(_ nsView: LockedCompareCanvasView, context: Context) {
+        context.coordinator.parent = self
+        nsView.updateImage(imageURL: imageURL, zoom: zoom)
+        context.coordinator.applySynchronizedViewportIfNeeded()
+    }
+
+    final class Coordinator: NSObject {
+        var parent: LockedCompareImageCanvas
+        weak var scrollView: LockedCompareCanvasView?
+        private var boundsObserver: NSObjectProtocol?
+        private var isApplyingSynchronizedViewport = false
+        private var lastAppliedViewport = CompareViewport.zero
+        private var lastAppliedDocumentSize: CGSize = .zero
+
+        init(_ parent: LockedCompareImageCanvas) {
+            self.parent = parent
+        }
+
+        deinit {
+            if let boundsObserver {
+                NotificationCenter.default.removeObserver(boundsObserver)
+            }
+        }
+
+        func attach(to scrollView: LockedCompareCanvasView) {
+            self.scrollView = scrollView
+            scrollView.contentView.postsBoundsChangedNotifications = true
+            boundsObserver = NotificationCenter.default.addObserver(
+                forName: NSView.boundsDidChangeNotification,
+                object: scrollView.contentView,
+                queue: .main
+            ) { [weak self] _ in
+                self?.boundsDidChange()
+            }
+        }
+
+        func applySynchronizedViewportIfNeeded() {
+            guard let scrollView else { return }
+            guard parent.isPanLocked else { return }
+            let documentSize = scrollView.documentView?.frame.size ?? .zero
+            guard lastAppliedViewport != parent.synchronizedViewport || lastAppliedDocumentSize != documentSize else { return }
+            isApplyingSynchronizedViewport = true
+            scrollView.applySynchronizedViewport(parent.synchronizedViewport)
+            lastAppliedViewport = parent.synchronizedViewport
+            lastAppliedDocumentSize = documentSize
+            isApplyingSynchronizedViewport = false
+        }
+
+        private func boundsDidChange() {
+            guard let scrollView else { return }
+            guard parent.isPanLocked else { return }
+            guard isApplyingSynchronizedViewport == false else { return }
+            let viewport = scrollView.currentSynchronizedViewport()
+            guard viewport != parent.synchronizedViewport else { return }
+            lastAppliedViewport = viewport
+            DispatchQueue.main.async {
+                self.parent.synchronizedViewport = viewport
+            }
+        }
+    }
+}
+
+final class LockedCompareCanvasView: NSScrollView {
+    private let imageView = NSImageView()
+    private var currentImageURL: URL?
+    private var currentImageSize: CGSize = .zero
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        drawsBackground = false
+        hasVerticalScroller = true
+        hasHorizontalScroller = true
+        autohidesScrollers = true
+        borderType = .noBorder
+        imageView.imageAlignment = .alignCenter
+        imageView.imageScaling = .scaleAxesIndependently
+        documentView = imageView
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func updateImage(imageURL: URL, zoom: CGFloat) {
+        if currentImageURL != imageURL {
+            currentImageURL = imageURL
+            let image = NSImage(contentsOf: imageURL)
+            imageView.image = image
+            currentImageSize = image?.size ?? .zero
+        }
+
+        guard currentImageSize.width > 0, currentImageSize.height > 0 else { return }
+
+        let viewportSize = contentSize
+        let fitScale = min(
+            max(viewportSize.width, 1) / max(currentImageSize.width, 1),
+            max(viewportSize.height, 1) / max(currentImageSize.height, 1)
+        )
+        let displayScale = max(fitScale, 0.01) * zoom
+        let scaledSize = CGSize(
+            width: max(1, currentImageSize.width * displayScale),
+            height: max(1, currentImageSize.height * displayScale)
+        )
+        imageView.frame = NSRect(origin: .zero, size: scaledSize)
+    }
+
+    func currentSynchronizedViewport() -> CompareViewport {
+        guard let documentView else { return .zero }
+        return CompareViewport.normalizedOrigin(
+            contentSize: documentView.frame.size,
+            viewportSize: contentView.bounds.size,
+            boundsOrigin: contentView.bounds.origin
+        )
+    }
+
+    func applySynchronizedViewport(_ viewport: CompareViewport) {
+        guard let documentView else { return }
+        let origin = viewport.contentOrigin(
+            contentSize: documentView.frame.size,
+            viewportSize: contentView.bounds.size
+        )
+        contentView.scroll(to: origin)
+        reflectScrolledClipView(contentView)
     }
 }
 

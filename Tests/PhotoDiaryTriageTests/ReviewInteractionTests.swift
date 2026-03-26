@@ -28,6 +28,22 @@ import Testing
     #expect(zoomedIn.cardWidth > defaultZoom.cardWidth)
 }
 
+@Test func compareViewportRoundTripsNormalizedAndContentOrigins() {
+    let contentSize = CGSize(width: 2_000, height: 1_500)
+    let viewportSize = CGSize(width: 800, height: 600)
+    let origin = CGPoint(x: 300, y: 225)
+
+    let normalized = CompareViewport.normalizedOrigin(
+        contentSize: contentSize,
+        viewportSize: viewportSize,
+        boundsOrigin: origin
+    )
+    let roundTrip = normalized.contentOrigin(contentSize: contentSize, viewportSize: viewportSize)
+
+    #expect(abs(roundTrip.x - origin.x) < 0.001)
+    #expect(abs(roundTrip.y - origin.y) < 0.001)
+}
+
 @Test func reviewGridClickContextTracksModifiersAndDoubleClick() {
     let shiftDoubleClick = ReviewGridClickContext(modifiers: [.shift], clickCount: 2)
     let commandClick = ReviewGridClickContext(modifiers: [.command], clickCount: 1)
@@ -93,6 +109,23 @@ import Testing
 
     #expect(state.compareSheetTitle == "Compare Burst")
     #expect(state.comparingMediaItemIDs == [items[0].id, items[1].id])
+}
+
+@MainActor
+@Test func removingCompareItemKeepsRemainingItemsOpen() {
+    let items = makeSelectionItems(count: 3)
+    let state = makeReviewAppState(items: items)
+
+    state.openComparison(for: items.map(\.id), title: "Compare Burst")
+    state.removeItemFromComparison(items[1].id)
+
+    #expect(state.comparingMediaItemIDs == [items[0].id, items[2].id])
+
+    state.removeItemFromComparison(items[0].id)
+    #expect(state.comparingMediaItemIDs == [items[2].id])
+
+    state.removeItemFromComparison(items[2].id)
+    #expect(state.comparingMediaItemIDs.isEmpty)
 }
 
 @MainActor

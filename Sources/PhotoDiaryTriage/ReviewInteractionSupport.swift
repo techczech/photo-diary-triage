@@ -68,6 +68,32 @@ struct CompareGridMetrics: Equatable, Sendable {
     }
 }
 
+struct CompareViewport: Equatable, Sendable {
+    var x: Double
+    var y: Double
+
+    static let zero = CompareViewport(x: 0, y: 0)
+
+    init(x: Double, y: Double) {
+        self.x = min(max(x, 0), 1)
+        self.y = min(max(y, 0), 1)
+    }
+
+    static func normalizedOrigin(contentSize: CGSize, viewportSize: CGSize, boundsOrigin: CGPoint) -> CompareViewport {
+        let maxX = max(contentSize.width - viewportSize.width, 0)
+        let maxY = max(contentSize.height - viewportSize.height, 0)
+        let normalizedX = maxX > 0 ? boundsOrigin.x / maxX : 0
+        let normalizedY = maxY > 0 ? boundsOrigin.y / maxY : 0
+        return CompareViewport(x: normalizedX, y: normalizedY)
+    }
+
+    func contentOrigin(contentSize: CGSize, viewportSize: CGSize) -> CGPoint {
+        let maxX = max(contentSize.width - viewportSize.width, 0)
+        let maxY = max(contentSize.height - viewportSize.height, 0)
+        return CGPoint(x: maxX * x, y: maxY * y)
+    }
+}
+
 struct ReviewGridClickContext: Equatable, Sendable {
     let isShiftPressed: Bool
     let isCommandPressed: Bool
