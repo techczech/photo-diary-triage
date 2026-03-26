@@ -1,21 +1,85 @@
 import AppKit
 import SwiftUI
 
-struct ReviewGridCard: View {
+struct ThumbnailImageSurface: View {
+    let appState: AppState
     let item: MediaItem
-    let thumbnailImage: NSImage?
-    let archivePreview: String
+    let thumbnailFailed: Bool
+    let retryThumbnail: () -> Void
+    let contentMode: ContentMode
+    let compactRetry: Bool
+
+    @ObservedObject private var slot: ThumbnailSlot
+
+    init(
+        appState: AppState,
+        item: MediaItem,
+        thumbnailFailed: Bool,
+        retryThumbnail: @escaping () -> Void,
+        contentMode: ContentMode = .fill,
+        compactRetry: Bool = false
+    ) {
+        self.appState = appState
+        self.item = item
+        self.thumbnailFailed = thumbnailFailed
+        self.retryThumbnail = retryThumbnail
+        self.contentMode = contentMode
+        self.compactRetry = compactRetry
+        _slot = ObservedObject(wrappedValue: appState.thumbnailSlot(for: item))
+    }
+
+    @ViewBuilder
+    var body: some View {
+        if let image = slot.image {
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(contentMode: contentMode)
+                .onAppear {
+                    appState.requestThumbnail(for: item)
+                    _ = appState.thumbnailImage(for: item)
+                }
+        } else if thumbnailFailed {
+            Rectangle()
+                .fill(.quaternary)
+                .overlay {
+                    VStack(spacing: compactRetry ? 4 : 8) {
+                        Image(systemName: "exclamationmark.triangle")
+                        Button("Retry", action: retryThumbnail)
+                            .buttonStyle(.bordered)
+                            .controlSize(compactRetry ? .mini : .small)
+                    }
+                }
+                .onAppear {
+                    appState.requestThumbnail(for: item)
+                    _ = appState.thumbnailImage(for: item)
+                }
+        } else {
+            Rectangle()
+                .fill(.quaternary)
+                .overlay(ProgressView())
+                .onAppear {
+                    appState.requestThumbnail(for: item)
+                    _ = appState.thumbnailImage(for: item)
+                }
+        }
+    }
+}
+
+struct ReviewGridCard: View {
+    let appState: AppState
+    let snapshot: ReviewItemSnapshot
     let cardWidth: CGFloat
     let canMutateImportSelection: Bool
-    let isSelected: Bool
-    let isFocused: Bool
-    let thumbnailFailed: Bool
     let onClick: (ReviewGridClickContext) -> Void
     let retryThumbnail: () -> Void
     let setIncludeRaw: (Bool) -> Void
     let includeForImport: () -> Void
     let excludeFromImport: () -> Void
     let clearTriageState: () -> Void
+
+    private var item: MediaItem {
+        snapshot.item
+    }
 
     private var metadataSummary: String {
         var parts = [item.compactDisplayName]
@@ -31,7 +95,6 @@ struct ReviewGridCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             selectionSurface
-
             compactActionRow
         }
         .frame(width: cardWidth, alignment: .topLeading)
@@ -46,7 +109,7 @@ struct ReviewGridCard: View {
                 .stroke(selectionStrokeColor, lineWidth: selectionStrokeWidth)
         }
         .overlay {
-            if isFocused {
+            if snapshot.isFocused {
                 RoundedRectangle(cornerRadius: 12)
                     .stroke(Color.accentColor.opacity(0.3), style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
                     .padding(6)
@@ -55,21 +118,26 @@ struct ReviewGridCard: View {
     }
 
     private var selectionStrokeColor: Color {
-        if isSelected || isFocused {
+        if snapshot.isSelected || snapshot.isFocused {
             return Color.accentColor
         }
         return Color.clear
     }
 
     private var selectionStrokeWidth: CGFloat {
-        isSelected ? 4 : (isFocused ? 3 : 0)
+        snapshot.isSelected ? 4 : (snapshot.isFocused ? 3 : 0)
     }
 
     private var selectionSurface: some View {
         VStack(alignment: .leading, spacing: 8) {
-            thumbnail
-                .frame(height: CGFloat(ReviewGridMetrics.thumbnailHeight(for: cardWidth)))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+            ThumbnailImageSurface(
+                appState: appState,
+                item: item,
+                thumbnailFailed: snapshot.thumbnailFailed,
+                retryThumbnail: retryThumbnail
+            )
+            .frame(height: CGFloat(ReviewGridMetrics.thumbnailHeight(for: cardWidth)))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
 
             HStack {
                 Text(metadataSummary)
@@ -140,43 +208,21 @@ struct ReviewGridCard: View {
             return Color.secondary.opacity(0.12)
         }
     }
-
-    @ViewBuilder
-    private var thumbnail: some View {
-        if let thumbnailImage {
-            Image(nsImage: thumbnailImage)
-                .resizable()
-                .scaledToFill()
-        } else if thumbnailFailed {
-            Rectangle()
-                .fill(.quaternary)
-                .overlay {
-                    VStack(spacing: 8) {
-                        Image(systemName: "exclamationmark.triangle")
-                        Button("Retry", action: retryThumbnail)
-                    }
-                }
-        } else {
-            Rectangle()
-                .fill(.quaternary)
-                .overlay(ProgressView())
-        }
-    }
 }
 
 struct MediaItemRow: View {
-    let item: MediaItem
-    let thumbnailImage: NSImage?
-    let archivePreview: String
+    let appState: AppState
+    let snapshot: ReviewItemSnapshot
     let canMutateImportSelection: Bool
-    let isSelected: Bool
-    let isFocused: Bool
-    let thumbnailFailed: Bool
     let includeForImport: () -> Void
     let excludeFromImport: () -> Void
     let clearTriageState: () -> Void
     let retryThumbnail: () -> Void
     let setIncludeRaw: (Bool) -> Void
+
+    private var item: MediaItem {
+        snapshot.item
+    }
 
     private var metadataSummary: String {
         var parts = [item.compactDisplayName]
@@ -192,9 +238,15 @@ struct MediaItemRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 12) {
-                thumbnail
-                    .frame(width: 72, height: 72)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                ThumbnailImageSurface(
+                    appState: appState,
+                    item: item,
+                    thumbnailFailed: snapshot.thumbnailFailed,
+                    retryThumbnail: retryThumbnail,
+                    compactRetry: true
+                )
+                .frame(width: 72, height: 72)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
@@ -222,7 +274,7 @@ struct MediaItemRow: View {
         }
         .overlay {
             RoundedRectangle(cornerRadius: 12)
-                .stroke(isSelected || isFocused ? Color.accentColor : Color.clear, lineWidth: isSelected ? 3 : (isFocused ? 2 : 0))
+                .stroke(snapshot.isSelected || snapshot.isFocused ? Color.accentColor : Color.clear, lineWidth: snapshot.isSelected ? 3 : (snapshot.isFocused ? 2 : 0))
         }
     }
 
@@ -272,29 +324,6 @@ struct MediaItemRow: View {
             return Color.red.opacity(0.14)
         case .undecided:
             return Color.secondary.opacity(0.12)
-        }
-    }
-
-    @ViewBuilder
-    private var thumbnail: some View {
-        if let thumbnailImage {
-            Image(nsImage: thumbnailImage)
-                .resizable()
-                .scaledToFill()
-        } else if thumbnailFailed {
-            Rectangle()
-                .fill(.quaternary)
-                .overlay {
-                    VStack(spacing: 4) {
-                        Image(systemName: "exclamationmark.triangle")
-                        Button("Retry", action: retryThumbnail)
-                            .buttonStyle(.borderless)
-                    }
-                }
-        } else {
-            Rectangle()
-                .fill(.quaternary)
-                .overlay(ProgressView())
         }
     }
 }

@@ -13,7 +13,13 @@ private enum CurrentSessionUpdateKind {
 
 @MainActor
 final class AppState: ObservableObject {
-    @Published var settings: AppSettings
+    @Published var settings: AppSettings {
+        didSet {
+            refreshSidebarState()
+            refreshReviewState()
+            refreshInspectorState()
+        }
+    }
     @Published var currentSession: ImportSession? {
         didSet {
             let updateKind = currentSessionUpdateKind
@@ -22,71 +28,213 @@ final class AppState: ObservableObject {
             if updateKind == .full {
                 rebuildBrowserCaches()
             }
+            invalidateReviewContentCaches()
+            refreshAllUIState()
         }
     }
     @Published var burstGroups: [BurstGroup] = [] {
         didSet {
             rebuildBrowserCaches()
+            refreshAllUIState()
         }
     }
     @Published var timeClusters: [TimeCluster] = [] {
         didSet {
             rebuildBrowserCaches()
+            refreshAllUIState()
         }
     }
     @Published var selectedSidebarNodeID: String? {
         didSet {
             invalidateInlineSectionCaches()
+            refreshSidebarState()
+            refreshReviewState()
+            refreshInspectorState()
+            refreshNavigationState()
         }
     }
-    @Published var selectedFolderNodeIDs: Set<String> = []
-    @Published var selectedMediaItemIDs: Set<UUID> = []
-    @Published var focusedReviewItemID: UUID?
+    @Published var selectedFolderNodeIDs: Set<String> = [] {
+        didSet {
+            refreshInspectorState()
+            refreshNavigationState()
+        }
+    }
+    @Published var selectedMediaItemIDs: Set<UUID> = [] {
+        didSet {
+            refreshReviewState()
+            refreshInspectorState()
+            refreshCompareState()
+        }
+    }
+    @Published var focusedReviewItemID: UUID? {
+        didSet {
+            refreshReviewState()
+            refreshInspectorState()
+            refreshCompareState()
+        }
+    }
     @Published var reviewSelectionAnchorID: UUID?
-    @Published var activePane: ActivePane = .sidebar
-    @Published var archiveYearFolders: [String] = []
-    @Published var showKeyboardHelp = false
-    @Published var reviewGridHasFocus = false
-    @Published var isDetailsInspectorVisible = true
-    @Published var isWalkDetailsExpanded = true
+    @Published var activePane: ActivePane = .sidebar {
+        didSet {
+            refreshNavigationState()
+        }
+    }
+    @Published var archiveYearFolders: [String] = [] {
+        didSet {
+            refreshSidebarState()
+        }
+    }
+    @Published var showKeyboardHelp = false {
+        didSet {
+            refreshPresentationState()
+        }
+    }
+    @Published var reviewGridHasFocus = false {
+        didSet {
+            refreshNavigationState()
+        }
+    }
+    @Published var isDetailsInspectorVisible = true {
+        didSet {
+            refreshInspectorState()
+        }
+    }
+    @Published var isWalkDetailsExpanded = true {
+        didSet {
+            refreshSidebarState()
+        }
+    }
     @Published var reviewFilter: ReviewFilter = .all {
         didSet {
             guard reviewFilter != oldValue else { return }
+            invalidateReviewContentCaches()
             invalidateInlineSectionCaches()
             if dayDetailDisplayMode == .sections {
                 ensureFocusedInlineSection()
             }
             reconcileReviewSelectionWithVisibleItems()
+            refreshReviewState()
+            refreshSidebarState()
+            refreshInspectorState()
+            refreshCompareState()
         }
     }
     @Published var dayOrganizationMode: DayOrganizationMode = .days {
         didSet {
             invalidateOrganizedInlineSectionCache()
+            refreshReviewState()
+            refreshNavigationState()
         }
     }
-    @Published var dayDetailDisplayMode: DayDetailDisplayMode = .review
-    @Published var expandedInlineSectionIDs: Set<String> = []
-    @Published var pendingInlineScrollTargetID: UUID?
-    @Published var pendingReviewScrollTargetID: UUID?
-    @Published var focusedInlineSectionID: String?
-    @Published var pendingInlineSectionScrollTargetID: String?
-    @Published var pendingInlineSectionScrollRevision: Int = 0
-    @Published var drilledInlineSectionID: String?
-    @Published var drilledInlineSectionMediaItemIDs: [UUID] = []
-    @Published var previewingMediaItemID: UUID?
-    @Published var comparingMediaItemIDs: [UUID] = []
-    @Published var compareSheetTitle: String = "Compare Selection"
-    @Published var compareGridColumnCount: Int = CompareGridMetrics.defaultColumnCount(for: 0)
-    @Published var reviewGridColumnCount: Int = 1
-    @Published var statusMessage: String = "Choose a source folder on the SSD to begin."
-    @Published var thumbnailFailures: Set<UUID> = []
+    @Published var dayDetailDisplayMode: DayDetailDisplayMode = .review {
+        didSet {
+            refreshReviewState()
+            refreshNavigationState()
+        }
+    }
+    @Published var expandedInlineSectionIDs: Set<String> = [] {
+        didSet {
+            refreshReviewState()
+        }
+    }
+    @Published var pendingInlineScrollTargetID: UUID? {
+        didSet {
+            refreshNavigationState()
+        }
+    }
+    @Published var pendingReviewScrollTargetID: UUID? {
+        didSet {
+            refreshNavigationState()
+        }
+    }
+    @Published var focusedInlineSectionID: String? {
+        didSet {
+            refreshReviewState()
+            refreshNavigationState()
+        }
+    }
+    @Published var pendingInlineSectionScrollTargetID: String? {
+        didSet {
+            refreshNavigationState()
+        }
+    }
+    @Published var pendingInlineSectionScrollRevision: Int = 0 {
+        didSet {
+            refreshNavigationState()
+        }
+    }
+    @Published var drilledInlineSectionID: String? {
+        didSet {
+            invalidateReviewContentCaches()
+            refreshReviewState()
+        }
+    }
+    @Published var drilledInlineSectionMediaItemIDs: [UUID] = [] {
+        didSet {
+            invalidateReviewContentCaches()
+            refreshReviewState()
+        }
+    }
+    @Published var previewingMediaItemID: UUID? {
+        didSet {
+            refreshPresentationState()
+        }
+    }
+    @Published var comparingMediaItemIDs: [UUID] = [] {
+        didSet {
+            refreshCompareState()
+        }
+    }
+    @Published var compareSheetTitle: String = "Compare Selection" {
+        didSet {
+            refreshCompareState()
+        }
+    }
+    @Published var compareGridColumnCount: Int = CompareGridMetrics.defaultColumnCount(for: 0) {
+        didSet {
+            refreshCompareState()
+        }
+    }
+    @Published var reviewGridColumnCount: Int = 1 {
+        didSet {
+            refreshReviewState()
+        }
+    }
+    @Published var statusMessage: String = "Choose a source folder on the SSD to begin." {
+        didSet {
+            refreshSidebarState()
+        }
+    }
+    @Published var thumbnailFailures: Set<UUID> = [] {
+        didSet {
+            refreshReviewState()
+            refreshCompareState()
+        }
+    }
     @Published var archiveMediaCache: [String: [MediaItem]] = [:] {
         didSet {
+            invalidateReviewContentCaches()
             invalidateInlineSectionCaches()
+            refreshReviewState()
         }
     }
-    @Published var startupAlert: AppStartupAlert?
-    @Published var importProgress: ImportProgress?
+    @Published var startupAlert: AppStartupAlert? {
+        didSet {
+            refreshPresentationState()
+        }
+    }
+    @Published var importProgress: ImportProgress? {
+        didSet {
+            refreshSidebarState()
+        }
+    }
+
+    let sidebarState = SidebarState()
+    let reviewState = ReviewState()
+    let reviewNavigationState = ReviewNavigationState()
+    let inspectorState = InspectorState()
+    let compareState = CompareState()
+    let presentationState = PresentationState()
 
     private let scanner: FileScanner
     private let groupingService: GroupingService
@@ -104,9 +252,11 @@ final class AppState: ObservableObject {
     private let fileManager: FileManager
     private let supportRoot: URL
     private let logger = AppLogger.appState
+    private let latencyRecorder = LatencyRecorder()
     private let sessionPersistenceQueue = DispatchQueue(label: "PhotoDiaryTriage.session-persistence", qos: .utility)
     private let thumbnailScheduler = ThumbnailScheduler()
     private let thumbnailImageCache = NSCache<NSURL, NSImage>()
+    private let thumbnailRegistry = ThumbnailRegistry()
     private var thumbnailDecodeTasks: [String: Task<Void, Never>] = [:]
     private var cachedBrowserRoots: [BrowserNode] = []
     private var cachedBrowserNodeMap: [String: BrowserNode] = [:]
@@ -130,6 +280,13 @@ final class AppState: ObservableObject {
     private var cachedOrganizedInlineSectionsGeneration: Int = -1
     private var cachedOrganizedInlineSectionsMode: DayOrganizationMode = .days
     private var cachedOrganizedInlineSections: [InlineSection] = []
+    private var reviewContentCacheGeneration: Int = 0
+    private var cachedContextMediaGeneration: Int = -1
+    private var cachedContextMediaItems: [MediaItem] = []
+    private var cachedVisibleMediaGeneration: Int = -1
+    private var cachedVisibleMediaItems: [MediaItem] = []
+    private var cachedReviewInteractionGeneration: Int = -1
+    private var cachedReviewInteractionItems: [MediaItem] = []
 
     init(testing: Bool = false) {
         self.fileManager = .default
@@ -156,6 +313,7 @@ final class AppState: ObservableObject {
         self.browserViewModel = BrowserViewModel(scanner: self.scanner)
         self.archiveYearFolders = ArchiveLibraryInspector.existingYearFolders(in: settings.archiveRoot)
         rebuildBrowserCaches()
+        refreshAllUIState()
 
         if testing {
             return
@@ -164,6 +322,7 @@ final class AppState: ObservableObject {
         configurePersistence()
         loadMostRecentSession()
         startVolumeMonitoring()
+        refreshAllUIState()
     }
 
     deinit {
@@ -236,15 +395,33 @@ final class AppState: ObservableObject {
     }
 
     var contextMediaItems: [MediaItem] {
-        if !drilledInlineSectionMediaItemIDs.isEmpty {
-            return orderedMediaItems(for: drilledInlineSectionMediaItemIDs)
+        if cachedContextMediaGeneration == reviewContentCacheGeneration {
+            return cachedContextMediaItems
         }
-        guard let node = selectedBrowserNode else { return [] }
-        return baseVisibleMediaItems(for: node)
+
+        let items: [MediaItem]
+        if !drilledInlineSectionMediaItemIDs.isEmpty {
+            items = orderedMediaItems(for: drilledInlineSectionMediaItemIDs)
+        } else if let node = selectedBrowserNode {
+            items = baseVisibleMediaItems(for: node)
+        } else {
+            items = []
+        }
+
+        cachedContextMediaGeneration = reviewContentCacheGeneration
+        cachedContextMediaItems = items
+        return items
     }
 
     var visibleMediaItems: [MediaItem] {
-        filterReviewItems(contextMediaItems)
+        if cachedVisibleMediaGeneration == reviewContentCacheGeneration {
+            return cachedVisibleMediaItems
+        }
+
+        let items = filterReviewItems(contextMediaItems)
+        cachedVisibleMediaGeneration = reviewContentCacheGeneration
+        cachedVisibleMediaItems = items
+        return items
     }
 
     var inlineDaySections: [InlineDaySection] {
@@ -311,15 +488,26 @@ final class AppState: ObservableObject {
     }
 
     var reviewInteractionItems: [MediaItem] {
+        if cachedReviewInteractionGeneration == reviewContentCacheGeneration {
+            return cachedReviewInteractionItems
+        }
+
+        let items: [MediaItem]
         guard shouldShowInlineDaySections, dayDetailDisplayMode == .sections else {
-            return visibleMediaItems
+            items = visibleMediaItems
+            cachedReviewInteractionGeneration = reviewContentCacheGeneration
+            cachedReviewInteractionItems = items
+            return items
         }
 
         var seen: Set<UUID> = []
         let orderedIDs = inlineSectionOrganizer
             .visibleMediaItemIDs(from: organizedInlineSections, expandedSectionIDs: expandedInlineSectionIDs)
             .filter { seen.insert($0).inserted }
-        return orderedMediaItems(for: orderedIDs)
+        items = orderedMediaItems(for: orderedIDs)
+        cachedReviewInteractionGeneration = reviewContentCacheGeneration
+        cachedReviewInteractionItems = items
+        return items
     }
 
     func mediaItems(for ids: [UUID]) -> [MediaItem] {
@@ -458,6 +646,26 @@ final class AppState: ObservableObject {
 
     var canMutateImportSelection: Bool {
         !isBrowsingArchive
+    }
+
+    var sidebarSnapshotGeneration: Int {
+        sidebarState.generation
+    }
+
+    var reviewSnapshotGeneration: Int {
+        reviewState.generation
+    }
+
+    var navigationSnapshotGeneration: Int {
+        reviewNavigationState.generation
+    }
+
+    func beginLatencyMeasurement(_ action: String) {
+        latencyRecorder.begin(action)
+    }
+
+    func endLatencyMeasurement(_ action: String) {
+        latencyRecorder.end(action)
     }
 
     func pickSourceFolder() {
@@ -604,23 +812,30 @@ final class AppState: ObservableObject {
         previewStore.cachedThumbnailURL(for: item)
     }
 
+    func thumbnailSlot(for item: MediaItem) -> ThumbnailSlot {
+        thumbnailRegistry.slot(for: item.id)
+    }
+
     func thumbnailImage(for item: MediaItem) -> NSImage? {
         let imageURL = thumbnailURL(for: item)
         let url = imageURL as NSURL
         if let image = thumbnailImageCache.object(forKey: url) {
+            thumbnailRegistry.update(itemID: item.id, image: image, isMissing: false)
             return image
         }
 
         if missingThumbnailPaths.contains(imageURL.path) {
+            thumbnailRegistry.update(itemID: item.id, image: nil, isMissing: true)
             return nil
         }
 
         guard fileManager.fileExists(atPath: imageURL.path) else {
             missingThumbnailPaths.insert(imageURL.path)
+            thumbnailRegistry.update(itemID: item.id, image: nil, isMissing: true)
             return nil
         }
 
-        decodeThumbnailIfNeeded(from: imageURL)
+        decodeThumbnailIfNeeded(from: imageURL, itemID: item.id)
         return nil
     }
 
@@ -630,7 +845,7 @@ final class AppState: ObservableObject {
             return
         }
         if fileManager.fileExists(atPath: imageURL.path) {
-            decodeThumbnailIfNeeded(from: imageURL)
+            decodeThumbnailIfNeeded(from: imageURL, itemID: item.id)
             return
         }
         enqueueThumbnailRequests([item], priority: .visible)
@@ -733,10 +948,12 @@ final class AppState: ObservableObject {
     }
 
     func setDayDetailDisplayMode(_ mode: DayDetailDisplayMode) {
+        latencyRecorder.begin("review.mode")
         if mode == .sections, !canUseGroupedReviewMode {
             dayDetailDisplayMode = .review
             statusMessage = "Grouped review is available when browsing a day or a folder with day sections."
             activateReviewGridFocus()
+            latencyRecorder.end("review.mode")
             return
         }
         dayDetailDisplayMode = mode
@@ -747,6 +964,9 @@ final class AppState: ObservableObject {
             reviewKeyboardTarget = .items
         }
         activateReviewGridFocus()
+        DispatchQueue.main.async { [weak self] in
+            self?.latencyRecorder.end("review.mode")
+        }
     }
 
     func updateReviewGridMetrics(availableWidth: CGFloat?, availableHeight: CGFloat? = nil) {
@@ -764,17 +984,28 @@ final class AppState: ObservableObject {
     }
 
     func toggleDetailsInspector() {
+        latencyRecorder.begin("inspector.toggle")
         isDetailsInspectorVisible.toggle()
+        DispatchQueue.main.async { [weak self] in
+            self?.latencyRecorder.end("inspector.toggle")
+        }
     }
 
     func toggleSidebarVisibility() {
+        latencyRecorder.begin("sidebar.toggle")
         let selector = #selector(NSSplitViewController.toggleSidebar(_:))
         if NSApp.sendAction(selector, to: nil, from: nil) {
+            DispatchQueue.main.async { [weak self] in
+                self?.latencyRecorder.end("sidebar.toggle")
+            }
             return
         }
 
         if let window = NSApp.keyWindow, let firstResponder = window.firstResponder {
             _ = firstResponder.tryToPerform(selector, with: nil)
+        }
+        DispatchQueue.main.async { [weak self] in
+            self?.latencyRecorder.end("sidebar.toggle")
         }
     }
 
@@ -937,6 +1168,7 @@ final class AppState: ObservableObject {
     }
 
     func handleReviewEscape() {
+        latencyRecorder.begin("review.escape")
         if let drilledInlineSectionID {
             drilledInlineSectionMediaItemIDs = []
             self.drilledInlineSectionID = nil
@@ -947,6 +1179,9 @@ final class AppState: ObservableObject {
             requestInlineSectionScroll(to: drilledInlineSectionID)
             requestVisibleThumbnails()
             statusMessage = "Returned to grouped section selection."
+            DispatchQueue.main.async { [weak self] in
+                self?.latencyRecorder.end("review.escape")
+            }
             return
         }
 
@@ -955,15 +1190,22 @@ final class AppState: ObservableObject {
             if let sectionID {
                 focusInlineSection(sectionID)
                 statusMessage = "Returned to grouped section selection."
+                DispatchQueue.main.async { [weak self] in
+                    self?.latencyRecorder.end("review.escape")
+                }
                 return
             }
         }
 
         deactivateReviewGridFocus()
+        DispatchQueue.main.async { [weak self] in
+            self?.latencyRecorder.end("review.escape")
+        }
     }
 
     func handleReviewArrowKey(dx: Int, dy: Int, extending: Bool) {
         guard reviewGridHasFocus else { return }
+        latencyRecorder.begin("review.arrow")
 
         if isGroupedSectionKeyboardTargetActive {
             if dy < 0 {
@@ -975,6 +1217,7 @@ final class AppState: ObservableObject {
             } else if dx > 0 {
                 expandFocusedInlineSection()
             }
+            latencyRecorder.end("review.arrow")
             return
         }
 
@@ -983,6 +1226,9 @@ final class AppState: ObservableObject {
             moveGridSelection(by: dx, extending: extending)
         } else if dy != 0 {
             moveGridSelection(by: dy * columns, extending: extending)
+        }
+        DispatchQueue.main.async { [weak self] in
+            self?.latencyRecorder.end("review.arrow")
         }
     }
 
@@ -1133,16 +1379,24 @@ final class AppState: ObservableObject {
             }
         }
         guard deduplicatedIDs.count >= 2 else { return }
+        latencyRecorder.begin("compare.open")
         reviewGridHasFocus = false
         compareGridColumnCount = CompareGridMetrics.defaultColumnCount(for: deduplicatedIDs.count)
         compareSheetTitle = title
         comparingMediaItemIDs = deduplicatedIDs
         statusMessage = "Opened compare view for \(deduplicatedIDs.count) item(s)."
+        DispatchQueue.main.async { [weak self] in
+            self?.latencyRecorder.end("compare.open")
+        }
     }
 
     func closeComparison() {
+        latencyRecorder.begin("compare.close")
         comparingMediaItemIDs.removeAll()
         compareGridColumnCount = CompareGridMetrics.defaultColumnCount(for: 0)
+        DispatchQueue.main.async { [weak self] in
+            self?.latencyRecorder.end("compare.close")
+        }
     }
 
     func removeItemFromComparison(_ itemID: UUID) {
@@ -1560,10 +1814,11 @@ final class AppState: ObservableObject {
                 missingThumbnailPaths.remove(thumbnailURL(for: item).path)
                 thumbnailImageCache.removeObject(forKey: thumbnailURL(for: item) as NSURL)
                 await DecodedImagePipeline.shared.removeCachedImage(for: Self.thumbnailDecodeCacheKey(for: thumbnailURL(for: item)))
-                decodeThumbnailIfNeeded(from: thumbnailURL(for: item))
+                decodeThumbnailIfNeeded(from: thumbnailURL(for: item), itemID: item.id)
             }
         } else {
             thumbnailFailures.insert(itemID)
+            thumbnailRegistry.update(itemID: itemID, image: nil, isMissing: true)
             if previewStore.isPersistentCacheAvailable == false {
                 statusMessage = "Preview cache unavailable; thumbnails are temporarily disabled."
             }
@@ -1587,6 +1842,7 @@ final class AppState: ObservableObject {
 
     private func rebuildSessionCaches(clearThumbnailCache: Bool) {
         sessionVisibleMediaCacheByNodeID.removeAll()
+        invalidateReviewContentCaches()
 
         guard let currentSession else {
             sessionMediaByID = [:]
@@ -1596,6 +1852,7 @@ final class AppState: ObservableObject {
                 thumbnailDecodeTasks.removeAll()
                 missingThumbnailPaths.removeAll()
                 thumbnailImageCache.removeAllObjects()
+                thumbnailRegistry.reset()
             }
             return
         }
@@ -1618,6 +1875,7 @@ final class AppState: ObservableObject {
             thumbnailDecodeTasks.removeAll()
             missingThumbnailPaths.removeAll()
             thumbnailImageCache.removeAllObjects()
+            thumbnailRegistry.reset()
         }
     }
 
@@ -1630,7 +1888,146 @@ final class AppState: ObservableObject {
         )
         cachedBrowserNodeMap = browserViewModel.nodeMap(for: cachedBrowserRoots)
         sessionVisibleMediaCacheByNodeID.removeAll()
+        invalidateReviewContentCaches()
         invalidateInlineSectionCaches()
+    }
+
+    private func refreshAllUIState() {
+        refreshSidebarState()
+        refreshReviewState()
+        refreshNavigationState()
+        refreshInspectorState()
+        refreshCompareState()
+        refreshPresentationState()
+    }
+
+    private func refreshSidebarState() {
+        let summary: SessionSummary?
+        if let currentSession {
+            let includedCount = currentSession.mediaItems.reduce(into: 0) { count, item in
+                if item.selectionState.isIncluded {
+                    count += 1
+                }
+            }
+            summary = SessionSummary(
+                sessionID: currentSession.id,
+                sourceFolderPath: currentSession.sourceFolder.path,
+                itemCount: currentSession.mediaItems.count,
+                includedCount: includedCount,
+                walkMetadata: currentSession.walkMetadata
+            )
+        } else {
+            summary = nil
+        }
+
+        let snapshot = SidebarSnapshot(
+            sessionSummary: summary,
+            canMutateImportSelection: canMutateImportSelection,
+            isWalkDetailsExpanded: isWalkDetailsExpanded,
+            archiveRootDisplayPath: settings.archiveRootDisplayPath,
+            archiveYearFolders: archiveYearFolders,
+            tree: SidebarTreeSnapshot(
+                browserRoots: browserRoots,
+                selectedSidebarNodeID: selectedSidebarNodeID
+            ),
+            statusMessage: statusMessage,
+            importProgress: importProgress
+        )
+        sidebarState.update(snapshot)
+    }
+
+    private func refreshReviewState() {
+        let snapshots = visibleMediaItems.map(makeReviewItemSnapshot)
+        let itemSnapshotsByID = Dictionary(uniqueKeysWithValues: snapshots.map { ($0.id, $0) })
+
+        let snapshot = ReviewSnapshot(
+            breadcrumbTitles: breadcrumbTitles,
+            contextMediaItemCount: contextMediaItems.count,
+            detailFolderNodes: detailFolderNodes,
+            visibleItems: snapshots,
+            itemSnapshotsByID: itemSnapshotsByID,
+            organizedInlineSections: organizedInlineSections,
+            groupedReviewSections: groupedReviewSections,
+            canUseGroupedReviewMode: canUseGroupedReviewMode,
+            availableDayDetailDisplayModes: availableDayDetailDisplayModes,
+            dayOrganizationMode: dayOrganizationMode,
+            dayDetailDisplayMode: dayDetailDisplayMode,
+            reviewFilter: reviewFilter,
+            reviewPresentationMode: reviewPresentationMode,
+            reviewGridPreferredColumnCount: reviewGridPreferredColumnCount,
+            reviewGridColumnCount: reviewGridColumnCount,
+            reviewGridCardWidth: reviewGridCardWidth,
+            selectedMediaItemIDs: selectedMediaItemIDs,
+            focusedReviewItemID: focusedReviewItemID,
+            focusedInlineSectionID: focusedInlineSectionID,
+            expandedInlineSectionIDs: expandedInlineSectionIDs,
+            canMutateImportSelection: canMutateImportSelection,
+            canFocusReviewSurface: canFocusReviewSurface,
+            canUseGroupedSectionNavigation: canUseGroupedSectionNavigation,
+            canExpandAllGroupedSections: canExpandAllGroupedSections,
+            canCollapseAllGroupedSections: canCollapseAllGroupedSections,
+            canOpenComparison: canOpenComparison,
+            canMarkSelectionForImport: canMarkSelectionForImport,
+            canExcludeSelectionFromImport: canExcludeSelectionFromImport,
+            canUnmarkSelectionForImport: canUnmarkSelectionForImport,
+            canToggleRawForSelection: canToggleRawForSelection
+        )
+        reviewState.update(snapshot)
+    }
+
+    private func refreshNavigationState() {
+        let snapshot = ReviewNavigationSnapshot(
+            activePane: activePane,
+            reviewGridHasFocus: reviewGridHasFocus,
+            isGroupedSectionKeyboardTargetActive: isGroupedSectionKeyboardTargetActive,
+            pendingInlineScrollTargetID: pendingInlineScrollTargetID,
+            pendingReviewScrollTargetID: pendingReviewScrollTargetID,
+            pendingInlineSectionScrollTargetID: pendingInlineSectionScrollTargetID,
+            pendingInlineSectionScrollRevision: pendingInlineSectionScrollRevision
+        )
+        reviewNavigationState.update(snapshot)
+    }
+
+    private func refreshInspectorState() {
+        let snapshot = InspectorSnapshot(
+            isVisible: isDetailsInspectorVisible,
+            browserNode: inspectorBrowserNode,
+            fallbackFolderPath: currentSession?.sourceFolder.path,
+            walkTitle: currentSession?.walkMetadata.title.nonEmpty,
+            walkLocation: currentSession?.walkMetadata.location.nonEmpty,
+            mediaItem: inspectorMediaItem
+        )
+        inspectorState.update(snapshot)
+    }
+
+    private func refreshCompareState() {
+        let snapshots = comparingMediaItems.map(makeReviewItemSnapshot)
+        let snapshot = CompareSnapshot(
+            title: compareSheetTitle,
+            itemIDs: comparingMediaItemIDs,
+            items: snapshots,
+            gridColumnCount: compareGridColumnCount
+        )
+        compareState.update(snapshot)
+    }
+
+    private func refreshPresentationState() {
+        let snapshot = PresentationSnapshot(
+            showKeyboardHelp: showKeyboardHelp,
+            startupAlert: startupAlert,
+            previewingMediaItem: previewingMediaItem
+        )
+        presentationState.update(snapshot)
+    }
+
+    private func makeReviewItemSnapshot(_ item: MediaItem) -> ReviewItemSnapshot {
+        ReviewItemSnapshot(
+            item: item,
+            archivePreview: archivePreview(for: item),
+            isSelected: selectedMediaItemIDs.contains(item.id),
+            isFocused: focusedReviewItemID == item.id,
+            thumbnailFailed: thumbnailFailures.contains(item.id)
+        )
     }
 
     private func invalidateInlineSectionCaches() {
@@ -1644,12 +2041,24 @@ final class AppState: ObservableObject {
         pendingInlineSectionScrollRevision = 0
         pendingReviewScrollTargetID = nil
         estimatedVisibleReviewIndexRange = nil
+        invalidateReviewContentCaches()
     }
 
     private func invalidateOrganizedInlineSectionCache() {
         cachedOrganizedInlineSectionsGeneration = -1
         cachedOrganizedInlineSectionsMode = dayOrganizationMode
         cachedOrganizedInlineSections = []
+        invalidateReviewContentCaches()
+    }
+
+    private func invalidateReviewContentCaches() {
+        reviewContentCacheGeneration &+= 1
+        cachedContextMediaGeneration = -1
+        cachedContextMediaItems = []
+        cachedVisibleMediaGeneration = -1
+        cachedVisibleMediaItems = []
+        cachedReviewInteractionGeneration = -1
+        cachedReviewInteractionItems = []
     }
 
     private var focusedInlineSection: InlineSection? {
@@ -1732,6 +2141,7 @@ final class AppState: ObservableObject {
             return
         }
 
+        latencyRecorder.begin("review.scroll")
         pendingReviewScrollTargetID = itemID
         updateEstimatedVisibleReviewRange(around: itemID)
     }
@@ -1912,6 +2322,7 @@ final class AppState: ObservableObject {
         browserViewModel = configuration.browserViewModel
         startupAlert = configuration.startupAlert
         importProgress = importWorkflow.importProgress
+        refreshAllUIState()
     }
 
     private func loadArchiveMediaIfNeeded(for nodeID: String?) {
@@ -1961,7 +2372,7 @@ final class AppState: ObservableObject {
         "thumbnail:\(imageURL.path)"
     }
 
-    private func decodeThumbnailIfNeeded(from imageURL: URL) {
+    private func decodeThumbnailIfNeeded(from imageURL: URL, itemID: UUID) {
         let path = imageURL.path
         guard thumbnailDecodeTasks[path] == nil else { return }
 
@@ -1973,18 +2384,19 @@ final class AppState: ObservableObject {
                 priority: .utility
             )
             guard !Task.isCancelled else { return }
-            self.finishThumbnailDecode(image: decoded, imageURL: imageURL)
+            self.finishThumbnailDecode(image: decoded, imageURL: imageURL, itemID: itemID)
         }
     }
 
-    private func finishThumbnailDecode(image: NSImage?, imageURL: URL) {
+    private func finishThumbnailDecode(image: NSImage?, imageURL: URL, itemID: UUID) {
         thumbnailDecodeTasks[imageURL.path] = nil
         if let image {
             missingThumbnailPaths.remove(imageURL.path)
             thumbnailImageCache.setObject(image, forKey: imageURL as NSURL)
-            objectWillChange.send()
+            thumbnailRegistry.update(itemID: itemID, image: image, isMissing: false)
         } else {
             missingThumbnailPaths.insert(imageURL.path)
+            thumbnailRegistry.update(itemID: itemID, image: nil, isMissing: true)
         }
     }
 

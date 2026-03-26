@@ -2,7 +2,8 @@ import AppKit
 import SwiftUI
 
 struct SidebarPaneView: View {
-    @ObservedObject var appState: AppState
+    let appState: AppState
+    @ObservedObject var state: SidebarState
     @Binding var walkTitle: String
     @Binding var walkLocation: String
     @Binding var walkNotes: String
@@ -10,8 +11,10 @@ struct SidebarPaneView: View {
     let appRelease: AppRelease
 
     var body: some View {
+        let snapshot = state.snapshot
+
         VStack(alignment: .leading, spacing: 10) {
-            if let session = appState.currentSession {
+            if let session = snapshot.sessionSummary {
                 GroupBox("Current Session") {
                     VStack(alignment: .leading, spacing: 6) {
                         utilityButtons
@@ -20,12 +23,12 @@ struct SidebarPaneView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
 
-                        Text(session.sourceFolder.path)
+                        Text(session.sourceFolderPath)
                             .font(.caption)
                             .textSelection(.enabled)
-                        Text("\(session.mediaItems.count) visible items")
+                        Text("\(session.itemCount) visible items")
                             .font(.caption)
-                        Text("\(session.mediaItems.filter { $0.selectionState.isIncluded }.count) included for import")
+                        Text("\(session.includedCount) included for import")
                             .font(.caption)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -34,10 +37,15 @@ struct SidebarPaneView: View {
                 utilityButtons
             }
 
-            if appState.canMutateImportSelection {
+            if snapshot.canMutateImportSelection {
                 GroupBox("Walk Details") {
                     WalkDetailsPaneView(
                         appState: appState,
+                        isExpanded: Binding(
+                            get: { state.snapshot.isWalkDetailsExpanded },
+                            set: { appState.isWalkDetailsExpanded = $0 }
+                        ),
+                        isEnabled: snapshot.canMutateImportSelection,
                         walkTitle: $walkTitle,
                         walkLocation: $walkLocation,
                         walkNotes: $walkNotes,
@@ -47,7 +55,7 @@ struct SidebarPaneView: View {
                 }
             }
 
-            if appState.canMutateImportSelection {
+            if snapshot.canMutateImportSelection {
                 GroupBox("Import Actions") {
                     ActionButtonsPaneView(appState: appState, compact: true)
                 }
@@ -55,15 +63,15 @@ struct SidebarPaneView: View {
 
             GroupBox("Archive Root") {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(appState.settings.archiveRootDisplayPath)
+                    Text(snapshot.archiveRootDisplayPath)
                         .font(.caption)
                         .textSelection(.enabled)
-                    if appState.archiveYearFolders.isEmpty {
+                    if snapshot.archiveYearFolders.isEmpty {
                         Text("No `202x` folders detected yet")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     } else {
-                        Text("Years: \(appState.archiveYearFolders.joined(separator: ", "))")
+                        Text("Years: \(snapshot.archiveYearFolders.joined(separator: ", "))")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
@@ -71,15 +79,15 @@ struct SidebarPaneView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            List(appState.browserRoots, children: \.children, selection: Binding(
-                get: { appState.selectedSidebarNodeID },
+            List(snapshot.tree.browserRoots, children: \.children, selection: Binding(
+                get: { state.snapshot.tree.selectedSidebarNodeID },
                 set: { appState.selectSidebarNode($0) }
             )) { node in
                 SidebarNodeRow(node: node)
             }
             .listStyle(.sidebar)
 
-            SidebarStatusView(appState: appState, appRelease: appRelease)
+            SidebarStatusView(state: state, appRelease: appRelease)
         }
         .padding()
         .frame(minWidth: 300)
@@ -106,7 +114,9 @@ struct SidebarPaneView: View {
 }
 
 struct WalkDetailsPaneView: View {
-    @ObservedObject var appState: AppState
+    let appState: AppState
+    @Binding var isExpanded: Bool
+    let isEnabled: Bool
     @Binding var walkTitle: String
     @Binding var walkLocation: String
     @Binding var walkNotes: String
@@ -114,8 +124,8 @@ struct WalkDetailsPaneView: View {
     var compact: Bool = false
 
     var body: some View {
-        if appState.canMutateImportSelection {
-            DisclosureGroup(isExpanded: $appState.isWalkDetailsExpanded) {
+        if isEnabled {
+            DisclosureGroup(isExpanded: $isExpanded) {
                 VStack(alignment: .leading, spacing: 8) {
                     TextField("Walk title", text: $walkTitle)
                     TextField("Location", text: $walkLocation)
@@ -148,7 +158,7 @@ struct WalkDetailsPaneView: View {
 }
 
 struct ActionButtonsPaneView: View {
-    @ObservedObject var appState: AppState
+    let appState: AppState
     var compact: Bool = false
 
     var body: some View {
@@ -191,21 +201,23 @@ struct ActionButtonsPaneView: View {
 }
 
 struct SidebarStatusView: View {
-    @ObservedObject var appState: AppState
+    @ObservedObject var state: SidebarState
     let appRelease: AppRelease
 
     var body: some View {
+        let snapshot = state.snapshot
+
         VStack(alignment: .leading, spacing: 6) {
             Text(appRelease.displayString)
                 .font(.caption2.monospaced())
                 .foregroundStyle(.secondary)
 
-            Text(appState.statusMessage)
+            Text(snapshot.statusMessage)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(3)
 
-            if let progress = appState.importProgress {
+            if let progress = snapshot.importProgress {
                 Text("\(progress.current)/\(progress.total)")
                     .font(.caption2.monospaced())
                     .foregroundStyle(.secondary)
@@ -217,7 +229,7 @@ struct SidebarStatusView: View {
 }
 
 struct FooterStatusBarView: View {
-    @ObservedObject var appState: AppState
+    @ObservedObject var state: SidebarState
     let appRelease: AppRelease
 
     var body: some View {
@@ -233,11 +245,11 @@ struct FooterStatusBarView: View {
                         .stroke(Color.accentColor.opacity(0.45), lineWidth: 1)
                 }
 
-            Text(appState.statusMessage)
+            Text(state.snapshot.statusMessage)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
 
-            if let progress = appState.importProgress {
+            if let progress = state.snapshot.importProgress {
                 Text("\(progress.current)/\(progress.total)")
                     .font(.caption.monospaced())
                     .foregroundStyle(.secondary)

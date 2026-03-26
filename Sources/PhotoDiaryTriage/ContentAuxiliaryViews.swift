@@ -317,7 +317,7 @@ final class ReviewKeyResponderView: NSView {
 
 struct FullPhotoSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @ObservedObject var appState: AppState
+    let appState: AppState
     let item: MediaItem
     @State private var zoom: CGFloat = 1
 
@@ -362,21 +362,22 @@ struct FullPhotoSheet: View {
 }
 
 struct CompareSheet: View {
-    @ObservedObject var appState: AppState
-    let title: String
-    let items: [MediaItem]
+    let appState: AppState
+    @ObservedObject var state: CompareState
     let onClose: () -> Void
     @State private var zoom: CGFloat = 1
     @State private var isPanLocked = true
     @State private var synchronizedViewport = CompareViewport.zero
 
     var body: some View {
+        let snapshot = state.snapshot
+
         VStack(alignment: .leading, spacing: 18) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
+                    Text(snapshot.title)
                         .font(.title2.weight(.semibold))
-                    Text("\(items.count) selected image(s)")
+                    Text("\(snapshot.items.count) selected image(s)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -394,15 +395,15 @@ struct CompareSheet: View {
                 .shortcutHint("Escape", help: "Close compare (Escape)")
             }
 
-            if items.isEmpty {
+            if snapshot.items.isEmpty {
                 ContentUnavailableView("No Images Selected", systemImage: "rectangle.on.rectangle", description: Text("Select at least two images in the grid and use Compare."))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 GeometryReader { gridProxy in
                     let metrics = CompareGridMetrics(
                         availableWidth: gridProxy.size.width,
-                        requestedColumnCount: appState.compareGridColumnCount,
-                        itemCount: items.count
+                        requestedColumnCount: snapshot.gridColumnCount,
+                        itemCount: snapshot.items.count
                     )
                     let columns = Array(
                         repeating: GridItem(
@@ -415,10 +416,10 @@ struct CompareSheet: View {
 
                     ScrollView {
                         LazyVGrid(columns: columns, alignment: .leading, spacing: CGFloat(CompareGridMetrics.gridSpacing)) {
-                            ForEach(items) { item in
+                            ForEach(snapshot.items) { itemSnapshot in
                                 CompareItemCard(
                                     appState: appState,
-                                    item: item,
+                                    snapshot: itemSnapshot,
                                     zoom: zoom,
                                     synchronizedViewport: $synchronizedViewport,
                                     isPanLocked: isPanLocked,
@@ -450,9 +451,9 @@ struct CompareSheet: View {
             } label: {
                 Image(systemName: "minus")
             }
-            .disabled(appState.compareGridColumnCount <= 1)
+            .disabled(state.snapshot.gridColumnCount <= 1)
 
-            Text("\(min(appState.compareGridColumnCount, max(items.count, 1)))")
+            Text("\(min(state.snapshot.gridColumnCount, max(state.snapshot.items.count, 1)))")
                 .font(.caption.monospacedDigit())
                 .frame(width: 22)
 
@@ -461,14 +462,14 @@ struct CompareSheet: View {
             } label: {
                 Image(systemName: "plus")
             }
-            .disabled(appState.compareGridColumnCount >= max(items.count, 1))
+            .disabled(state.snapshot.gridColumnCount >= max(state.snapshot.items.count, 1))
 
             Button {
                 appState.resetCompareGridColumnCount()
             } label: {
                 Image(systemName: "arrow.counterclockwise")
             }
-            .disabled(appState.compareGridColumnCount == CompareGridMetrics.defaultColumnCount(for: items.count))
+            .disabled(state.snapshot.gridColumnCount == CompareGridMetrics.defaultColumnCount(for: state.snapshot.items.count))
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
@@ -476,19 +477,15 @@ struct CompareSheet: View {
 }
 
 struct CompareItemCard: View {
-    @ObservedObject var appState: AppState
-    let item: MediaItem
+    let appState: AppState
+    let snapshot: ReviewItemSnapshot
     let zoom: CGFloat
     @Binding var synchronizedViewport: CompareViewport
     let isPanLocked: Bool
     let imageWidth: CGFloat
 
-    private var isSelected: Bool {
-        appState.selectedMediaItemIDs.contains(item.id)
-    }
-
-    private var isFocused: Bool {
-        appState.focusedReviewItemID == item.id
+    private var item: MediaItem {
+        snapshot.item
     }
 
     private var imageHeight: CGFloat {
@@ -610,9 +607,9 @@ struct CompareItemCard: View {
                 .stroke(Color.secondary.opacity(0.16), lineWidth: 1)
         }
         .overlay {
-            if isSelected || isFocused {
+            if snapshot.isSelected || snapshot.isFocused {
                 RoundedRectangle(cornerRadius: 16)
-                    .stroke(Color.accentColor, lineWidth: isSelected ? 3 : 2)
+                    .stroke(Color.accentColor, lineWidth: snapshot.isSelected ? 3 : 2)
             }
         }
     }

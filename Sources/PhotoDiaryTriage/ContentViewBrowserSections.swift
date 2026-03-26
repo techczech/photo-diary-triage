@@ -31,13 +31,15 @@ struct HeaderPaneView: View {
 }
 
 struct BrowserOrReviewPaneView: View {
-    @ObservedObject var appState: AppState
+    let appState: AppState
+    @ObservedObject var state: ReviewState
+    @ObservedObject var navigationState: ReviewNavigationState
 
     var body: some View {
-        if !appState.contextMediaItems.isEmpty {
-            DayContextPaneView(appState: appState)
-        } else if !appState.detailFolderNodes.isEmpty {
-            FolderBrowserPaneView(appState: appState)
+        if state.snapshot.contextMediaItemCount > 0 {
+            DayContextPaneView(appState: appState, state: state, navigationState: navigationState)
+        } else if !state.snapshot.detailFolderNodes.isEmpty {
+            FolderBrowserPaneView(appState: appState, state: state)
         } else {
             ContentUnavailableView("No Content", systemImage: "folder", description: Text("Choose a source folder and browse by year, month, day, or grouping folders."))
         }
@@ -45,10 +47,12 @@ struct BrowserOrReviewPaneView: View {
 }
 
 struct DayContextPaneView: View {
-    @ObservedObject var appState: AppState
+    let appState: AppState
+    @ObservedObject var state: ReviewState
+    @ObservedObject var navigationState: ReviewNavigationState
 
     var body: some View {
-        ReviewPaneView(appState: appState)
+        ReviewPaneView(appState: appState, state: state, navigationState: navigationState)
     }
 }
 
@@ -105,14 +109,15 @@ struct InlineDaySectionsPaneView: View {
 }
 
 struct FolderBrowserPaneView: View {
-    @ObservedObject var appState: AppState
+    let appState: AppState
+    @ObservedObject var state: ReviewState
 
     var body: some View {
         List(selection: Binding(
             get: { appState.selectedFolderNodeIDs },
             set: { appState.selectFolderNodes($0) }
         )) {
-            ForEach(appState.detailFolderNodes) { node in
+            ForEach(state.snapshot.detailFolderNodes) { node in
                 FolderNodeRow(node: node)
                     .tag(node.id)
                     .onTapGesture(count: 2) {
@@ -129,16 +134,21 @@ struct FolderBrowserPaneView: View {
 }
 
 struct ReviewPaneView: View {
-    @ObservedObject var appState: AppState
+    let appState: AppState
+    @ObservedObject var state: ReviewState
+    @ObservedObject var navigationState: ReviewNavigationState
 
     var body: some View {
+        let snapshot = state.snapshot
+        let navigation = navigationState.snapshot
+
         VStack(alignment: .leading, spacing: 10) {
             reviewToolbar
 
             GeometryReader { proxy in
                 ZStack(alignment: .topLeading) {
                     ReviewKeyInputView(
-                        isFocused: appState.reviewGridHasFocus,
+                        isFocused: navigation.reviewGridHasFocus,
                         onArrow: { dx, dy, extending in
                             appState.handleReviewArrowKey(dx: dx, dy: dy, extending: extending)
                         },
@@ -181,10 +191,10 @@ struct ReviewPaneView: View {
                     )
                     .frame(width: 1, height: 1)
 
-                    if appState.visibleMediaItems.isEmpty {
+                    if snapshot.visibleItems.isEmpty {
                         reviewFilterEmptyState
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                    } else if appState.reviewPresentationMode == .grid {
+                    } else if snapshot.reviewPresentationMode == .grid {
                         if isGroupedReviewMode {
                             groupedReviewGrid(availableWidth: proxy.size.width)
                         } else {
@@ -221,12 +231,12 @@ struct ReviewPaneView: View {
     }
 
     private var isGroupedReviewMode: Bool {
-        appState.shouldShowInlineDaySections && appState.dayDetailDisplayMode == .sections
+        state.snapshot.canUseGroupedReviewMode && state.snapshot.dayDetailDisplayMode == .sections
     }
 
     private var reviewFilterEmptyState: some View {
         ContentUnavailableView(
-            "No \(appState.reviewFilter.title.lowercased()) photos",
+            "No \(state.snapshot.reviewFilter.title.lowercased()) photos",
             systemImage: "line.3.horizontal.decrease.circle",
             description: Text("Change the review filter or update triage states to see items in this view.")
         )
@@ -235,8 +245,8 @@ struct ReviewPaneView: View {
     private var reviewToolbar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                if !appState.breadcrumbTitles.isEmpty {
-                    Text(appState.breadcrumbTitles.joined(separator: " / "))
+                if !state.snapshot.breadcrumbTitles.isEmpty {
+                    Text(state.snapshot.breadcrumbTitles.joined(separator: " / "))
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -244,7 +254,7 @@ struct ReviewPaneView: View {
 
                 detailDisplayPicker
 
-                if appState.canUseGroupedReviewMode && appState.dayDetailDisplayMode == .sections {
+                if state.snapshot.canUseGroupedReviewMode && state.snapshot.dayDetailDisplayMode == .sections {
                     groupedOrganizationPicker
                     groupedSectionButtons
                 }
@@ -262,21 +272,21 @@ struct ReviewPaneView: View {
 
     private var detailDisplayPicker: some View {
         Picker("Display", selection: Binding(
-            get: { appState.dayDetailDisplayMode },
+            get: { state.snapshot.dayDetailDisplayMode },
             set: { appState.setDayDetailDisplayMode($0) }
         )) {
-            ForEach(appState.availableDayDetailDisplayModes, id: \.self) { mode in
+            ForEach(state.snapshot.availableDayDetailDisplayModes, id: \.self) { mode in
                 Text(mode.title).tag(mode)
             }
         }
         .pickerStyle(.segmented)
-        .frame(width: appState.canUseGroupedReviewMode ? 250 : 122)
+        .frame(width: state.snapshot.canUseGroupedReviewMode ? 250 : 122)
         .shortcutHint("Cmd-3 / Cmd-4", help: "Switch between flat review and grouped review (Cmd-3 / Cmd-4)")
     }
 
     private var groupedOrganizationPicker: some View {
         Picker("Show By", selection: Binding(
-            get: { appState.dayOrganizationMode },
+            get: { state.snapshot.dayOrganizationMode },
             set: { appState.setDayOrganizationMode($0) }
         )) {
             ForEach(DayOrganizationMode.allCases, id: \.self) { mode in
@@ -305,7 +315,7 @@ struct ReviewPaneView: View {
 
     private var reviewFilterPicker: some View {
         Picker("Filter", selection: Binding(
-            get: { appState.reviewFilter },
+            get: { state.snapshot.reviewFilter },
             set: { appState.setReviewFilter($0) }
         )) {
             ForEach(ReviewFilter.allCases, id: \.self) { filter in
@@ -318,33 +328,30 @@ struct ReviewPaneView: View {
     }
 
     private var inspectorToggleButton: some View {
-        Button(appState.isDetailsInspectorVisible ? "Hide Inspector" : "Show Inspector") {
+        Button(appState.inspectorState.snapshot.isVisible ? "Hide Inspector" : "Show Inspector") {
             appState.toggleDetailsInspector()
         }
         .buttonStyle(.bordered)
         .keyboardShortcut("i", modifiers: [.command, .option])
-        .shortcutHint("Cmd-Option-I", help: "\(appState.isDetailsInspectorVisible ? "Hide" : "Show") inspector (Cmd-Option-I)")
+        .shortcutHint("Cmd-Option-I", help: "\(appState.inspectorState.snapshot.isVisible ? "Hide" : "Show") inspector (Cmd-Option-I)")
     }
 
     private func reviewGrid(availableWidth: CGFloat) -> some View {
-        let visibleItems = appState.visibleMediaItems
-        let cardWidth = CGFloat(appState.reviewGridCardWidth)
+        let visibleItems = state.snapshot.visibleItems
+        let cardWidth = CGFloat(state.snapshot.reviewGridCardWidth)
         let spacing = CGFloat(ReviewGridMetrics.gridSpacing)
-        let columns = Array(repeating: GridItem(.fixed(cardWidth), spacing: spacing, alignment: .top), count: max(1, appState.reviewGridColumnCount))
+        let columns = Array(repeating: GridItem(.fixed(cardWidth), spacing: spacing, alignment: .top), count: max(1, state.snapshot.reviewGridColumnCount))
 
         return ScrollViewReader { proxy in
             ScrollView(.vertical) {
                 LazyVGrid(columns: columns, alignment: .leading, spacing: spacing) {
-                    ForEach(visibleItems) { item in
+                    ForEach(visibleItems) { snapshot in
+                        let item = snapshot.item
                         ReviewGridCard(
-                            item: item,
-                            thumbnailImage: appState.thumbnailImage(for: item),
-                            archivePreview: appState.archivePreview(for: item),
+                            appState: appState,
+                            snapshot: snapshot,
                             cardWidth: cardWidth,
-                            canMutateImportSelection: appState.canMutateImportSelection,
-                            isSelected: appState.selectedMediaItemIDs.contains(item.id),
-                            isFocused: appState.focusedReviewItemID == item.id,
-                            thumbnailFailed: appState.thumbnailFailures.contains(item.id),
+                            canMutateImportSelection: state.snapshot.canMutateImportSelection,
                             onClick: { click in
                                 appState.handleGridSelection(for: item.id, click: click)
                             },
@@ -382,11 +389,12 @@ struct ReviewPaneView: View {
                 .padding(CGFloat(ReviewGridMetrics.gridPadding))
             }
             .clipped()
-            .onChange(of: appState.pendingReviewScrollTargetID) { _, targetID in
+            .onChange(of: navigationState.snapshot.pendingReviewScrollTargetID) { _, targetID in
                 guard let targetID else { return }
                 DispatchQueue.main.async {
                     proxy.scrollTo(targetID, anchor: .center)
                     appState.pendingReviewScrollTargetID = nil
+                    appState.endLatencyMeasurement("review.scroll")
                 }
             }
         }
@@ -396,16 +404,17 @@ struct ReviewPaneView: View {
     }
 
     private func groupedReviewGrid(availableWidth: CGFloat) -> some View {
-        let cardWidth = CGFloat(appState.reviewGridCardWidth)
+        let cardWidth = CGFloat(state.snapshot.reviewGridCardWidth)
         let spacing = CGFloat(ReviewGridMetrics.gridSpacing)
-        let columns = Array(repeating: GridItem(.fixed(cardWidth), spacing: spacing, alignment: .top), count: max(1, appState.reviewGridColumnCount))
+        let columns = Array(repeating: GridItem(.fixed(cardWidth), spacing: spacing, alignment: .top), count: max(1, state.snapshot.reviewGridColumnCount))
 
         return ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14) {
-                    ForEach(appState.organizedInlineSections) { section in
+                    ForEach(state.snapshot.organizedInlineSections) { section in
                         GroupedReviewSectionNodeView(
                             appState: appState,
+                            state: state,
                             section: section,
                             columns: columns,
                             cardWidth: cardWidth,
@@ -415,29 +424,30 @@ struct ReviewPaneView: View {
                 }
                 .padding(.vertical, 4)
             }
-            .onChange(of: appState.pendingInlineScrollTargetID) { _, targetID in
+            .onChange(of: navigationState.snapshot.pendingInlineScrollTargetID) { _, targetID in
                 guard let targetID else { return }
                 DispatchQueue.main.async {
                     proxy.scrollTo(targetID, anchor: .center)
                     appState.pendingInlineScrollTargetID = nil
                 }
             }
-            .onChange(of: appState.pendingReviewScrollTargetID) { _, targetID in
+            .onChange(of: navigationState.snapshot.pendingReviewScrollTargetID) { _, targetID in
                 guard let targetID else { return }
                 DispatchQueue.main.async {
                     proxy.scrollTo(targetID, anchor: .center)
                     appState.pendingReviewScrollTargetID = nil
+                    appState.endLatencyMeasurement("review.scroll")
                 }
             }
             .onAppear {
-                guard let targetID = appState.pendingInlineSectionScrollTargetID else { return }
+                guard let targetID = navigationState.snapshot.pendingInlineSectionScrollTargetID else { return }
                 DispatchQueue.main.async {
                     proxy.scrollTo(targetID, anchor: .top)
                     appState.pendingInlineSectionScrollTargetID = nil
                 }
             }
-            .onChange(of: appState.pendingInlineSectionScrollRevision) { _, _ in
-                guard let targetID = appState.pendingInlineSectionScrollTargetID else { return }
+            .onChange(of: navigationState.snapshot.pendingInlineSectionScrollRevision) { _, _ in
+                guard let targetID = navigationState.snapshot.pendingInlineSectionScrollTargetID else { return }
                 DispatchQueue.main.async {
                     proxy.scrollTo(targetID, anchor: .top)
                     appState.pendingInlineSectionScrollTargetID = nil
@@ -451,7 +461,7 @@ struct ReviewPaneView: View {
 
     private var reviewPresentationPicker: some View {
         Picker("View", selection: Binding(
-            get: { appState.reviewPresentationMode },
+            get: { state.snapshot.reviewPresentationMode },
             set: { appState.setReviewPresentationMode($0) }
         )) {
             Text("Grid").tag(ReviewPresentationMode.grid)
@@ -470,9 +480,9 @@ struct ReviewPaneView: View {
                 Image(systemName: "minus")
             }
             .shortcutHint("-", help: "Show fewer review columns (-)")
-            .disabled(appState.reviewGridPreferredColumnCount <= 1)
+            .disabled(state.snapshot.reviewGridPreferredColumnCount <= 1)
 
-            Text("\(appState.reviewGridPreferredColumnCount)")
+            Text("\(state.snapshot.reviewGridPreferredColumnCount)")
                 .font(.caption.monospacedDigit())
                 .frame(width: 36)
 
@@ -482,7 +492,7 @@ struct ReviewPaneView: View {
                 Image(systemName: "plus")
             }
             .shortcutHint("+", help: "Show more review columns (+)")
-            .disabled(appState.reviewGridPreferredColumnCount >= ReviewGridMetrics.maxSuggestedColumns)
+            .disabled(state.snapshot.reviewGridPreferredColumnCount >= ReviewGridMetrics.maxSuggestedColumns)
 
             Button {
                 appState.resetReviewGridColumnCount()
@@ -490,7 +500,7 @@ struct ReviewPaneView: View {
                 Image(systemName: "arrow.counterclockwise")
             }
             .shortcutHint("0", help: "Reset review columns (0)")
-            .disabled(appState.reviewGridPreferredColumnCount == ReviewGridMetrics.defaultRequestedColumnCount())
+            .disabled(state.snapshot.reviewGridPreferredColumnCount == ReviewGridMetrics.defaultRequestedColumnCount())
         }
         .buttonStyle(.bordered)
     }
@@ -500,13 +510,13 @@ struct ReviewPaneView: View {
             Button("Open") {
                 appState.openFocusedReviewItem()
             }
-            .disabled(appState.focusedReviewItem == nil)
+            .disabled(state.snapshot.focusedReviewItemID == nil)
             .shortcutHint("Return", help: "Open focused photo preview (Return)")
 
             Button("Compare") {
                 appState.openComparisonForCurrentSelection()
             }
-            .disabled(!appState.canOpenComparison)
+            .disabled(!state.snapshot.canOpenComparison)
             .shortcutHint("C / Cmd-Shift-C", help: "Compare the current selection (C / Cmd-Shift-C)")
         }
     }
@@ -520,60 +530,57 @@ struct ReviewPaneView: View {
             Button("Deselect") {
                 appState.deselectAllVisibleMedia()
             }
-            .disabled(appState.selectedMediaItemIDs.isEmpty)
+            .disabled(state.snapshot.selectedMediaItemIDs.isEmpty)
 
-            if appState.canMutateImportSelection {
+            if state.snapshot.canMutateImportSelection {
                 Button("Select For Import") {
                     appState.markCurrentSelectionForImport()
                 }
-                .disabled(!appState.canMarkSelectionForImport)
+                .disabled(!state.snapshot.canMarkSelectionForImport)
 
                 Button("Exclude From Import") {
                     appState.excludeCurrentSelectionFromImport()
                 }
-                .disabled(!appState.canExcludeSelectionFromImport)
+                .disabled(!state.snapshot.canExcludeSelectionFromImport)
 
                 Button("Clear To Undecided") {
                     appState.unmarkCurrentSelectionForImport()
                 }
-                .disabled(!appState.canUnmarkSelectionForImport)
+                .disabled(!state.snapshot.canUnmarkSelectionForImport)
 
                 Button("Toggle RAW") {
                     appState.toggleRawForCurrentMediaSelection()
                 }
-                .disabled(!appState.canToggleRawForSelection)
+                .disabled(!state.snapshot.canToggleRawForSelection)
             }
         }
         .help("Selection and import actions")
     }
 
     private var reviewList: some View {
-        let visibleItems = appState.visibleMediaItems
+        let visibleItems = state.snapshot.visibleItems
         return List(selection: Binding(
-            get: { appState.selectedMediaItemIDs },
+            get: { state.snapshot.selectedMediaItemIDs },
             set: { appState.selectMediaItems($0) }
         )) {
-            ForEach(visibleItems) { item in
+            ForEach(visibleItems) { snapshot in
+                let item = snapshot.item
                 MediaItemRow(
-                    item: item,
-                    thumbnailImage: appState.thumbnailImage(for: item),
-                    archivePreview: appState.archivePreview(for: item),
-                    canMutateImportSelection: appState.canMutateImportSelection,
-                    isSelected: appState.selectedMediaItemIDs.contains(item.id),
-                    isFocused: appState.focusedReviewItemID == item.id,
-                    thumbnailFailed: appState.thumbnailFailures.contains(item.id),
+                    appState: appState,
+                    snapshot: snapshot,
+                    canMutateImportSelection: state.snapshot.canMutateImportSelection,
                     includeForImport: {
-                        guard appState.canMutateImportSelection else { return }
+                        guard state.snapshot.canMutateImportSelection else { return }
                         appState.selectMediaItems([item.id])
                         appState.markCurrentSelectionForImport()
                     },
                     excludeFromImport: {
-                        guard appState.canMutateImportSelection else { return }
+                        guard state.snapshot.canMutateImportSelection else { return }
                         appState.selectMediaItems([item.id])
                         appState.excludeCurrentSelectionFromImport()
                     },
                     clearTriageState: {
-                        guard appState.canMutateImportSelection else { return }
+                        guard state.snapshot.canMutateImportSelection else { return }
                         appState.selectMediaItems([item.id])
                         appState.unmarkCurrentSelectionForImport()
                     },
@@ -601,41 +608,43 @@ struct ReviewPaneView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14) {
-                    ForEach(appState.organizedInlineSections) { section in
+                    ForEach(state.snapshot.organizedInlineSections) { section in
                         GroupedReviewSectionNodeView(
                             appState: appState,
+                            state: state,
                             section: section,
                             columns: [],
-                            cardWidth: CGFloat(appState.reviewGridCardWidth),
+                            cardWidth: CGFloat(state.snapshot.reviewGridCardWidth),
                             presentationMode: .list
                         )
                     }
                 }
                 .padding(.vertical, 4)
             }
-            .onChange(of: appState.pendingInlineScrollTargetID) { _, targetID in
+            .onChange(of: navigationState.snapshot.pendingInlineScrollTargetID) { _, targetID in
                 guard let targetID else { return }
                 DispatchQueue.main.async {
                     proxy.scrollTo(targetID, anchor: .center)
                     appState.pendingInlineScrollTargetID = nil
                 }
             }
-            .onChange(of: appState.pendingReviewScrollTargetID) { _, targetID in
+            .onChange(of: navigationState.snapshot.pendingReviewScrollTargetID) { _, targetID in
                 guard let targetID else { return }
                 DispatchQueue.main.async {
                     proxy.scrollTo(targetID, anchor: .center)
                     appState.pendingReviewScrollTargetID = nil
+                    appState.endLatencyMeasurement("review.scroll")
                 }
             }
             .onAppear {
-                guard let targetID = appState.pendingInlineSectionScrollTargetID else { return }
+                guard let targetID = navigationState.snapshot.pendingInlineSectionScrollTargetID else { return }
                 DispatchQueue.main.async {
                     proxy.scrollTo(targetID, anchor: .top)
                     appState.pendingInlineSectionScrollTargetID = nil
                 }
             }
-            .onChange(of: appState.pendingInlineSectionScrollRevision) { _, _ in
-                guard let targetID = appState.pendingInlineSectionScrollTargetID else { return }
+            .onChange(of: navigationState.snapshot.pendingInlineSectionScrollRevision) { _, _ in
+                guard let targetID = navigationState.snapshot.pendingInlineSectionScrollTargetID else { return }
                 DispatchQueue.main.async {
                     proxy.scrollTo(targetID, anchor: .top)
                     appState.pendingInlineSectionScrollTargetID = nil
@@ -650,7 +659,8 @@ struct ReviewPaneView: View {
 }
 
 private struct GroupedReviewSectionNodeView: View {
-    @ObservedObject var appState: AppState
+    let appState: AppState
+    @ObservedObject var state: ReviewState
     let section: InlineSection
     let columns: [GridItem]
     let cardWidth: CGFloat
@@ -668,8 +678,8 @@ private struct GroupedReviewSectionNodeView: View {
         section.photoItemIDs.isEmpty && section.children.isEmpty ? section.mediaItemIDs : section.photoItemIDs
     }
 
-    private var directItems: [MediaItem] {
-        appState.orderedMediaItems(for: directItemIDs)
+    private var directItems: [ReviewItemSnapshot] {
+        directItemIDs.compactMap { state.snapshot.itemSnapshotsByID[$0] }
     }
 
     private var compareItemIDs: [UUID] {
@@ -683,16 +693,16 @@ private struct GroupedReviewSectionNodeView: View {
             if isExpanded {
                 if presentationMode == .grid, !directItems.isEmpty {
                     LazyVGrid(columns: columns, alignment: .leading, spacing: CGFloat(ReviewGridMetrics.gridSpacing)) {
-                        ForEach(directItems) { item in
-                            reviewGridCard(for: item)
-                                .id(item.id)
+                        ForEach(directItems) { snapshot in
+                            reviewGridCard(for: snapshot)
+                                .id(snapshot.id)
                         }
                     }
                     .padding(.leading, !section.children.isEmpty ? 24 : 0)
                 } else if !directItems.isEmpty {
-                    ForEach(directItems) { item in
-                        reviewListRow(for: item)
-                            .id(item.id)
+                    ForEach(directItems) { snapshot in
+                        reviewListRow(for: snapshot)
+                            .id(snapshot.id)
                     }
                     .padding(.leading, !section.children.isEmpty ? 12 : 0)
                 }
@@ -700,6 +710,7 @@ private struct GroupedReviewSectionNodeView: View {
                 ForEach(section.children) { child in
                     GroupedReviewSectionNodeView(
                         appState: appState,
+                        state: state,
                         section: child,
                         columns: columns,
                         cardWidth: cardWidth,
@@ -714,7 +725,7 @@ private struct GroupedReviewSectionNodeView: View {
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.35), in: RoundedRectangle(cornerRadius: 14))
         .overlay {
             RoundedRectangle(cornerRadius: 14)
-                .stroke(appState.focusedInlineSectionID == section.id ? Color.accentColor : Color.clear, lineWidth: 2)
+                .stroke(state.snapshot.focusedInlineSectionID == section.id ? Color.accentColor : Color.clear, lineWidth: 2)
         }
     }
 
@@ -785,16 +796,13 @@ private struct GroupedReviewSectionNodeView: View {
         section.kind != .day && compareItemIDs.count >= 2
     }
 
-    private func reviewGridCard(for item: MediaItem) -> some View {
-        ReviewGridCard(
-            item: item,
-            thumbnailImage: appState.thumbnailImage(for: item),
-            archivePreview: appState.archivePreview(for: item),
+    private func reviewGridCard(for snapshot: ReviewItemSnapshot) -> some View {
+        let item = snapshot.item
+        return ReviewGridCard(
+            appState: appState,
+            snapshot: snapshot,
             cardWidth: cardWidth,
-            canMutateImportSelection: appState.canMutateImportSelection,
-            isSelected: appState.selectedMediaItemIDs.contains(item.id),
-            isFocused: appState.focusedReviewItemID == item.id,
-            thumbnailFailed: appState.thumbnailFailures.contains(item.id),
+            canMutateImportSelection: state.snapshot.canMutateImportSelection,
             onClick: { click in
                 appState.handleGridSelection(for: item.id, click: click)
             },
@@ -802,52 +810,46 @@ private struct GroupedReviewSectionNodeView: View {
                 appState.requestThumbnail(for: item)
             },
             setIncludeRaw: { enabled in
-                if appState.canMutateImportSelection {
+                if state.snapshot.canMutateImportSelection {
                     appState.setImportRawCompanions(for: item, enabled: enabled)
                 }
             },
             includeForImport: {
-                guard appState.canMutateImportSelection else { return }
+                guard state.snapshot.canMutateImportSelection else { return }
                 appState.selectMediaItems([item.id])
                 appState.markCurrentSelectionForImport()
             },
             excludeFromImport: {
-                guard appState.canMutateImportSelection else { return }
+                guard state.snapshot.canMutateImportSelection else { return }
                 appState.selectMediaItems([item.id])
                 appState.excludeCurrentSelectionFromImport()
             },
             clearTriageState: {
-                guard appState.canMutateImportSelection else { return }
+                guard state.snapshot.canMutateImportSelection else { return }
                 appState.selectMediaItems([item.id])
                 appState.unmarkCurrentSelectionForImport()
             }
         )
-        .onAppear {
-            appState.requestThumbnail(for: item)
-        }
     }
 
-    private func reviewListRow(for item: MediaItem) -> some View {
-        MediaItemRow(
-            item: item,
-            thumbnailImage: appState.thumbnailImage(for: item),
-            archivePreview: appState.archivePreview(for: item),
-            canMutateImportSelection: appState.canMutateImportSelection,
-            isSelected: appState.selectedMediaItemIDs.contains(item.id),
-            isFocused: appState.focusedReviewItemID == item.id,
-            thumbnailFailed: appState.thumbnailFailures.contains(item.id),
+    private func reviewListRow(for snapshot: ReviewItemSnapshot) -> some View {
+        let item = snapshot.item
+        return MediaItemRow(
+            appState: appState,
+            snapshot: snapshot,
+            canMutateImportSelection: state.snapshot.canMutateImportSelection,
             includeForImport: {
-                guard appState.canMutateImportSelection else { return }
+                guard state.snapshot.canMutateImportSelection else { return }
                 appState.selectMediaItems([item.id])
                 appState.markCurrentSelectionForImport()
             },
             excludeFromImport: {
-                guard appState.canMutateImportSelection else { return }
+                guard state.snapshot.canMutateImportSelection else { return }
                 appState.selectMediaItems([item.id])
                 appState.excludeCurrentSelectionFromImport()
             },
             clearTriageState: {
-                guard appState.canMutateImportSelection else { return }
+                guard state.snapshot.canMutateImportSelection else { return }
                 appState.selectMediaItems([item.id])
                 appState.unmarkCurrentSelectionForImport()
             },
@@ -855,14 +857,11 @@ private struct GroupedReviewSectionNodeView: View {
                 appState.requestThumbnail(for: item)
             },
             setIncludeRaw: { enabled in
-                if appState.canMutateImportSelection {
+                if state.snapshot.canMutateImportSelection {
                     appState.setImportRawCompanions(for: item, enabled: enabled)
                 }
             }
         )
-        .onAppear {
-            appState.requestThumbnail(for: item)
-        }
         .tag(item.id)
     }
 }
