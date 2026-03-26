@@ -101,7 +101,7 @@ import Testing
 @MainActor
 @Test func dayContainerStillExposesMediaForReviewGrid() {
     let items = makeSelectionItems(count: 3)
-    let state = AppState()
+    let state = AppState(testing: true)
     let root = URL(fileURLWithPath: "/tmp/review-container-state", isDirectory: true)
     state.currentSession = makeTestSession(sourceRoot: root, archiveRoot: root.appendingPathComponent("archive", isDirectory: true), items: items)
     state.burstGroups = []
@@ -119,7 +119,7 @@ import Testing
 @MainActor
 @Test func groupedReviewInteractionItemsFollowExpandedSections() {
     let items = makeSelectionItems(count: 4)
-    let state = AppState()
+    let state = AppState(testing: true)
     let root = URL(fileURLWithPath: "/tmp/grouped-review-state", isDirectory: true)
     state.currentSession = makeTestSession(sourceRoot: root, archiveRoot: root.appendingPathComponent("archive", isDirectory: true), items: items)
     state.burstGroups = []
@@ -142,7 +142,7 @@ import Testing
 @MainActor
 @Test func groupedReviewCanBeRequestedForDayContainerContexts() {
     let items = makeSelectionItems(count: 4)
-    let state = AppState()
+    let state = AppState(testing: true)
     let root = URL(fileURLWithPath: "/tmp/grouped-review-shell", isDirectory: true)
     state.currentSession = makeTestSession(sourceRoot: root, archiveRoot: root.appendingPathComponent("archive", isDirectory: true), items: items)
     state.burstGroups = []
@@ -165,7 +165,7 @@ import Testing
 
 @MainActor
 @Test func groupedReviewFallsBackCleanlyWhenCurrentNodeCannotBeGrouped() {
-    let state = AppState()
+    let state = AppState(testing: true)
 
     #expect(!state.canUseGroupedReviewMode)
     #expect(state.availableDayDetailDisplayModes == [.review])
@@ -342,8 +342,83 @@ import Testing
 }
 
 @MainActor
+@Test func reviewFilterLimitsVisibleMediaByTriageState() {
+    let sourceRoot = URL(fileURLWithPath: "/tmp/review-filter-state", isDirectory: true)
+    let base = Date(timeIntervalSince1970: 20_000)
+    let items = [
+        makeTestMediaItem(sourceRoot: sourceRoot, fileName: "included.jpg", capturedAt: base, selectionState: .included),
+        makeTestMediaItem(sourceRoot: sourceRoot, fileName: "excluded.jpg", capturedAt: base.addingTimeInterval(1), selectionState: .excluded),
+        makeTestMediaItem(sourceRoot: sourceRoot, fileName: "undecided.jpg", capturedAt: base.addingTimeInterval(2), selectionState: .undecided)
+    ]
+    let state = makeReviewAppState(items: items)
+
+    state.setReviewFilter(.included)
+    #expect(state.visibleMediaItems.map(\.id) == [items[0].id])
+
+    state.setReviewFilter(.excluded)
+    #expect(state.visibleMediaItems.map(\.id) == [items[1].id])
+
+    state.setReviewFilter(.undecided)
+    #expect(state.visibleMediaItems.map(\.id) == [items[2].id])
+
+    state.setReviewFilter(.all)
+    #expect(state.visibleMediaItems.count == 3)
+}
+
+@MainActor
+@Test func excludeCurrentSelectionUpdatesTriageStateAndClearsRawImportFlag() {
+    let sourceRoot = URL(fileURLWithPath: "/tmp/review-exclude-state", isDirectory: true)
+    let capturedAt = Date(timeIntervalSince1970: 20_000)
+    let companion = CompanionFile(
+        sourceURL: sourceRoot.appendingPathComponent("first.cr3"),
+        relativePath: "first.cr3",
+        fileName: "first.cr3",
+        fileSizeBytes: 1,
+        kind: .raw
+    )
+    let items = [
+        makeTestMediaItem(
+            sourceRoot: sourceRoot,
+            fileName: "first.jpg",
+            capturedAt: capturedAt,
+            selectionState: .included,
+            importRawCompanions: true,
+            companionFiles: [companion],
+            lifecycleState: .selectedForImport
+        ),
+        makeTestMediaItem(sourceRoot: sourceRoot, fileName: "second.jpg", capturedAt: capturedAt.addingTimeInterval(1))
+    ]
+    let state = makeReviewAppState(items: items)
+    state.selectMediaItems([items[0].id])
+
+    state.excludeCurrentSelectionFromImport()
+
+    let updatedItem = state.currentSession?.mediaItems.first(where: { $0.id == items[0].id })
+    #expect(updatedItem?.selectionState == .excluded)
+    #expect(updatedItem?.lifecycleState == .discovered)
+    #expect(updatedItem?.importRawCompanions == false)
+}
+
+@MainActor
+@Test func filterChangeReconcilesSelectionWhenHiddenItemsDropOut() {
+    let sourceRoot = URL(fileURLWithPath: "/tmp/review-filter-reconcile", isDirectory: true)
+    let base = Date(timeIntervalSince1970: 20_000)
+    let items = [
+        makeTestMediaItem(sourceRoot: sourceRoot, fileName: "included.jpg", capturedAt: base, selectionState: .included),
+        makeTestMediaItem(sourceRoot: sourceRoot, fileName: "excluded.jpg", capturedAt: base.addingTimeInterval(1), selectionState: .excluded)
+    ]
+    let state = makeReviewAppState(items: items)
+    state.selectMediaItems([items[1].id])
+
+    state.setReviewFilter(.included)
+
+    #expect(state.selectedMediaItemIDs.isEmpty)
+    #expect(state.focusedReviewItemID == items[0].id)
+}
+
+@MainActor
 private func makeReviewAppState(items: [MediaItem]) -> AppState {
-    let state = AppState()
+    let state = AppState(testing: true)
     let root = URL(fileURLWithPath: "/tmp/review-state", isDirectory: true)
     state.currentSession = makeTestSession(sourceRoot: root, archiveRoot: root.appendingPathComponent("archive", isDirectory: true), items: items)
     state.burstGroups = []

@@ -77,6 +77,7 @@ struct KeyboardHelpSheet: View {
                         ("Arrow Keys", "Move grid focus; hold Shift to extend selection."),
                         ("Space", "Toggle the focused photo selection."),
                         ("I", "Include the current selection for import."),
+                        ("X", "Exclude the current selection from import."),
                         ("D", "Clear the current selection back to undecided."),
                         ("R", "Toggle RAW companion import for the current selection."),
                         ("S", "Keep only the focused photo selected."),
@@ -99,6 +100,7 @@ struct KeyboardHelpSheet: View {
                         ("+ / - / 0", "Resize review cards, or change compare layout density when compare is open."),
                         ("Option + + / - / 0", "Zoom compare images without changing the compare layout density."),
                         ("Cmd-3 / Cmd-4", "Switch flat review or grouped review."),
+                        ("Cmd-Control-A / I / X / U", "Filter review items to all, included, excluded, or undecided."),
                         ("Cmd-Option-G / Cmd-Option-L", "Switch grid or list layout."),
                         ("Cmd-Shift-C", "Open compare from the command menu path.")
                     ])
@@ -110,6 +112,7 @@ struct KeyboardHelpSheet: View {
                         ("Cmd-Option-I", "Toggle the right-side inspector."),
                         ("Cmd-Option-S", "Toggle the left sidebar."),
                         ("Cmd-I", "Mark the current selection for import."),
+                        ("Cmd-Shift-X", "Exclude the current selection from import."),
                         ("Cmd-Shift-I", "Remove the current selection from import."),
                         ("Cmd-Shift-M", "Copy marked files into the archive."),
                         ("Cmd-Shift-B", "Confirm backup and enable cleanup."),
@@ -532,16 +535,30 @@ struct CompareItemCard: View {
 
             if appState.canMutateImportSelection {
                 HStack {
-                    Button(item.selectionState.isIncluded ? "Clear" : "Include") {
+                    Button("Include") {
                         appState.selectMediaItems([item.id])
-                        if item.selectionState.isIncluded {
-                            appState.unmarkCurrentSelectionForImport()
-                        } else {
-                            appState.markCurrentSelectionForImport()
-                        }
+                        appState.markCurrentSelectionForImport()
                     }
-                    .buttonStyle(.borderedProminent)
-                    .shortcutHint(item.selectionState.isIncluded ? "D / Cmd-Shift-I" : "I / Cmd-I", help: item.selectionState.isIncluded ? "Clear this item back to undecided" : "Include this item for import")
+                    .buttonStyle(.bordered)
+                    .disabled(item.selectionState.isIncluded)
+                    .shortcutHint("I / Cmd-I", help: "Include this item for import")
+
+                    Button("Exclude") {
+                        appState.selectMediaItems([item.id])
+                        appState.excludeCurrentSelectionFromImport()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(item.selectionState.isExcluded)
+                    .shortcutHint("X / Cmd-Shift-X", help: "Exclude this item from import")
+
+                    if !item.selectionState.isUndecided {
+                        Button("Clear") {
+                            appState.selectMediaItems([item.id])
+                            appState.unmarkCurrentSelectionForImport()
+                        }
+                        .buttonStyle(.bordered)
+                        .shortcutHint("D / Cmd-Shift-I", help: "Clear this item back to undecided")
+                    }
 
                     if !item.companionFiles.isEmpty {
                         Toggle("RAW", isOn: Binding(

@@ -1,0 +1,27 @@
+# PDT-2026-03-26-012 Exclude actions and review filters
+
+- item ID: PDT-2026-03-26-012
+- title: Exclude actions and review filters
+- user request summary:
+  - The first triage-state tranche is in place and visually confirmed.
+  - The app now needs explicit exclude actions so the user can quickly reject unwanted photos.
+  - The main review surface also needs filters so the user can audit included, excluded, undecided, or all items without losing the current keyboard-first workflow.
+- constraints:
+  - Preserve the current speed baseline and working review layout.
+  - Keep keyboard shortcuts and compare/review actions aligned with the new triage model.
+  - Do not regress current include, compare, or import behavior for included items.
+- implementation intent:
+  - Expose `excluded` as a first-class triage action across review, compare, and commands.
+  - Add review filters that operate on the current visible media set and work in both flat and grouped review.
+  - Keep the current import pipeline tied to `included` items only.
+- test conditions:
+  - manual review of include, exclude, clear, and filtered review flows
+  - `swift build`
+  - `swift test`
+- success criteria:
+  - Users can explicitly exclude the current selection without losing keyboard flow.
+  - Users can filter the review surface to all, included, excluded, or undecided items.
+  - Review and compare surfaces show the correct triage actions and status labels.
+- current status: draft
+- target release version: 0.1.50
+- target feature slug: exclude-actions-and-review-filters

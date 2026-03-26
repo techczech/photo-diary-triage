@@ -13,7 +13,9 @@ struct ReviewGridCard: View {
     let onClick: (ReviewGridClickContext) -> Void
     let retryThumbnail: () -> Void
     let setIncludeRaw: (Bool) -> Void
-    let toggleImport: () -> Void
+    let includeForImport: () -> Void
+    let excludeFromImport: () -> Void
+    let clearTriageState: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -30,9 +32,21 @@ struct ReviewGridCard: View {
 
             HStack {
                 if canMutateImportSelection {
-                    Button(item.selectionState.isIncluded ? "Clear (D)" : "Include (I)", action: toggleImport)
-                        .buttonStyle(.borderedProminent)
-                        .shortcutHint(item.selectionState.isIncluded ? "D / Cmd-Shift-I" : "I / Cmd-I", help: item.selectionState.isIncluded ? "Clear this item back to undecided (D / Cmd-Shift-I)" : "Include this item for import (I / Cmd-I)")
+                    Button("Include (I)", action: includeForImport)
+                        .buttonStyle(.bordered)
+                        .disabled(item.selectionState.isIncluded)
+                        .shortcutHint("I / Cmd-I", help: "Include this item for import (I / Cmd-I)")
+
+                    Button("Exclude (X)", action: excludeFromImport)
+                        .buttonStyle(.bordered)
+                        .disabled(item.selectionState.isExcluded)
+                        .shortcutHint("X / Cmd-Shift-X", help: "Exclude this item from import (X / Cmd-Shift-X)")
+
+                    if !item.selectionState.isUndecided {
+                        Button("Clear (D)", action: clearTriageState)
+                            .buttonStyle(.bordered)
+                            .shortcutHint("D / Cmd-Shift-I", help: "Clear this item back to undecided (D / Cmd-Shift-I)")
+                    }
                 }
                 Spacer()
             }
@@ -154,7 +168,9 @@ struct MediaItemRow: View {
     let isSelected: Bool
     let isFocused: Bool
     let thumbnailFailed: Bool
-    let toggleImport: () -> Void
+    let includeForImport: () -> Void
+    let excludeFromImport: () -> Void
+    let clearTriageState: () -> Void
     let retryThumbnail: () -> Void
     let setIncludeRaw: (Bool) -> Void
 
@@ -202,9 +218,21 @@ struct MediaItemRow: View {
 
             HStack {
                 if canMutateImportSelection {
-                    Button(item.selectionState.isIncluded ? "Clear (D)" : "Include (I)", action: toggleImport)
-                        .buttonStyle(.borderedProminent)
-                        .shortcutHint(item.selectionState.isIncluded ? "D / Cmd-Shift-I" : "I / Cmd-I", help: item.selectionState.isIncluded ? "Clear this item back to undecided (D / Cmd-Shift-I)" : "Include this item for import (I / Cmd-I)")
+                    Button("Include (I)", action: includeForImport)
+                        .buttonStyle(.bordered)
+                        .disabled(item.selectionState.isIncluded)
+                        .shortcutHint("I / Cmd-I", help: "Include this item for import (I / Cmd-I)")
+
+                    Button("Exclude (X)", action: excludeFromImport)
+                        .buttonStyle(.bordered)
+                        .disabled(item.selectionState.isExcluded)
+                        .shortcutHint("X / Cmd-Shift-X", help: "Exclude this item from import (X / Cmd-Shift-X)")
+
+                    if !item.selectionState.isUndecided {
+                        Button("Clear (D)", action: clearTriageState)
+                            .buttonStyle(.bordered)
+                            .shortcutHint("D / Cmd-Shift-I", help: "Clear this item back to undecided (D / Cmd-Shift-I)")
+                    }
                 }
                 Spacer()
             }

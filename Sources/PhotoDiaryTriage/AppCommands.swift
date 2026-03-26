@@ -73,6 +73,28 @@ struct PhotoDiaryCommands: Commands {
 
             Divider()
 
+            Button("Show All Photos") {
+                appState.setReviewFilter(.all)
+            }
+            .keyboardShortcut("a", modifiers: [.command, .control])
+
+            Button("Show Included Photos") {
+                appState.setReviewFilter(.included)
+            }
+            .keyboardShortcut("i", modifiers: [.command, .control])
+
+            Button("Show Excluded Photos") {
+                appState.setReviewFilter(.excluded)
+            }
+            .keyboardShortcut("x", modifiers: [.command, .control])
+
+            Button("Show Undecided Photos") {
+                appState.setReviewFilter(.undecided)
+            }
+            .keyboardShortcut("u", modifiers: [.command, .control])
+
+            Divider()
+
             Button("Days Grouping") {
                 appState.setDayOrganizationMode(.days)
             }
@@ -140,6 +162,12 @@ struct PhotoDiaryCommands: Commands {
             }
             .keyboardShortcut("i", modifiers: [.command])
             .disabled(!appState.canMarkSelectionForImport)
+
+            Button("Exclude Selection From Import") {
+                appState.excludeCurrentSelectionFromImport()
+            }
+            .keyboardShortcut("x", modifiers: [.command, .shift])
+            .disabled(!appState.canExcludeSelectionFromImport)
 
             Button("Clear Selection To Undecided") {
                 appState.unmarkCurrentSelectionForImport()

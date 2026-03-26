@@ -34,7 +34,7 @@ struct BrowserOrReviewPaneView: View {
     @ObservedObject var appState: AppState
 
     var body: some View {
-        if !appState.visibleMediaItems.isEmpty {
+        if !appState.contextMediaItems.isEmpty {
             DayContextPaneView(appState: appState)
         } else if !appState.detailFolderNodes.isEmpty {
             FolderBrowserPaneView(appState: appState)
@@ -183,7 +183,10 @@ struct ReviewPaneView: View {
                     )
                     .frame(width: 1, height: 1)
 
-                    if appState.reviewPresentationMode == .grid {
+                    if appState.visibleMediaItems.isEmpty {
+                        reviewFilterEmptyState
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                    } else if appState.reviewPresentationMode == .grid {
                         if isGroupedReviewMode {
                             groupedReviewGrid(availableWidth: proxy.size.width)
                         } else {
@@ -217,6 +220,14 @@ struct ReviewPaneView: View {
         appState.shouldShowInlineDaySections && appState.dayDetailDisplayMode == .sections
     }
 
+    private var reviewFilterEmptyState: some View {
+        ContentUnavailableView(
+            "No \(appState.reviewFilter.title.lowercased()) photos",
+            systemImage: "line.3.horizontal.decrease.circle",
+            description: Text("Change the review filter or update triage states to see items in this view.")
+        )
+    }
+
     private var reviewToolbar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
@@ -234,6 +245,7 @@ struct ReviewPaneView: View {
                     groupedSectionButtons
                 }
 
+                reviewFilterPicker
                 reviewPresentationPicker
                 sizeControls
                 inspectorToggleButton
@@ -287,6 +299,20 @@ struct ReviewPaneView: View {
         .buttonStyle(.bordered)
     }
 
+    private var reviewFilterPicker: some View {
+        Picker("Filter", selection: Binding(
+            get: { appState.reviewFilter },
+            set: { appState.setReviewFilter($0) }
+        )) {
+            ForEach(ReviewFilter.allCases, id: \.self) { filter in
+                Text(filter.title).tag(filter)
+            }
+        }
+        .pickerStyle(.segmented)
+        .frame(width: 320)
+        .shortcutHint("Cmd-Ctrl-A / I / X / U", help: "Filter review items to all, included, excluded, or undecided photos.")
+    }
+
     private var inspectorToggleButton: some View {
         Button(appState.isDetailsInspectorVisible ? "Hide Inspector" : "Show Inspector") {
             appState.toggleDetailsInspector()
@@ -326,14 +352,20 @@ struct ReviewPaneView: View {
                                     appState.setImportRawCompanions(for: item, enabled: enabled)
                                 }
                             },
-                            toggleImport: {
+                            includeForImport: {
                                 guard appState.canMutateImportSelection else { return }
                                 appState.selectMediaItems([item.id])
-                                if item.selectionState.isIncluded {
-                                    appState.unmarkCurrentSelectionForImport()
-                                } else {
-                                    appState.markCurrentSelectionForImport()
-                                }
+                                appState.markCurrentSelectionForImport()
+                            },
+                            excludeFromImport: {
+                                guard appState.canMutateImportSelection else { return }
+                                appState.selectMediaItems([item.id])
+                                appState.excludeCurrentSelectionFromImport()
+                            },
+                            clearTriageState: {
+                                guard appState.canMutateImportSelection else { return }
+                                appState.selectMediaItems([item.id])
+                                appState.unmarkCurrentSelectionForImport()
                             }
                         )
                         .id(item.id)
@@ -498,6 +530,11 @@ struct ReviewPaneView: View {
                 }
                 .disabled(!appState.canMarkSelectionForImport)
 
+                Button("Exclude From Import") {
+                    appState.excludeCurrentSelectionFromImport()
+                }
+                .disabled(!appState.canExcludeSelectionFromImport)
+
                 Button("Clear To Undecided") {
                     appState.unmarkCurrentSelectionForImport()
                 }
@@ -527,14 +564,20 @@ struct ReviewPaneView: View {
                     isSelected: appState.selectedMediaItemIDs.contains(item.id),
                     isFocused: appState.focusedReviewItemID == item.id,
                     thumbnailFailed: appState.thumbnailFailures.contains(item.id),
-                    toggleImport: {
+                    includeForImport: {
                         guard appState.canMutateImportSelection else { return }
                         appState.selectMediaItems([item.id])
-                        if item.selectionState.isIncluded {
-                            appState.unmarkCurrentSelectionForImport()
-                        } else {
-                            appState.markCurrentSelectionForImport()
-                        }
+                        appState.markCurrentSelectionForImport()
+                    },
+                    excludeFromImport: {
+                        guard appState.canMutateImportSelection else { return }
+                        appState.selectMediaItems([item.id])
+                        appState.excludeCurrentSelectionFromImport()
+                    },
+                    clearTriageState: {
+                        guard appState.canMutateImportSelection else { return }
+                        appState.selectMediaItems([item.id])
+                        appState.unmarkCurrentSelectionForImport()
                     },
                     retryThumbnail: {
                         appState.requestThumbnail(for: item)
@@ -769,14 +812,20 @@ private struct GroupedReviewSectionNodeView: View {
                     appState.setImportRawCompanions(for: item, enabled: enabled)
                 }
             },
-            toggleImport: {
+            includeForImport: {
                 guard appState.canMutateImportSelection else { return }
                 appState.selectMediaItems([item.id])
-                if item.selectionState.isIncluded {
-                    appState.unmarkCurrentSelectionForImport()
-                } else {
-                    appState.markCurrentSelectionForImport()
-                }
+                appState.markCurrentSelectionForImport()
+            },
+            excludeFromImport: {
+                guard appState.canMutateImportSelection else { return }
+                appState.selectMediaItems([item.id])
+                appState.excludeCurrentSelectionFromImport()
+            },
+            clearTriageState: {
+                guard appState.canMutateImportSelection else { return }
+                appState.selectMediaItems([item.id])
+                appState.unmarkCurrentSelectionForImport()
             }
         )
         .onAppear {
@@ -793,14 +842,20 @@ private struct GroupedReviewSectionNodeView: View {
             isSelected: appState.selectedMediaItemIDs.contains(item.id),
             isFocused: appState.focusedReviewItemID == item.id,
             thumbnailFailed: appState.thumbnailFailures.contains(item.id),
-            toggleImport: {
+            includeForImport: {
                 guard appState.canMutateImportSelection else { return }
                 appState.selectMediaItems([item.id])
-                if item.selectionState.isIncluded {
-                    appState.unmarkCurrentSelectionForImport()
-                } else {
-                    appState.markCurrentSelectionForImport()
-                }
+                appState.markCurrentSelectionForImport()
+            },
+            excludeFromImport: {
+                guard appState.canMutateImportSelection else { return }
+                appState.selectMediaItems([item.id])
+                appState.excludeCurrentSelectionFromImport()
+            },
+            clearTriageState: {
+                guard appState.canMutateImportSelection else { return }
+                appState.selectMediaItems([item.id])
+                appState.unmarkCurrentSelectionForImport()
             },
             retryThumbnail: {
                 appState.requestThumbnail(for: item)

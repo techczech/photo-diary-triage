@@ -1,0 +1,24 @@
+# PDT-2026-03-26-012 Exclude actions and review filters report
+
+- item ID: PDT-2026-03-26-012
+- summary of what changed:
+  - Added explicit `excluded` triage actions across review cards, list rows, compare, and command menu actions.
+  - Added review filters for `all`, `included`, `excluded`, and `undecided`, wired centrally in `AppState` so flat review, grouped review, and filtered-empty states stay consistent.
+  - Added a test-mode `AppState` initializer so review interaction tests no longer load real persisted sessions from disk.
+- files changed:
+  - `Sources/PhotoDiaryTriage/AppCommands.swift`
+  - `Sources/PhotoDiaryTriage/AppState.swift`
+  - `Sources/PhotoDiaryTriage/BrowserModels.swift`
+  - `Sources/PhotoDiaryTriage/ContentAuxiliaryViews.swift`
+  - `Sources/PhotoDiaryTriage/ContentReviewItemViews.swift`
+  - `Sources/PhotoDiaryTriage/ContentViewBrowserSections.swift`
+  - `Tests/PhotoDiaryTriageTests/ReviewInteractionTests.swift`
+  - `APP_RELEASE.env`
+- verification performed:
+  - `swift build`
+  - `swift test`
+- known gaps or follow-up items:
+  - compare locked zoom/pan and compare narrowing are still pending follow-on work from `PDT-2026-03-26-010`
+  - old-session manual compatibility still needs user validation on a real persisted session
+- shipped release version: 0.1.50
+- shipped feature slug: exclude-actions-and-review-filters

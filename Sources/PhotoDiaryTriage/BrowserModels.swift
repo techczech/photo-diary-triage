@@ -43,6 +43,26 @@ enum ReviewPresentationMode: String, Codable, CaseIterable, Sendable {
     case list
 }
 
+enum ReviewFilter: String, CaseIterable, Sendable {
+    case all
+    case included
+    case excluded
+    case undecided
+
+    var title: String {
+        switch self {
+        case .all:
+            return "All"
+        case .included:
+            return "Included"
+        case .excluded:
+            return "Excluded"
+        case .undecided:
+            return "Undecided"
+        }
+    }
+}
+
 enum DayOrganizationMode: String, Codable, CaseIterable, Sendable {
     case days
     case daysAndBursts
