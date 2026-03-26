@@ -1,0 +1,30 @@
+# PDT-2026-03-26-015 Compare auto-fill and single zoom
+
+- item ID: PDT-2026-03-26-015
+- title: Compare auto-fill and single zoom
+- user request summary:
+  - Locked compare pan, selection, and exclude behavior now work well enough to keep.
+  - Compare still wastes too much space because images do not automatically fill the available compare area.
+  - The compare surface should not expose a separate layout-size control; it should keep the current items as large as possible by default and use a single zoom control for image detail.
+  - When compare items are removed, the remaining items should immediately reflow and fill the reclaimed space.
+- constraints:
+  - Preserve the working locked-pan compare behavior and per-item removal workflow.
+  - Keep compare responsive and stable for 2 to 4 items.
+  - Do not regress current include, exclude, preview, or remove actions inside compare.
+- implementation intent:
+  - Remove the compare-specific card-width state and layout-size toolbar controls.
+  - Drive compare card sizing from available viewport size and current compare item count so the image canvases default to the largest practical size.
+  - Keep a single compare zoom control that changes image detail while the compare cards themselves continue to auto-fit the available space.
+  - Recompute compare image fitting whenever the compare viewport changes so the image and container stay visually in sync.
+- test conditions:
+  - manual compare review with 2, 3, and 4 items
+  - `swift build`
+  - `swift test`
+- success criteria:
+  - compare opens with the current items filling the available space by default
+  - removing compare items makes the remaining cards reflow larger automatically
+  - compare exposes one zoom control instead of separate layout and image zoom controls
+  - compare images and their containers stay visually in sync during resize and reflow
+- current status: awaiting_user_review
+- target release version: 0.1.53
+- target feature slug: compare-auto-fill-and-single-zoom

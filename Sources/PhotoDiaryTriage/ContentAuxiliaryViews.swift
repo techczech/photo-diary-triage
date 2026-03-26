@@ -96,8 +96,7 @@ struct KeyboardHelpSheet: View {
                     ])
 
                     shortcutSection("View And Compare", rows: [
-                        ("+ / - / 0", "Resize review cards, or change compare layout density when compare is open."),
-                        ("Option + + / - / 0", "Zoom compare images without changing the compare layout density."),
+                        ("+ / - / 0", "Resize review cards, or zoom compare images when compare is open."),
                         ("Cmd-3 / Cmd-4", "Switch flat review or grouped review."),
                         ("Cmd-Control-A / I / X / U", "Filter review items to all, included, excluded, or undecided."),
                         ("Cmd-Option-G / Cmd-Option-L", "Switch grid or list layout."),
@@ -372,39 +371,36 @@ struct CompareSheet: View {
     @State private var synchronizedViewport = CompareViewport.zero
 
     var body: some View {
-        GeometryReader { proxy in
-            VStack(alignment: .leading, spacing: 18) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(title)
-                            .font(.title2.weight(.semibold))
-                        Text("\(items.count) selected image(s)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    compareLayoutControls
-                    Toggle("Lock Pan", isOn: $isPanLocked)
-                        .toggleStyle(.switch)
-                        .controlSize(.small)
-                        .help("Keep compare items panned to the same relative detail area")
-                    ZoomToolbar(zoom: $zoom, keyboardModifiers: [.option])
-                    Button("Close") {
-                        onClose()
-                    }
-                    .keyboardShortcut(.cancelAction)
-                    .shortcutHint("Escape", help: "Close compare (Escape)")
+        VStack(alignment: .leading, spacing: 18) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.title2.weight(.semibold))
+                    Text("\(items.count) selected image(s)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
+                Spacer()
+                Toggle("Lock Pan", isOn: $isPanLocked)
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .help("Keep compare items panned to the same relative detail area")
+                ZoomToolbar(zoom: $zoom)
+                Button("Close") {
+                    onClose()
+                }
+                .keyboardShortcut(.cancelAction)
+                .shortcutHint("Escape", help: "Close compare (Escape)")
+            }
 
-                if items.isEmpty {
-                    ContentUnavailableView("No Images Selected", systemImage: "rectangle.on.rectangle", description: Text("Select at least two images in the grid and use Compare."))
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
+            if items.isEmpty {
+                ContentUnavailableView("No Images Selected", systemImage: "rectangle.on.rectangle", description: Text("Select at least two images in the grid and use Compare."))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                GeometryReader { gridProxy in
                     let metrics = CompareGridMetrics(
-                        availableWidth: proxy.size.width,
-                        targetCardWidth: appState.compareGridCardWidth,
-                        itemCount: items.count,
-                        zoomScale: zoom
+                        availableSize: gridProxy.size,
+                        itemCount: items.count
                     )
                     let columns = Array(
                         repeating: GridItem(
@@ -424,7 +420,7 @@ struct CompareSheet: View {
                                     zoom: zoom,
                                     synchronizedViewport: $synchronizedViewport,
                                     isPanLocked: isPanLocked,
-                                    cardWidth: CGFloat(metrics.cardWidth),
+                                    imageWidth: CGFloat(metrics.imageWidth),
                                     imageHeight: CGFloat(metrics.imageHeight)
                                 )
                                 .frame(width: CGFloat(metrics.cardWidth), alignment: .topLeading)
@@ -435,44 +431,11 @@ struct CompareSheet: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
             }
-            .padding(24)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Color(nsColor: .windowBackgroundColor))
         }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color(nsColor: .windowBackgroundColor))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private var compareLayoutControls: some View {
-        HStack(spacing: 6) {
-            Button {
-                appState.decreaseCompareGridCardWidth()
-            } label: {
-                Image(systemName: "minus.rectangle.on.rectangle")
-            }
-            .shortcutHint("-", help: "Fit more compare items on screen (-)")
-            .disabled(appState.compareGridCardWidth <= CompareGridMetrics.minCardWidth)
-
-            Text("\(Int(appState.compareGridCardWidth))")
-                .font(.caption.monospacedDigit())
-                .frame(width: 40)
-
-            Button {
-                appState.increaseCompareGridCardWidth()
-            } label: {
-                Image(systemName: "plus.rectangle.on.rectangle")
-            }
-            .shortcutHint("+", help: "Make compare items larger (+)")
-            .disabled(appState.compareGridCardWidth >= CompareGridMetrics.maxCardWidth)
-
-            Button {
-                appState.resetCompareGridCardWidth()
-            } label: {
-                Image(systemName: "arrow.counterclockwise")
-            }
-            .shortcutHint("0", help: "Reset compare layout size (0)")
-            .disabled(appState.compareGridCardWidth == CompareGridMetrics.defaultCardWidth)
-        }
-        .buttonStyle(.bordered)
     }
 }
 
@@ -482,7 +445,7 @@ struct CompareItemCard: View {
     let zoom: CGFloat
     @Binding var synchronizedViewport: CompareViewport
     let isPanLocked: Bool
-    let cardWidth: CGFloat
+    let imageWidth: CGFloat
     let imageHeight: CGFloat
 
     private var isSelected: Bool {
@@ -494,7 +457,7 @@ struct CompareItemCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(item.fileName)
@@ -529,7 +492,7 @@ struct CompareItemCard: View {
                 synchronizedViewport: $synchronizedViewport,
                 isPanLocked: isPanLocked
             )
-                .frame(width: cardWidth - 22, height: imageHeight)
+                .frame(width: imageWidth, height: imageHeight)
                 .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
                 .overlay {
                     ReviewGridClickTarget { click in
@@ -538,12 +501,12 @@ struct CompareItemCard: View {
                 }
 
             HStack {
-                Button("Select Only") {
+                Button("Only") {
                     appState.selectMediaItems([item.id])
                 }
                 .help("Select only this item")
 
-                Button("Toggle Selection") {
+                Button("Toggle") {
                     appState.toggleSelectionForComparisonItem(item.id)
                 }
                 .help("Toggle this item in the current selection")
@@ -555,6 +518,7 @@ struct CompareItemCard: View {
                 .help("Open this item in preview")
             }
             .buttonStyle(.bordered)
+            .controlSize(.small)
 
             if appState.canMutateImportSelection {
                 HStack {
@@ -594,9 +558,10 @@ struct CompareItemCard: View {
 
                     Spacer()
                 }
+                .controlSize(.small)
             }
         }
-        .padding(14)
+        .padding(12)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 16))
         .overlay {
             RoundedRectangle(cornerRadius: 16)
@@ -768,6 +733,7 @@ final class LockedCompareCanvasView: NSScrollView {
     private let imageView = NSImageView()
     private var currentImageURL: URL?
     private var currentImageSize: CGSize = .zero
+    private var currentZoom: CGFloat = 1
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -786,6 +752,11 @@ final class LockedCompareCanvasView: NSScrollView {
         fatalError("init(coder:) has not been implemented")
     }
 
+    override func layout() {
+        super.layout()
+        updateImageLayout()
+    }
+
     func updateImage(imageURL: URL, zoom: CGFloat) {
         if currentImageURL != imageURL {
             currentImageURL = imageURL
@@ -793,20 +764,8 @@ final class LockedCompareCanvasView: NSScrollView {
             imageView.image = image
             currentImageSize = image?.size ?? .zero
         }
-
-        guard currentImageSize.width > 0, currentImageSize.height > 0 else { return }
-
-        let viewportSize = contentSize
-        let fitScale = min(
-            max(viewportSize.width, 1) / max(currentImageSize.width, 1),
-            max(viewportSize.height, 1) / max(currentImageSize.height, 1)
-        )
-        let displayScale = max(fitScale, 0.01) * zoom
-        let scaledSize = CGSize(
-            width: max(1, currentImageSize.width * displayScale),
-            height: max(1, currentImageSize.height * displayScale)
-        )
-        imageView.frame = NSRect(origin: .zero, size: scaledSize)
+        currentZoom = zoom
+        updateImageLayout()
     }
 
     func currentSynchronizedViewport() -> CompareViewport {
@@ -826,6 +785,22 @@ final class LockedCompareCanvasView: NSScrollView {
         )
         contentView.scroll(to: origin)
         reflectScrolledClipView(contentView)
+    }
+
+    private func updateImageLayout() {
+        guard currentImageSize.width > 0, currentImageSize.height > 0 else { return }
+
+        let viewportSize = contentSize
+        let fitScale = min(
+            max(viewportSize.width, 1) / max(currentImageSize.width, 1),
+            max(viewportSize.height, 1) / max(currentImageSize.height, 1)
+        )
+        let displayScale = max(fitScale, 0.01) * currentZoom
+        let scaledSize = CGSize(
+            width: max(1, currentImageSize.width * displayScale),
+            height: max(1, currentImageSize.height * displayScale)
+        )
+        imageView.frame = NSRect(origin: .zero, size: scaledSize)
     }
 }
 

@@ -24,47 +24,99 @@ struct ReviewGridMetrics: Equatable, Sendable {
 }
 
 struct CompareGridMetrics: Equatable, Sendable {
-    static let defaultCardWidth: Double = 520
-    static let minCardWidth: Double = 260
-    static let maxCardWidth: Double = 760
-    static let cardWidthStep: Double = 40
-    static let gridSpacing: Double = 24
-    static let gridPadding: Double = 24
+    static let minCardWidth: Double = 240
+    static let gridSpacing: Double = 20
+    static let gridPadding: Double = 16
+    static let cardHorizontalInsets: Double = 24
+    static let cardChromeHeight: Double = 118
+    static let minImageHeight: Double = 120
+    static let preferredImageAspectHeight: Double = 0.72
 
-    let availableWidth: Double
-    let targetCardWidth: Double
+    let availableSize: CGSize
     let itemCount: Int
-    let zoomScale: Double
 
-    init(availableWidth: Double, targetCardWidth: Double, itemCount: Int, zoomScale: Double = 1) {
-        self.availableWidth = availableWidth
-        self.targetCardWidth = targetCardWidth
+    init(availableSize: CGSize, itemCount: Int) {
+        self.availableSize = availableSize
         self.itemCount = itemCount
-        self.zoomScale = zoomScale
     }
 
-    private var effectiveTargetCardWidth: Double {
-        min(max(targetCardWidth * zoomScale, Self.minCardWidth), Self.maxCardWidth)
+    private struct Candidate: Equatable {
+        let columns: Int
+        let rows: Int
+        let cardWidth: Double
+        let imageHeight: Double
+
+        var cardHeight: Double {
+            imageHeight + CompareGridMetrics.cardChromeHeight
+        }
+
+        var score: Double {
+            let visibleImageWidth = max(cardWidth - CompareGridMetrics.cardHorizontalInsets, 1)
+            return visibleImageWidth * imageHeight
+        }
+    }
+
+    private var usableWidth: Double {
+        max(availableSize.width - (Self.gridPadding * 2), Self.minCardWidth)
+    }
+
+    private var usableHeight: Double {
+        max(availableSize.height - (Self.gridPadding * 2), Self.minImageHeight + Self.cardChromeHeight)
+    }
+
+    private var bestCandidate: Candidate {
+        guard itemCount > 0 else {
+            return Candidate(columns: 1, rows: 1, cardWidth: Self.minCardWidth, imageHeight: Self.minImageHeight)
+        }
+
+        var chosenCandidate: Candidate?
+        for columns in 1...itemCount {
+            let rows = Int(ceil(Double(itemCount) / Double(columns)))
+            let totalHorizontalSpacing = Double(max(columns - 1, 0)) * Self.gridSpacing
+            let totalVerticalSpacing = Double(max(rows - 1, 0)) * Self.gridSpacing
+            let cardWidth = max((usableWidth - totalHorizontalSpacing) / Double(columns), Self.minCardWidth)
+            let maxCardHeight = max((usableHeight - totalVerticalSpacing) / Double(rows), Self.cardChromeHeight + Self.minImageHeight)
+            let fittedImageHeight = max(maxCardHeight - Self.cardChromeHeight, Self.minImageHeight)
+            let preferredImageHeight = max(cardWidth * Self.preferredImageAspectHeight, Self.minImageHeight)
+            let imageHeight = min(preferredImageHeight, fittedImageHeight)
+            let candidate = Candidate(columns: columns, rows: rows, cardWidth: cardWidth, imageHeight: imageHeight)
+
+            if let currentBest = chosenCandidate {
+                let rowPreferenceMargin = max(currentBest.score * 0.12, 1)
+                if candidate.score > currentBest.score + rowPreferenceMargin ||
+                    (abs(candidate.score - currentBest.score) <= rowPreferenceMargin && candidate.rows < currentBest.rows) {
+                    chosenCandidate = candidate
+                }
+            } else {
+                chosenCandidate = candidate
+            }
+        }
+
+        return chosenCandidate ?? Candidate(columns: 1, rows: 1, cardWidth: Self.minCardWidth, imageHeight: Self.minImageHeight)
     }
 
     var columnCount: Int {
-        guard itemCount > 0 else { return 1 }
-        let clampedWidth = effectiveTargetCardWidth
-        let usableWidth = max(availableWidth - (Self.gridPadding * 2) + Self.gridSpacing, clampedWidth)
-        return max(1, min(itemCount, Int(usableWidth / (clampedWidth + Self.gridSpacing))))
+        bestCandidate.columns
+    }
+
+    var rowCount: Int {
+        bestCandidate.rows
     }
 
     var cardWidth: Double {
-        let columns = max(columnCount, 1)
-        let totalSpacing = Double(max(columns - 1, 0)) * Self.gridSpacing
-        let usableWidth = max(availableWidth - (Self.gridPadding * 2), Self.minCardWidth)
-        let fittedWidth = (usableWidth - totalSpacing) / Double(columns)
-        let requestedWidth = min(max(effectiveTargetCardWidth, Self.minCardWidth), Self.maxCardWidth)
-        return min(max(min(fittedWidth, requestedWidth), Self.minCardWidth), Self.maxCardWidth)
+        bestCandidate.cardWidth
+    }
+
+    var imageWidth: Double {
+        max(cardWidth - Self.cardHorizontalInsets, 1)
+    }
+
+    var cardHeight: Double {
+        bestCandidate.cardHeight
     }
 
     var imageHeight: Double {
-        max(220, min(560, cardWidth * 0.72))
+        bestCandidate.imageHeight
     }
 }
 
