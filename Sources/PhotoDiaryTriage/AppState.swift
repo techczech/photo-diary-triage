@@ -701,6 +701,17 @@ final class AppState: ObservableObject {
         isDetailsInspectorVisible.toggle()
     }
 
+    func toggleSidebarVisibility() {
+        let selector = #selector(NSSplitViewController.toggleSidebar(_:))
+        if NSApp.sendAction(selector, to: nil, from: nil) {
+            return
+        }
+
+        if let window = NSApp.keyWindow, let firstResponder = window.firstResponder {
+            _ = firstResponder.tryToPerform(selector, with: nil)
+        }
+    }
+
     func focusSidebarNavigation() {
         activePane = .sidebar
         reviewGridHasFocus = false

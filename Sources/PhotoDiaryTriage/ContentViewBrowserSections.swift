@@ -236,6 +236,7 @@ struct ReviewPaneView: View {
 
                 reviewPresentationPicker
                 sizeControls
+                inspectorToggleButton
                 primaryReviewButtons
                 reviewActionsMenu
             }
@@ -284,6 +285,15 @@ struct ReviewPaneView: View {
             .shortcutHint("Cmd-Option-[", help: "Collapse all grouped sections (Cmd-Option-[)")
         }
         .buttonStyle(.bordered)
+    }
+
+    private var inspectorToggleButton: some View {
+        Button(appState.isDetailsInspectorVisible ? "Hide Inspector" : "Show Inspector") {
+            appState.toggleDetailsInspector()
+        }
+        .buttonStyle(.bordered)
+        .keyboardShortcut("i", modifiers: [.command, .option])
+        .shortcutHint("Cmd-Option-I", help: "\(appState.isDetailsInspectorVisible ? "Hide" : "Show") inspector (Cmd-Option-I)")
     }
 
     private func reviewGrid(availableWidth: CGFloat) -> some View {

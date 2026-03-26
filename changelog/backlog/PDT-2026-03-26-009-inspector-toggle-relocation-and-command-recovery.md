@@ -1,0 +1,28 @@
+# PDT-2026-03-26-009 Inspector toggle relocation and command recovery
+
+- item ID: PDT-2026-03-26-009
+- title: Inspector toggle relocation and command recovery
+- user request summary:
+  - The inspector toggle should not live in the left sidebar after the 0.1.47 layout compaction.
+  - Opening the right inspector is now slow.
+  - The keyboard shortcuts for inspector and sidebar no longer work.
+- constraints:
+  - Preserve the extra review-grid space gained in 0.1.47.
+  - Do not reintroduce the collapsed inspector rail.
+  - Keep the top controls compact.
+- implementation intent:
+  - Move the inspector toggle back into the top review control strip.
+  - Restore reliable keyboard command handling for inspector and sidebar toggles.
+  - Reduce inspector reopen lag by avoiding unnecessary heavy reload work when toggling visibility.
+- test conditions:
+  - `swift build`
+  - `swift test`
+  - inspector toggle works from the top strip and keyboard commands
+  - sidebar and inspector commands both respond while reviewing
+- success criteria:
+  - Inspector toggle is back in the top control area.
+  - Inspector and sidebar shortcuts work again.
+  - Opening the inspector feels materially faster.
+- current status: awaiting_user_review
+- target release version: 0.1.48
+- target feature slug: inspector-toggle-relocation-and-command-recovery
