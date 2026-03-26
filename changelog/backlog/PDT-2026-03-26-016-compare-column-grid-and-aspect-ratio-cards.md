@@ -1,0 +1,30 @@
+# PDT-2026-03-26-016 Compare column grid and aspect-ratio cards
+
+- item ID: PDT-2026-03-26-016
+- title: Compare column grid and aspect-ratio cards
+- user request summary:
+  - The compare workflow is usable, but the current auto-fill logic is still wrong for real review.
+  - Compare must always behave as a grid with an explicit column-count control instead of a hidden layout guess.
+  - Compare image containers must match the aspect ratio of the underlying photo so the default compare state does not show gray filler around the image.
+  - Default columns should match the item count up to 4 items, then default to 4 for larger compare sets while still allowing denser grids such as 6 or 8 columns.
+- constraints:
+  - Preserve working compare zoom, locked pan, remove-from-compare, select, and exclude behavior.
+  - Keep compare responsive for 2 to 8 items and beyond.
+  - Do not regress the current full-window compare layout.
+- implementation intent:
+  - Replace compare auto-fit column selection with an explicit compare column-count state and toolbar control.
+  - Derive compare card widths from the chosen column count and current viewport width.
+  - Render compare image canvases with viewports that match the image aspect ratio from metadata so the resting compare state does not letterbox with gray filler.
+  - Clamp the effective column count to the current item count while still preserving the chosen preference for larger compare sets.
+- test conditions:
+  - manual compare review with 2, 3, 4, 6, and 8 items
+  - `swift build`
+  - `swift test`
+- success criteria:
+  - compare uses an explicit column-count control instead of implicit layout-size guessing
+  - default compare columns equal the item count for 2 to 4 items and default to 4 for larger sets
+  - compare image viewports match the underlying image aspect ratio without gray filler in the default fit state
+  - removing items keeps compare open and reflows the remaining items within the current column model
+- current status: awaiting_user_review
+- target release version: 0.1.54
+- target feature slug: compare-column-grid-and-aspect-ratio-cards

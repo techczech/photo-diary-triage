@@ -1,0 +1,27 @@
+# PDT-2026-03-26-016 Compare column grid and aspect-ratio cards report
+
+- item ID: PDT-2026-03-26-016
+- summary of what changed:
+  - Replaced the compare auto-fit layout guess with explicit compare column-count state and toolbar controls.
+  - Default compare columns now match the compare item count up to 4 items, then default to 4 for larger compare sets.
+  - Reworked compare grid sizing so card widths come directly from the chosen number of columns instead of an implicit layout-width heuristic.
+  - Added per-item aspect-ratio viewports from media metadata so compare cards default to image-proportional containers instead of gray letterboxed canvases.
+  - Clamped compare columns to the active compare item count and updated compare tests around the new column and aspect-ratio behavior.
+- files changed:
+  - `Sources/PhotoDiaryTriage/AppState.swift`
+  - `Sources/PhotoDiaryTriage/ContentAuxiliaryViews.swift`
+  - `Sources/PhotoDiaryTriage/Models.swift`
+  - `Sources/PhotoDiaryTriage/ReviewInteractionSupport.swift`
+  - `Tests/PhotoDiaryTriageTests/ReviewInteractionTests.swift`
+  - `changelog/backlog/PDT-2026-03-26-016-compare-column-grid-and-aspect-ratio-cards.md`
+  - `changelog/backlog.jsonl`
+  - `changelog/changelog.jsonl`
+  - `APP_RELEASE.env`
+- verification performed:
+  - `swift build`
+  - `swift test`
+- known gaps or follow-up items:
+  - compare column controls do not yet have dedicated keyboard shortcuts
+  - grouped review escape behavior remains a separate bug track
+- shipped release version: 0.1.54
+- shipped feature slug: compare-column-grid-and-aspect-ratio-cards

@@ -333,6 +333,19 @@ struct MediaItem: Identifiable, Codable, Hashable, Sendable {
     }
 }
 
+extension MediaItem {
+    var displayAspectRatio: Double {
+        if let pixelWidth = metadata.pixelWidth,
+           let pixelHeight = metadata.pixelHeight,
+           pixelWidth > 0,
+           pixelHeight > 0 {
+            return Double(pixelWidth) / Double(pixelHeight)
+        }
+
+        return 4.0 / 3.0
+    }
+}
+
 struct BurstGroup: Identifiable, Codable, Hashable, Sendable {
     let id: UUID
     var mediaItemIDs: [UUID]
