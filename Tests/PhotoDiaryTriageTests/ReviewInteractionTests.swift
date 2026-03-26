@@ -5,12 +5,14 @@ import Testing
 @Test func reviewGridMetricsUseRequestedColumnsForCardWidth() {
     let compact = ReviewGridMetrics(availableWidth: 540, requestedColumnCount: 2)
     let wide = ReviewGridMetrics(availableWidth: 1_100, requestedColumnCount: 4)
+    let singleColumn = ReviewGridMetrics(availableWidth: 1_100, requestedColumnCount: 1)
 
     #expect(compact.columnCount == 2)
     #expect(wide.columnCount == 4)
     #expect(compact.cardWidth >= ReviewGridMetrics.minCardWidth)
     #expect(wide.cardWidth >= ReviewGridMetrics.minCardWidth)
-    #expect(wide.cardWidth <= ReviewGridMetrics.maxCardWidth)
+    #expect(singleColumn.cardWidth > wide.cardWidth)
+    #expect(singleColumn.cardWidth > ReviewGridMetrics.maxCardWidth)
 }
 
 @Test func compareGridDefaultColumnCountMatchesCompareExpectations() {
@@ -689,6 +691,10 @@ private func makeReviewAppState(items: [MediaItem]) -> AppState {
     state.burstGroups = []
     state.timeClusters = []
     state.archiveMediaCache = [:]
+    var settings = state.settings
+    settings.reviewGridColumnCount = ReviewGridMetrics.defaultRequestedColumnCount()
+    settings.reviewPresentationMode = .grid
+    state.settings = settings
     state.updateReviewGridMetrics(availableWidth: 1_100, availableHeight: 900)
 
     if let leafID = state.browserNodeMap.values.first(where: { ($0.children?.isEmpty ?? true) && $0.mediaItemIDs.count == items.count })?.id {
