@@ -48,59 +48,7 @@ struct DayContextPaneView: View {
     @ObservedObject var appState: AppState
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Picker("Display", selection: Binding(
-                    get: { appState.dayDetailDisplayMode },
-                    set: { appState.setDayDetailDisplayMode($0) }
-                )) {
-                    ForEach(appState.availableDayDetailDisplayModes, id: \.self) { mode in
-                        Text(mode.title).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .frame(width: appState.canUseGroupedReviewMode ? 260 : 130)
-                .shortcutHint("Cmd-3 / Cmd-4", help: "Switch between flat review and grouped review (Cmd-3 / Cmd-4)")
-
-                Spacer()
-            }
-
-            if !appState.canUseGroupedReviewMode {
-                Text("Grouped review is available when browsing a day or a folder with day sections.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            if appState.canUseGroupedReviewMode && appState.dayDetailDisplayMode == .sections {
-                HStack {
-                    Picker("Show By", selection: Binding(
-                        get: { appState.dayOrganizationMode },
-                        set: { appState.setDayOrganizationMode($0) }
-                    )) {
-                        ForEach(DayOrganizationMode.allCases, id: \.self) { mode in
-                            Text(mode.title).tag(mode)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(maxWidth: 520)
-                    .shortcutHint("Cmd-Ctrl-1..4", help: "Change grouped review organization (Cmd-Control-1 through Cmd-Control-4)")
-
-                    Spacer()
-
-                    Button("Expand All") {
-                        appState.expandAllInlineSections()
-                    }
-                    .shortcutHint("Cmd-Option-]", help: "Expand all grouped sections (Cmd-Option-])")
-
-                    Button("Collapse All") {
-                        appState.collapseAllInlineSections()
-                    }
-                    .shortcutHint("Cmd-Option-[", help: "Collapse all grouped sections (Cmd-Option-[)")
-                }
-            }
-
-            ReviewPaneView(appState: appState)
-        }
+        ReviewPaneView(appState: appState)
     }
 }
 
@@ -270,10 +218,72 @@ struct ReviewPaneView: View {
     }
 
     private var reviewToolbar: some View {
-        ViewThatFits(in: .horizontal) {
-            fullReviewToolbar
-            compactReviewToolbar
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                if !appState.breadcrumbTitles.isEmpty {
+                    Text(appState.breadcrumbTitles.joined(separator: " / "))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                detailDisplayPicker
+
+                if appState.canUseGroupedReviewMode && appState.dayDetailDisplayMode == .sections {
+                    groupedOrganizationPicker
+                    groupedSectionButtons
+                }
+
+                reviewPresentationPicker
+                sizeControls
+                primaryReviewButtons
+                reviewActionsMenu
+            }
+            .controlSize(.small)
         }
+    }
+
+    private var detailDisplayPicker: some View {
+        Picker("Display", selection: Binding(
+            get: { appState.dayDetailDisplayMode },
+            set: { appState.setDayDetailDisplayMode($0) }
+        )) {
+            ForEach(appState.availableDayDetailDisplayModes, id: \.self) { mode in
+                Text(mode.title).tag(mode)
+            }
+        }
+        .pickerStyle(.segmented)
+        .frame(width: appState.canUseGroupedReviewMode ? 250 : 122)
+        .shortcutHint("Cmd-3 / Cmd-4", help: "Switch between flat review and grouped review (Cmd-3 / Cmd-4)")
+    }
+
+    private var groupedOrganizationPicker: some View {
+        Picker("Show By", selection: Binding(
+            get: { appState.dayOrganizationMode },
+            set: { appState.setDayOrganizationMode($0) }
+        )) {
+            ForEach(DayOrganizationMode.allCases, id: \.self) { mode in
+                Text(mode.title).tag(mode)
+            }
+        }
+        .pickerStyle(.segmented)
+        .frame(width: 420)
+        .shortcutHint("Cmd-Ctrl-1..4", help: "Change grouped review organization (Cmd-Control-1 through Cmd-Control-4)")
+    }
+
+    private var groupedSectionButtons: some View {
+        HStack(spacing: 6) {
+            Button("Expand") {
+                appState.expandAllInlineSections()
+            }
+            .shortcutHint("Cmd-Option-]", help: "Expand all grouped sections (Cmd-Option-])")
+
+            Button("Collapse") {
+                appState.collapseAllInlineSections()
+            }
+            .shortcutHint("Cmd-Option-[", help: "Collapse all grouped sections (Cmd-Option-[)")
+        }
+        .buttonStyle(.bordered)
     }
 
     private func reviewGrid(availableWidth: CGFloat) -> some View {
@@ -399,37 +409,6 @@ struct ReviewPaneView: View {
         }
     }
 
-    private var fullReviewToolbar: some View {
-        HStack(spacing: 10) {
-            reviewPresentationPicker
-            sizeControls
-            Spacer()
-            primaryReviewButtons
-            reviewActionsMenu
-        }
-    }
-
-    private var compactReviewToolbar: some View {
-        HStack(spacing: 8) {
-            reviewPresentationPicker
-            sizeControls
-            Spacer()
-            Button("Open") {
-                appState.openFocusedReviewItem()
-            }
-            .disabled(appState.focusedReviewItem == nil)
-            .shortcutHint("Return", help: "Open focused photo preview (Return)")
-
-            Button("Compare") {
-                appState.openComparisonForCurrentSelection()
-            }
-            .disabled(!appState.canOpenComparison)
-            .shortcutHint("C / Cmd-Shift-C", help: "Compare the current selection (C / Cmd-Shift-C)")
-
-            reviewActionsMenu
-        }
-    }
-
     private var reviewPresentationPicker: some View {
         Picker("View", selection: Binding(
             get: { appState.reviewPresentationMode },
@@ -439,7 +418,7 @@ struct ReviewPaneView: View {
             Text("List").tag(ReviewPresentationMode.list)
         }
         .pickerStyle(.segmented)
-        .frame(width: 180)
+        .frame(width: 150)
         .shortcutHint("Cmd-Option-G / L", help: "Switch between grid and list layout (Cmd-Option-G / Cmd-Option-L)")
     }
 

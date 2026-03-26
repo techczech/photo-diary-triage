@@ -1,0 +1,31 @@
+# PDT-2026-03-25-008 Vertical layout compaction and sidebar migration
+
+- item ID: PDT-2026-03-25-008
+- title: Vertical layout compaction and sidebar migration
+- user request summary:
+  - Too much vertical space is wasted above and below the review grid.
+  - Walk details, version info, and utility controls should move into the sidebar.
+  - Review controls should collapse into a single horizontal line so the grid gets most of the window height.
+  - The collapsed inspector should not leave a visible rail behind.
+- constraints:
+  - Preserve the working review grid behavior from `0.1.46`.
+  - Keep keyboard-first review controls discoverable.
+  - Do not regress current speed improvements.
+- implementation intent:
+  - Remove header, walk details, action buttons, and footer from the detail pane.
+  - Move metadata and utility controls into the left sidebar.
+  - Collapse review controls into one compact top strip.
+  - Remove the collapsed inspector rail so hidden inspector state consumes no width.
+- test conditions:
+  - `swift build`
+  - `swift test`
+  - review grid should gain visible vertical space on the main window
+  - inspector hidden state should not leave a visible right rail
+- success criteria:
+  - The review grid gets substantially more vertical space.
+  - Top controls stay on one line rather than stacking.
+  - Walk details, status, and version info live in the sidebar.
+  - Hiding the inspector reclaims its width completely.
+- current status: awaiting_user_review
+- target release version: 0.1.47
+- target feature slug: vertical-layout-compaction-and-sidebar-migration

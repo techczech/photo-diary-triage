@@ -72,6 +72,7 @@ import Testing
     let items = makeSelectionItems(count: 6)
     let state = makeReviewAppState(items: items)
 
+    state.setReviewGridCardWidth(ReviewGridMetrics.defaultCardWidth)
     state.updateReviewGridMetrics(availableWidth: 1_100)
     #expect(state.reviewGridColumnCount == 3)
 

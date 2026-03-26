@@ -12,7 +12,14 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            SidebarPaneView(appState: appState)
+            SidebarPaneView(
+                appState: appState,
+                walkTitle: $walkTitle,
+                walkLocation: $walkLocation,
+                walkNotes: $walkNotes,
+                summary: walkDetailsSummary,
+                appRelease: appRelease
+            )
         } detail: {
             detailPane
         }
@@ -35,31 +42,17 @@ struct ContentView: View {
 
     private var detailPane: some View {
         HSplitView {
-            VStack(alignment: .leading, spacing: 12) {
-                HeaderPaneView(appState: appState)
-                WalkDetailsPaneView(
-                    appState: appState,
-                    walkTitle: $walkTitle,
-                    walkLocation: $walkLocation,
-                    walkNotes: $walkNotes,
-                    summary: walkDetailsSummary
-                )
-                BrowserOrReviewPaneView(appState: appState)
-                ActionButtonsPaneView(appState: appState)
-                FooterStatusBarView(appState: appState, appRelease: appRelease)
-            }
+            BrowserOrReviewPaneView(appState: appState)
             .frame(minWidth: 720, maxWidth: .infinity, alignment: .leading)
             .layoutPriority(1)
 
             if appState.isDetailsInspectorVisible {
                 DetailsInspectorView(appState: appState)
                     .frame(minWidth: 300, idealWidth: 340, maxWidth: 380, maxHeight: .infinity, alignment: .top)
-            } else {
-                InspectorCollapsedRail(appState: appState)
-                    .frame(minWidth: 44, idealWidth: 44, maxWidth: 44, maxHeight: .infinity, alignment: .top)
             }
         }
-        .padding()
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
         .sheet(isPresented: $appState.showKeyboardHelp) {
             KeyboardHelpSheet()
         }
