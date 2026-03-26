@@ -17,7 +17,7 @@ func makeTestSettings(root: URL) -> AppSettings {
         proximityThresholdSeconds: 600,
         cleanupRequiresBackupConfirmation: true,
         reviewPresentationMode: .grid,
-        reviewGridCardWidth: ReviewGridMetrics.defaultCardWidth
+        reviewGridColumnCount: ReviewGridMetrics.defaultRequestedColumnCount()
     )
 }
 

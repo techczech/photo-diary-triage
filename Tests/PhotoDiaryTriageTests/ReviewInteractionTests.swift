@@ -2,12 +2,15 @@ import Foundation
 import Testing
 @testable import PhotoDiaryTriage
 
-@Test func reviewGridMetricsUseMeasuredWidthForColumnCount() {
-    let compact = ReviewGridMetrics(availableWidth: 540, cardWidth: 240)
-    let wide = ReviewGridMetrics(availableWidth: 1_100, cardWidth: 240)
+@Test func reviewGridMetricsUseRequestedColumnsForCardWidth() {
+    let compact = ReviewGridMetrics(availableWidth: 540, requestedColumnCount: 2)
+    let wide = ReviewGridMetrics(availableWidth: 1_100, requestedColumnCount: 4)
 
     #expect(compact.columnCount == 2)
     #expect(wide.columnCount == 4)
+    #expect(compact.cardWidth >= ReviewGridMetrics.minCardWidth)
+    #expect(wide.cardWidth >= ReviewGridMetrics.minCardWidth)
+    #expect(wide.cardWidth <= ReviewGridMetrics.maxCardWidth)
 }
 
 @Test func compareGridDefaultColumnCountMatchesCompareExpectations() {
@@ -170,19 +173,19 @@ import Testing
 }
 
 @MainActor
-@Test func reviewGridResizeUsesLastMeasuredWidthInsteadOfFallingBackToSingleStrip() {
+@Test func reviewGridColumnPreferenceUsesLastMeasuredWidthForReflow() {
     let items = makeSelectionItems(count: 6)
     let state = makeReviewAppState(items: items)
 
-    state.setReviewGridCardWidth(ReviewGridMetrics.defaultCardWidth)
+    state.setReviewGridColumnCount(3)
     state.updateReviewGridMetrics(availableWidth: 1_100)
     #expect(state.reviewGridColumnCount == 3)
 
-    state.setReviewGridCardWidth(220)
+    state.setReviewGridColumnCount(4)
     #expect(state.reviewGridColumnCount == 4)
 
-    state.resetReviewGridCardWidth()
-    #expect(state.reviewGridColumnCount == 3)
+    state.resetReviewGridColumnCount()
+    #expect(state.reviewGridColumnCount == ReviewGridMetrics.defaultRequestedColumnCount())
 }
 
 @MainActor

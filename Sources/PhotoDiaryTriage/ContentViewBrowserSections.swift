@@ -172,13 +172,13 @@ struct ReviewPaneView: View {
                             appState.deselectAllVisibleMedia()
                         },
                         onZoomIn: {
-                            appState.increaseReviewGridCardWidth()
+                            appState.increaseReviewGridColumnCount()
                         },
                         onZoomOut: {
-                            appState.decreaseReviewGridCardWidth()
+                            appState.decreaseReviewGridColumnCount()
                         },
                         onZoomReset: {
-                            appState.resetReviewGridCardWidth()
+                            appState.resetReviewGridColumnCount()
                         }
                     )
                     .frame(width: 1, height: 1)
@@ -467,32 +467,32 @@ struct ReviewPaneView: View {
     private var sizeControls: some View {
         HStack(spacing: 6) {
             Button {
-                appState.decreaseReviewGridCardWidth()
+                appState.decreaseReviewGridColumnCount()
             } label: {
-                Image(systemName: "minus.magnifyingglass")
+                Image(systemName: "minus")
             }
-            .shortcutHint("-", help: "Make review cards smaller (-)")
-            .disabled(appState.reviewGridCardWidth <= ReviewGridMetrics.minCardWidth)
+            .shortcutHint("-", help: "Show fewer review columns (-)")
+            .disabled(appState.reviewGridPreferredColumnCount <= 1)
 
-            Text("\(Int(appState.reviewGridCardWidth))")
+            Text("\(appState.reviewGridPreferredColumnCount)")
                 .font(.caption.monospacedDigit())
                 .frame(width: 36)
 
             Button {
-                appState.increaseReviewGridCardWidth()
+                appState.increaseReviewGridColumnCount()
             } label: {
-                Image(systemName: "plus.magnifyingglass")
+                Image(systemName: "plus")
             }
-            .shortcutHint("+", help: "Make review cards larger (+)")
-            .disabled(appState.reviewGridCardWidth >= ReviewGridMetrics.maxCardWidth)
+            .shortcutHint("+", help: "Show more review columns (+)")
+            .disabled(appState.reviewGridPreferredColumnCount >= ReviewGridMetrics.maxSuggestedColumns)
 
             Button {
-                appState.resetReviewGridCardWidth()
+                appState.resetReviewGridColumnCount()
             } label: {
                 Image(systemName: "arrow.counterclockwise")
             }
-            .shortcutHint("0", help: "Reset review card size (0)")
-            .disabled(appState.reviewGridCardWidth == ReviewGridMetrics.defaultCardWidth)
+            .shortcutHint("0", help: "Reset review columns (0)")
+            .disabled(appState.reviewGridPreferredColumnCount == ReviewGridMetrics.defaultRequestedColumnCount())
         }
         .buttonStyle(.bordered)
     }

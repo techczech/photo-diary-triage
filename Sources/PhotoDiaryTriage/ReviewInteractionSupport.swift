@@ -5,17 +5,43 @@ struct ReviewGridMetrics: Equatable, Sendable {
     static let defaultCardWidth: Double = 280
     static let minCardWidth: Double = 220
     static let maxCardWidth: Double = 420
-    static let cardWidthStep: Double = 20
     static let gridSpacing: Double = 18
     static let gridPadding: Double = 8
+    static let defaultColumnCount: Int = 4
+    static let maxSuggestedColumns: Int = 12
 
     let availableWidth: Double
-    let cardWidth: Double
+    let requestedColumnCount: Int
+
+    static func defaultRequestedColumnCount() -> Int {
+        defaultColumnCount
+    }
+
+    static func columnCount(forLegacyCardWidth width: Double) -> Int {
+        switch width {
+        case ..<240:
+            return 6
+        case ..<280:
+            return 5
+        case ..<340:
+            return 4
+        case ..<390:
+            return 3
+        default:
+            return 2
+        }
+    }
 
     var columnCount: Int {
-        let clampedWidth = max(cardWidth, 1)
-        let usableWidth = max(availableWidth - (Self.gridPadding * 2) + Self.gridSpacing, clampedWidth)
-        return max(1, Int(usableWidth / (clampedWidth + Self.gridSpacing)))
+        max(1, min(requestedColumnCount, Self.maxSuggestedColumns))
+    }
+
+    var cardWidth: Double {
+        let columns = max(columnCount, 1)
+        let usableWidth = max(availableWidth - (Self.gridPadding * 2), Self.minCardWidth)
+        let totalSpacing = Double(max(columns - 1, 0)) * Self.gridSpacing
+        let fittedWidth = (usableWidth - totalSpacing) / Double(columns)
+        return min(max(fittedWidth, Self.minCardWidth), Self.maxCardWidth)
     }
 
     static func thumbnailHeight(for cardWidth: Double) -> Double {

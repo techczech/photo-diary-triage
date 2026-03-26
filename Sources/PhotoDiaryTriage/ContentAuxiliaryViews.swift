@@ -96,7 +96,7 @@ struct KeyboardHelpSheet: View {
                     ])
 
                     shortcutSection("View And Compare", rows: [
-                        ("+ / - / 0", "Resize review cards, or zoom compare images when compare is open."),
+                        ("+ / - / 0", "Change review grid columns, or zoom compare images when compare is open. Reset returns compare to Fit."),
                         ("Cmd-3 / Cmd-4", "Switch flat review or grouped review."),
                         ("Cmd-Control-A / I / X / U", "Filter review items to all, included, excluded, or undecided."),
                         ("Cmd-Option-G / Cmd-Option-L", "Switch grid or list layout."),
@@ -638,11 +638,11 @@ struct ZoomToolbar: View {
             .keyboardShortcut("-", modifiers: keyboardModifiers)
             .shortcutHint(keyboardModifiers.isEmpty ? "-" : "Option--", help: keyboardModifiers.isEmpty ? "Zoom out (-)" : "Zoom out (Option--)")
 
-            Button("100%") {
+            Button("Fit") {
                 zoom = 1
             }
             .keyboardShortcut("0", modifiers: keyboardModifiers)
-            .shortcutHint(keyboardModifiers.isEmpty ? "0" : "Option-0", help: keyboardModifiers.isEmpty ? "Reset zoom (0)" : "Reset compare zoom (Option-0)")
+            .shortcutHint(keyboardModifiers.isEmpty ? "0" : "Option-0", help: keyboardModifiers.isEmpty ? "Fit image to container (0)" : "Fit compare image to container (Option-0)")
 
             Button("+") {
                 zoom = min(4, zoom + 0.25)
@@ -650,9 +650,10 @@ struct ZoomToolbar: View {
             .keyboardShortcut("+", modifiers: keyboardModifiers)
             .shortcutHint(keyboardModifiers.isEmpty ? "+" : "Option-+", help: keyboardModifiers.isEmpty ? "Zoom in (+)" : "Zoom in (Option-+)")
 
-            Text("\(Int(zoom * 100))%")
-                .font(.caption.monospacedDigit())
-                .frame(width: 44, alignment: .trailing)
+            Text("\(Int((zoom * 100).rounded()))%")
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 52, alignment: .trailing)
         }
     }
 }

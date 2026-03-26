@@ -323,8 +323,17 @@ final class AppState: ObservableObject {
         settings.reviewPresentationMode
     }
 
+    var reviewGridPreferredColumnCount: Int {
+        settings.reviewGridColumnCount
+    }
+
     var reviewGridCardWidth: Double {
-        settings.reviewGridCardWidth
+        let width = max(lastMeasuredReviewPaneWidth, 0)
+        guard width > 0 else { return ReviewGridMetrics.defaultCardWidth }
+        return ReviewGridMetrics(
+            availableWidth: width,
+            requestedColumnCount: settings.reviewGridColumnCount
+        ).cardWidth
     }
 
     var canOpenCurrentSelection: Bool {
@@ -647,24 +656,24 @@ final class AppState: ObservableObject {
         }
     }
 
-    func setReviewGridCardWidth(_ width: Double) {
-        let clamped = min(max(width, ReviewGridMetrics.minCardWidth), ReviewGridMetrics.maxCardWidth)
-        guard settings.reviewGridCardWidth != clamped else { return }
-        settings.reviewGridCardWidth = clamped
+    func setReviewGridColumnCount(_ count: Int) {
+        let clamped = min(max(count, 1), ReviewGridMetrics.maxSuggestedColumns)
+        guard settings.reviewGridColumnCount != clamped else { return }
+        settings.reviewGridColumnCount = clamped
         updateReviewGridMetrics(availableWidth: nil)
         persistSettings()
     }
 
-    func increaseReviewGridCardWidth() {
-        setReviewGridCardWidth(settings.reviewGridCardWidth + ReviewGridMetrics.cardWidthStep)
+    func increaseReviewGridColumnCount() {
+        setReviewGridColumnCount(settings.reviewGridColumnCount + 1)
     }
 
-    func decreaseReviewGridCardWidth() {
-        setReviewGridCardWidth(settings.reviewGridCardWidth - ReviewGridMetrics.cardWidthStep)
+    func decreaseReviewGridColumnCount() {
+        setReviewGridColumnCount(settings.reviewGridColumnCount - 1)
     }
 
-    func resetReviewGridCardWidth() {
-        setReviewGridCardWidth(ReviewGridMetrics.defaultCardWidth)
+    func resetReviewGridColumnCount() {
+        setReviewGridColumnCount(ReviewGridMetrics.defaultRequestedColumnCount())
     }
 
     func setCompareGridColumnCount(_ count: Int) {
@@ -729,7 +738,7 @@ final class AppState: ObservableObject {
         }
 
         let width = max(lastMeasuredReviewPaneWidth, 0)
-        let metrics = ReviewGridMetrics(availableWidth: width, cardWidth: reviewGridCardWidth)
+        let metrics = ReviewGridMetrics(availableWidth: width, requestedColumnCount: settings.reviewGridColumnCount)
         reviewGridColumnCount = reviewPresentationMode == .grid ? metrics.columnCount : 1
     }
 

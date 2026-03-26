@@ -90,7 +90,7 @@ import Testing
         proximityThresholdSeconds: 600,
         cleanupRequiresBackupConfirmation: true,
         reviewPresentationMode: .grid,
-        reviewGridCardWidth: ReviewGridMetrics.defaultCardWidth
+        reviewGridColumnCount: ReviewGridMetrics.defaultRequestedColumnCount()
     )
 
     let items = [
@@ -125,7 +125,7 @@ import Testing
         proximityThresholdSeconds: 300,
         cleanupRequiresBackupConfirmation: true,
         reviewPresentationMode: .grid,
-        reviewGridCardWidth: ReviewGridMetrics.defaultCardWidth
+        reviewGridColumnCount: ReviewGridMetrics.defaultRequestedColumnCount()
     )
 
     let looseSettings = AppSettings(
@@ -137,7 +137,7 @@ import Testing
         proximityThresholdSeconds: 600,
         cleanupRequiresBackupConfirmation: true,
         reviewPresentationMode: .grid,
-        reviewGridCardWidth: ReviewGridMetrics.defaultCardWidth
+        reviewGridColumnCount: ReviewGridMetrics.defaultRequestedColumnCount()
     )
 
     let tightResult = GroupingService().group(items: items, settings: tightSettings)
@@ -168,7 +168,7 @@ import Testing
         proximityThresholdSeconds: 2,
         cleanupRequiresBackupConfirmation: true,
         reviewPresentationMode: .grid,
-        reviewGridCardWidth: ReviewGridMetrics.defaultCardWidth
+        reviewGridColumnCount: ReviewGridMetrics.defaultRequestedColumnCount()
     )
 
     let ungroupedSettings = AppSettings(
@@ -180,7 +180,7 @@ import Testing
         proximityThresholdSeconds: 0.5,
         cleanupRequiresBackupConfirmation: true,
         reviewPresentationMode: .grid,
-        reviewGridCardWidth: ReviewGridMetrics.defaultCardWidth
+        reviewGridColumnCount: ReviewGridMetrics.defaultRequestedColumnCount()
     )
 
     let grouped = GroupingService().group(items: items, settings: groupedSettings)

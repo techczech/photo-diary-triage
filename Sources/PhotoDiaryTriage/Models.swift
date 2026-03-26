@@ -156,7 +156,7 @@ struct AppSettings: Codable, Hashable, Sendable {
     var proximityThresholdSeconds: TimeInterval
     var cleanupRequiresBackupConfirmation: Bool
     var reviewPresentationMode: ReviewPresentationMode
-    var reviewGridCardWidth: Double
+    var reviewGridColumnCount: Int
 
     static func `default`(fileManager: FileManager = .default) -> AppSettings {
         let libraryRoot = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -175,7 +175,7 @@ struct AppSettings: Codable, Hashable, Sendable {
             proximityThresholdSeconds: 600,
             cleanupRequiresBackupConfirmation: true,
             reviewPresentationMode: .grid,
-            reviewGridCardWidth: ReviewGridMetrics.defaultCardWidth
+            reviewGridColumnCount: ReviewGridMetrics.defaultRequestedColumnCount()
         )
     }
 
@@ -196,7 +196,7 @@ struct AppSettings: Codable, Hashable, Sendable {
         proximityThresholdSeconds: TimeInterval,
         cleanupRequiresBackupConfirmation: Bool,
         reviewPresentationMode: ReviewPresentationMode,
-        reviewGridCardWidth: Double
+        reviewGridColumnCount: Int
     ) {
         self.defaultSourceRoot = defaultSourceRoot
         self.archiveRoot = archiveRoot
@@ -206,11 +206,12 @@ struct AppSettings: Codable, Hashable, Sendable {
         self.proximityThresholdSeconds = proximityThresholdSeconds
         self.cleanupRequiresBackupConfirmation = cleanupRequiresBackupConfirmation
         self.reviewPresentationMode = reviewPresentationMode
-        self.reviewGridCardWidth = reviewGridCardWidth
+        self.reviewGridColumnCount = reviewGridColumnCount
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        let legacyContainer = try decoder.container(keyedBy: LegacyCodingKeys.self)
         let defaults = AppSettings.default()
         defaultSourceRoot = try container.decodeIfPresent(URL.self, forKey: .defaultSourceRoot) ?? defaults.defaultSourceRoot
         archiveRoot = try container.decodeIfPresent(URL.self, forKey: .archiveRoot) ?? defaults.archiveRoot
@@ -220,7 +221,42 @@ struct AppSettings: Codable, Hashable, Sendable {
         proximityThresholdSeconds = try container.decodeIfPresent(TimeInterval.self, forKey: .proximityThresholdSeconds) ?? defaults.proximityThresholdSeconds
         cleanupRequiresBackupConfirmation = try container.decodeIfPresent(Bool.self, forKey: .cleanupRequiresBackupConfirmation) ?? defaults.cleanupRequiresBackupConfirmation
         reviewPresentationMode = try container.decodeIfPresent(ReviewPresentationMode.self, forKey: .reviewPresentationMode) ?? defaults.reviewPresentationMode
-        reviewGridCardWidth = try container.decodeIfPresent(Double.self, forKey: .reviewGridCardWidth) ?? defaults.reviewGridCardWidth
+        if let storedColumns = try container.decodeIfPresent(Int.self, forKey: .reviewGridColumnCount) {
+            reviewGridColumnCount = min(max(storedColumns, 1), ReviewGridMetrics.maxSuggestedColumns)
+        } else if let legacyWidth = try legacyContainer.decodeIfPresent(Double.self, forKey: .reviewGridCardWidth) {
+            reviewGridColumnCount = ReviewGridMetrics.columnCount(forLegacyCardWidth: legacyWidth)
+        } else {
+            reviewGridColumnCount = defaults.reviewGridColumnCount
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(defaultSourceRoot, forKey: .defaultSourceRoot)
+        try container.encode(archiveRoot, forKey: .archiveRoot)
+        try container.encode(cacheRoot, forKey: .cacheRoot)
+        try container.encode(supportedExtensions, forKey: .supportedExtensions)
+        try container.encode(burstThresholdSeconds, forKey: .burstThresholdSeconds)
+        try container.encode(proximityThresholdSeconds, forKey: .proximityThresholdSeconds)
+        try container.encode(cleanupRequiresBackupConfirmation, forKey: .cleanupRequiresBackupConfirmation)
+        try container.encode(reviewPresentationMode, forKey: .reviewPresentationMode)
+        try container.encode(reviewGridColumnCount, forKey: .reviewGridColumnCount)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case defaultSourceRoot
+        case archiveRoot
+        case cacheRoot
+        case supportedExtensions
+        case burstThresholdSeconds
+        case proximityThresholdSeconds
+        case cleanupRequiresBackupConfirmation
+        case reviewPresentationMode
+        case reviewGridColumnCount
+    }
+
+    private enum LegacyCodingKeys: String, CodingKey {
+        case reviewGridCardWidth
     }
 }
 

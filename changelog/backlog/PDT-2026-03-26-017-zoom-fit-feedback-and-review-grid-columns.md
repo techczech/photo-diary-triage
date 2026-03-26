@@ -1,0 +1,31 @@
+# PDT-2026-03-26-017 Zoom fit feedback and review grid columns
+
+- item ID: PDT-2026-03-26-017
+- title: Zoom fit feedback and review grid columns
+- user request summary:
+  - The fixed-column compare grid now works well, but the compare zoom toolbar is still unclear.
+  - The zoom readout should show the actual current zoom level instead of an ambiguous static reset label.
+  - Compare needs an explicit fit reset that returns the image to the full-container view.
+  - The main review grid should adopt the same explicit column-count model instead of the older width-based sizing control.
+- constraints:
+  - Preserve the current compare column grid, locked pan, remove-from-compare, and triage actions.
+  - Preserve current review responsiveness and keyboard navigation.
+  - Keep old persisted settings compatible when loading existing settings files.
+- implementation intent:
+  - Replace the current reset label in the zoom toolbar with a clear fit action and keep a live zoom percentage readout.
+  - Convert review-grid sizing from preferred card width to preferred column count, derived from the measured review pane width.
+  - Replace review grid size controls and settings with column controls that match the compare model.
+  - Keep keyboard `+ / - / 0` behavior working for the review grid under the new column model.
+- test conditions:
+  - manual compare zoom and fit reset checks
+  - manual review-grid column control checks
+  - `swift build`
+  - `swift test`
+- success criteria:
+  - compare clearly shows the current zoom percentage and has an explicit fit reset
+  - the main review grid uses explicit column controls instead of point-width controls
+  - removing or adding review columns immediately reflows the review grid
+  - legacy settings still load without breaking the review layout
+- current status: awaiting_user_review
+- target release version: 0.1.55
+- target feature slug: zoom-fit-feedback-and-review-grid-columns
