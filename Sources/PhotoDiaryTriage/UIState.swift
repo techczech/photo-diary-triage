@@ -6,9 +6,40 @@ import OSLog
 struct SessionSummary: Equatable, Sendable {
     let sessionID: UUID
     let sourceFolderPath: String
+    let workspaceSourceFolderPath: String
     let itemCount: Int
     let includedCount: Int
+    let candidateCount: Int
+    let excludedCount: Int
+    let sessionKind: SessionKind
+    let status: String
     let walkMetadata: WalkMetadata
+}
+
+struct SavedWalkSummary: Identifiable, Equatable, Sendable {
+    let sessionID: UUID
+    let title: String
+    let sourceFolderPath: String
+    let workspaceSourceFolderPath: String
+    let itemCount: Int
+    let includedCount: Int
+    let candidateCount: Int
+    let excludedCount: Int
+    let sessionKind: SessionKind
+    let status: String
+    let sourceIsAvailable: Bool
+    let lastUpdatedAt: Date
+    let isCurrentSession: Bool
+
+    var id: UUID { sessionID }
+}
+
+struct SavedWalkGroupSnapshot: Identifiable, Equatable, Sendable {
+    let workspaceSourceFolderPath: String
+    let sourceIsAvailable: Bool
+    let drafts: [SavedWalkSummary]
+
+    var id: String { workspaceSourceFolderPath }
 }
 
 struct SidebarTreeSnapshot: Equatable, Sendable {
@@ -31,7 +62,9 @@ struct ReviewItemSnapshot: Identifiable, Equatable, Sendable {
 struct SidebarSnapshot: Equatable, Sendable {
     let isVisible: Bool
     let sessionSummary: SessionSummary?
+    let savedWalkGroups: [SavedWalkGroupSnapshot]
     let canMutateImportSelection: Bool
+    let canCreateWalkDraftFromSelection: Bool
     let isWalkDetailsExpanded: Bool
     let archiveRootDisplayPath: String
     let archiveYearFolders: [String]
@@ -42,7 +75,9 @@ struct SidebarSnapshot: Equatable, Sendable {
     static let empty = SidebarSnapshot(
         isVisible: true,
         sessionSummary: nil,
+        savedWalkGroups: [],
         canMutateImportSelection: false,
+        canCreateWalkDraftFromSelection: false,
         isWalkDetailsExpanded: true,
         archiveRootDisplayPath: "",
         archiveYearFolders: [],

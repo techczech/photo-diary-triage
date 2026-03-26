@@ -1,0 +1,28 @@
+# PDT-2026-03-26-029 Multi-Walk Draft Library And Archive Reporting
+
+- Item ID: `PDT-2026-03-26-029`
+- Title: `Multi-walk draft library and archive reporting`
+- User request summary: `Support multiple saved walk drafts from one source folder, keep them resumable in a sidebar library, enforce exclusive photo ownership across drafts, and expand archive reporting so committed walks record imported and excluded outcomes.`
+- Constraints:
+  - Preserve the existing SQLite-backed session store and archive manifest pipeline.
+  - Keep grid-first review and the current archive folder structure.
+  - Draft saves stay in app storage; markdown reports are written only on archive commit.
+  - Drafts from the same source folder must not overlap on source-relative paths.
+- Implementation intent:
+  - Extend `ImportSession` with explicit draft/inbox identity and workspace source grouping.
+  - Add a saved-walk library to the sidebar with resume and open-inbox actions.
+  - Allow creating a new walk draft from the current selection inside an inbox session.
+  - Keep committed drafts in history and extend `WalkManifest.md` with excluded-file and unresolved-decision reporting.
+- Test conditions:
+  - Multiple drafts from the same source folder load and sort correctly.
+  - Creating a draft from the current selection persists it and removes those items from the inbox.
+  - Reopening the source inbox shows only unassigned items.
+  - Walk manifests include imported files, excluded files, and candidate/undecided counts.
+- Success criteria:
+  - The sidebar exposes a usable saved-walk library.
+  - The app can resume older drafts instead of only the most recent session.
+  - A large holiday folder can be split safely into multiple saved walk drafts over time.
+  - Archive reporting reflects the draft decisions that were committed.
+- Current status: `approved_for_implementation`
+- Target release version: `0.1.67`
+- Target feature slug: `multi-walk-draft-library-and-archive-reporting`

@@ -298,6 +298,7 @@ final class AppState: ObservableObject {
     private var cachedVisibleMediaItems: [MediaItem] = []
     private var cachedReviewInteractionGeneration: Int = -1
     private var cachedReviewInteractionItems: [MediaItem] = []
+    private var persistedSessions: [(ImportSession, [BurstGroup], [TimeCluster])] = []
 
     init(testing: Bool = false) {
         self.fileManager = .default
@@ -592,6 +593,10 @@ final class AppState: ObservableObject {
         canMutateImportSelection && selectedMediaItems.contains { !$0.companionFiles.isEmpty }
     }
 
+    var canCreateWalkDraftFromSelection: Bool {
+        currentSession?.sessionKind == .inbox && !currentSelectionMediaIDs().isEmpty
+    }
+
     var selectedMediaItems: [MediaItem] {
         selectedMediaItemIDs.compactMap { sessionMediaByID[$0] }.sorted(by: Self.mediaSort)
     }
@@ -701,6 +706,12 @@ final class AppState: ObservableObject {
         }
     }
 
+    func openSourceInbox(for workspaceSourceFolder: URL) {
+        Task {
+            await openSession(for: workspaceSourceFolder)
+        }
+    }
+
     func pickArchiveRoot() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -731,27 +742,115 @@ final class AppState: ObservableObject {
 
     func openSession(for folder: URL) async {
         do {
+            let standardizedFolder = folder.standardizedFileURL
+            try reloadPersistedSessionsFromStore()
+
+            if let existingInbox = persistedSessions.first(where: {
+                $0.0.sessionKind == .inbox && $0.0.workspaceSourceFolder.standardizedFileURL == standardizedFolder
+            }) {
+                let normalizedInbox = normalizeInboxRecord(existingInbox)
+                if normalizedInbox.0 != existingInbox.0 || normalizedInbox.1 != existingInbox.1 || normalizedInbox.2 != existingInbox.2 {
+                    try sessionManager.save(normalizedInbox.0, bursts: normalizedInbox.1, clusters: normalizedInbox.2, to: sessionStore)
+                    storePersistedSession(normalizedInbox.0, bursts: normalizedInbox.1, clusters: normalizedInbox.2)
+                }
+                openPersistedSessionRecord(
+                    normalizedInbox,
+                    status: "Loaded inbox with \(normalizedInbox.0.mediaItems.count) unassigned items from \(standardizedFolder.lastPathComponent)."
+                )
+                requestVisibleThumbnails(prefetching: normalizedInbox.0.mediaItems)
+                return
+            }
+
             statusMessage = "Scanning source folder..."
             let opened = try sessionLifecycleCoordinator.openSession(
-                for: folder,
+                for: standardizedFolder,
                 settings: settings,
                 using: sessionManager,
                 store: sessionStore
             )
-            setCurrentSession(opened.session, updateKind: .full)
-            burstGroups = opened.bursts
-            timeClusters = opened.clusters
-            selectedSidebarNodeID = browserViewModel.preferredInitialSidebarNodeID(for: opened.session, bursts: opened.bursts, clusters: opened.clusters)
-            clearDetailSelections()
-            archiveMediaCache.removeAll()
-            resetInlineExpansionState()
-
-            statusMessage = "Loaded \(opened.session.mediaItems.count) visible items from \(folder.lastPathComponent)."
-
-            requestVisibleThumbnails(prefetching: opened.session.mediaItems)
+            let normalizedInbox = normalizeInboxRecord((opened.session, opened.bursts, opened.clusters))
+            try sessionManager.save(normalizedInbox.0, bursts: normalizedInbox.1, clusters: normalizedInbox.2, to: sessionStore)
+            storePersistedSession(normalizedInbox.0, bursts: normalizedInbox.1, clusters: normalizedInbox.2)
+            openPersistedSessionRecord(
+                normalizedInbox,
+                status: "Loaded \(normalizedInbox.0.mediaItems.count) visible items from \(standardizedFolder.lastPathComponent)."
+            )
+            requestVisibleThumbnails(prefetching: normalizedInbox.0.mediaItems)
         } catch {
             logger.error("Failed to open session for \(folder.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
             statusMessage = error.localizedDescription
+        }
+    }
+
+    func openSavedWalk(_ sessionID: UUID) {
+        guard let record = persistedSessions.first(where: { $0.0.id == sessionID }) else {
+            statusMessage = "Saved walk could not be found in the local library."
+            return
+        }
+
+        openPersistedSessionRecord(record, status: "Resumed \(record.0.walkMetadata.title.nonEmpty ?? "Untitled Walk").")
+        requestVisibleThumbnails(prefetching: record.0.mediaItems)
+    }
+
+    func createWalkDraftFromCurrentSelection() {
+        guard let currentSession else { return }
+        guard currentSession.sessionKind == .inbox else {
+            statusMessage = "Walk drafts can only be created from a source inbox."
+            return
+        }
+
+        let selectedIDs = currentSelectionMediaIDs()
+        guard !selectedIDs.isEmpty else {
+            statusMessage = "Select the photos for the new walk draft first."
+            return
+        }
+
+        let selectedItems = currentSession.mediaItems.filter { selectedIDs.contains($0.id) }
+        let collisionPaths = ownedRelativePaths(
+            for: currentSession.workspaceSourceFolder,
+            excludingSessionIDs: [currentSession.id]
+        ).intersection(Set(selectedItems.map(\.relativePath)))
+        guard collisionPaths.isEmpty else {
+            statusMessage = "Some selected photos already belong to another saved walk."
+            return
+        }
+
+        let remainingItems = currentSession.mediaItems.filter { !selectedIDs.contains($0.id) }
+        let draftGrouped = groupingService.group(items: selectedItems, settings: settings)
+        let inboxGrouped = groupingService.group(items: remainingItems, settings: settings)
+
+        let draftTitle = currentSession.walkMetadata.title.nonEmpty ?? "Untitled Walk"
+        let draftSession = ImportSession(
+            sourceFolder: currentSession.sourceFolder,
+            workspaceSourceFolder: currentSession.workspaceSourceFolder,
+            startedAt: Date(),
+            lastUpdatedAt: Date(),
+            walkMetadata: currentSession.walkMetadata,
+            archiveRoot: currentSession.archiveRoot,
+            sessionKind: .walkDraft,
+            status: "draft",
+            mediaItems: draftGrouped.items
+        )
+
+        var updatedInbox = currentSession
+        updatedInbox.mediaItems = inboxGrouped.items
+        updatedInbox.lastUpdatedAt = Date()
+        updatedInbox.sessionKind = .inbox
+        updatedInbox.status = updatedInbox.mediaItems.isEmpty ? "inbox_empty" : "draft"
+
+        do {
+            try sessionManager.save(draftSession, bursts: draftGrouped.burstGroups, clusters: draftGrouped.timeClusters, to: sessionStore)
+            try sessionManager.save(updatedInbox, bursts: inboxGrouped.burstGroups, clusters: inboxGrouped.timeClusters, to: sessionStore)
+            storePersistedSession(draftSession, bursts: draftGrouped.burstGroups, clusters: draftGrouped.timeClusters)
+            storePersistedSession(updatedInbox, bursts: inboxGrouped.burstGroups, clusters: inboxGrouped.timeClusters)
+            openPersistedSessionRecord(
+                (draftSession, draftGrouped.burstGroups, draftGrouped.timeClusters),
+                status: "Created saved walk draft \(draftTitle)."
+            )
+            requestVisibleThumbnails(prefetching: draftSession.mediaItems)
+        } catch {
+            logger.error("Failed to create walk draft: \(error.localizedDescription, privacy: .public)")
+            statusMessage = "Failed to create walk draft: \(error.localizedDescription)"
         }
     }
 
@@ -1587,6 +1686,7 @@ final class AppState: ObservableObject {
             let backup = try backupStore.importBackup(from: url)
             settings = backup.settings
             try sessionStore.replaceAllSessions(with: backup.sessions.map { ($0.session, $0.bursts, $0.timeClusters) })
+            try reloadPersistedSessionsFromStore()
             persistSettings()
             archiveYearFolders = ArchiveLibraryInspector.existingYearFolders(in: settings.archiveRoot)
             loadMostRecentSession()
@@ -1780,24 +1880,14 @@ final class AppState: ObservableObject {
 
     private func loadMostRecentSession() {
         do {
-            guard let latest = try sessionLifecycleCoordinator.loadMostRecentSession(
-                from: sessionStore,
-                using: sessionManager
-            ) else { return }
-            setCurrentSession(latest.session, updateKind: .full)
-            burstGroups = latest.bursts
-            timeClusters = latest.clusters
+            try reloadPersistedSessionsFromStore()
+            guard let latest = mostRecentRecoverableSession() ?? persistedSessions.first else { return }
+            openPersistedSessionRecord(latest, status: "Recovered most recent session from local SQLite store.")
         } catch {
             logger.error("Failed to recover recent session: \(error.localizedDescription, privacy: .public)")
             statusMessage = "Failed to recover the most recent session: \(error.localizedDescription)"
             return
         }
-
-        selectedSidebarNodeID = currentSession == nil ? "section-current-session" : browserViewModel.preferredInitialSidebarNodeID(for: currentSession, bursts: burstGroups, clusters: timeClusters)
-        clearDetailSelections()
-        archiveMediaCache.removeAll()
-        resetInlineExpansionState()
-        statusMessage = "Recovered most recent session from local SQLite store."
     }
 
     private func persistCurrentSession(immediately: Bool = false) {
@@ -1808,6 +1898,7 @@ final class AppState: ObservableObject {
         let sessionManager = self.sessionManager
         let sessionStore = self.sessionStore
         let logger = self.logger
+        storePersistedSession(session, bursts: bursts, clusters: clusters)
 
         pendingSessionPersistenceWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
@@ -1833,6 +1924,73 @@ final class AppState: ObservableObject {
             logger.error("Failed to persist settings: \(error.localizedDescription, privacy: .public)")
             statusMessage = "Settings save failed: \(error.localizedDescription)"
         }
+    }
+
+    private func reloadPersistedSessionsFromStore() throws {
+        persistedSessions = try sessionStore.loadSessions().sorted { $0.0.lastUpdatedAt > $1.0.lastUpdatedAt }
+        refreshSidebarState()
+    }
+
+    private func storePersistedSession(_ session: ImportSession, bursts: [BurstGroup], clusters: [TimeCluster]) {
+        persistedSessions.removeAll { $0.0.id == session.id }
+        persistedSessions.append((session, bursts, clusters))
+        persistedSessions.sort { $0.0.lastUpdatedAt > $1.0.lastUpdatedAt }
+        refreshSidebarState()
+    }
+
+    private func openPersistedSessionRecord(
+        _ record: (ImportSession, [BurstGroup], [TimeCluster]),
+        status: String
+    ) {
+        setCurrentSession(record.0, updateKind: .full)
+        burstGroups = record.1
+        timeClusters = record.2
+        selectedSidebarNodeID = browserViewModel.preferredInitialSidebarNodeID(for: record.0, bursts: record.1, clusters: record.2)
+        clearDetailSelections()
+        archiveMediaCache.removeAll()
+        resetInlineExpansionState()
+        statusMessage = status
+    }
+
+    private func mostRecentRecoverableSession() -> (ImportSession, [BurstGroup], [TimeCluster])? {
+        persistedSessions.first {
+            $0.0.status != "imported" && $0.0.status != "source_cleaned"
+        }
+    }
+
+    private func ownedRelativePaths(
+        for workspaceSourceFolder: URL,
+        excludingSessionIDs: Set<UUID> = []
+    ) -> Set<String> {
+        let standardizedFolder = workspaceSourceFolder.standardizedFileURL
+        return Set(
+            persistedSessions
+                .filter {
+                    $0.0.sessionKind == .walkDraft &&
+                    !excludingSessionIDs.contains($0.0.id) &&
+                    $0.0.workspaceSourceFolder.standardizedFileURL == standardizedFolder
+                }
+                .flatMap { $0.0.mediaItems.map(\.relativePath) }
+        )
+    }
+
+    private func normalizeInboxRecord(
+        _ record: (ImportSession, [BurstGroup], [TimeCluster])
+    ) -> (ImportSession, [BurstGroup], [TimeCluster]) {
+        var session = record.0
+        let assignedPaths = ownedRelativePaths(
+            for: session.workspaceSourceFolder,
+            excludingSessionIDs: [session.id]
+        )
+        guard !assignedPaths.isEmpty else { return record }
+
+        let filteredItems = session.mediaItems.filter { !assignedPaths.contains($0.relativePath) }
+        guard filteredItems.count != session.mediaItems.count else { return record }
+
+        let regrouped = groupingService.group(items: filteredItems, settings: settings)
+        session.mediaItems = regrouped.items
+        session.lastUpdatedAt = Date()
+        return (session, regrouped.burstGroups, regrouped.timeClusters)
     }
 
     private func save(_ session: ImportSession) {
@@ -1975,26 +2133,65 @@ final class AppState: ObservableObject {
     private func refreshSidebarState() {
         let summary: SessionSummary?
         if let currentSession {
-            let includedCount = currentSession.mediaItems.reduce(into: 0) { count, item in
-                if item.selectionState.isIncluded {
-                    count += 1
-                }
-            }
+            let counts = triageCounts(for: currentSession.mediaItems)
             summary = SessionSummary(
                 sessionID: currentSession.id,
                 sourceFolderPath: currentSession.sourceFolder.path,
+                workspaceSourceFolderPath: currentSession.workspaceSourceFolder.path,
                 itemCount: currentSession.mediaItems.count,
-                includedCount: includedCount,
+                includedCount: counts.included,
+                candidateCount: counts.candidate,
+                excludedCount: counts.excluded,
+                sessionKind: currentSession.sessionKind,
+                status: currentSession.status,
                 walkMetadata: currentSession.walkMetadata
             )
         } else {
             summary = nil
         }
 
+        let savedWalkGroups = Dictionary(grouping: persistedSessions.filter { $0.0.sessionKind == .walkDraft }) {
+            $0.0.workspaceSourceFolder.standardizedFileURL.path
+        }
+            .map { key, records in
+                let drafts = records
+                    .map { record -> SavedWalkSummary in
+                        let counts = triageCounts(for: record.0.mediaItems)
+                        let title = record.0.walkMetadata.title.nonEmpty ?? "Untitled Walk"
+                        return SavedWalkSummary(
+                            sessionID: record.0.id,
+                            title: title,
+                            sourceFolderPath: record.0.sourceFolder.path,
+                            workspaceSourceFolderPath: record.0.workspaceSourceFolder.path,
+                            itemCount: record.0.mediaItems.count,
+                            includedCount: counts.included,
+                            candidateCount: counts.candidate,
+                            excludedCount: counts.excluded,
+                            sessionKind: record.0.sessionKind,
+                            status: record.0.status,
+                            sourceIsAvailable: fileManager.fileExists(atPath: record.0.workspaceSourceFolder.path),
+                            lastUpdatedAt: record.0.lastUpdatedAt,
+                            isCurrentSession: currentSession?.id == record.0.id
+                        )
+                    }
+                    .sorted { $0.lastUpdatedAt > $1.lastUpdatedAt }
+
+                return SavedWalkGroupSnapshot(
+                    workspaceSourceFolderPath: key,
+                    sourceIsAvailable: fileManager.fileExists(atPath: key),
+                    drafts: drafts
+                )
+            }
+            .sorted { (lhs: SavedWalkGroupSnapshot, rhs: SavedWalkGroupSnapshot) in
+                lhs.workspaceSourceFolderPath.localizedCaseInsensitiveCompare(rhs.workspaceSourceFolderPath) == .orderedAscending
+            }
+
         let snapshot = SidebarSnapshot(
             isVisible: isSidebarVisible,
             sessionSummary: summary,
+            savedWalkGroups: savedWalkGroups,
             canMutateImportSelection: canMutateImportSelection,
+            canCreateWalkDraftFromSelection: canCreateWalkDraftFromSelection,
             isWalkDetailsExpanded: isWalkDetailsExpanded,
             archiveRootDisplayPath: settings.archiveRootDisplayPath,
             archiveYearFolders: archiveYearFolders,
@@ -2006,6 +2203,21 @@ final class AppState: ObservableObject {
             importProgress: importProgress
         )
         sidebarState.update(snapshot)
+    }
+
+    private func triageCounts(for items: [MediaItem]) -> (included: Int, candidate: Int, excluded: Int) {
+        items.reduce(into: (included: 0, candidate: 0, excluded: 0)) { counts, item in
+            switch item.selectionState {
+            case .included:
+                counts.included += 1
+            case .candidate:
+                counts.candidate += 1
+            case .excluded:
+                counts.excluded += 1
+            case .undecided:
+                break
+            }
+        }
     }
 
     private func refreshReviewState() {

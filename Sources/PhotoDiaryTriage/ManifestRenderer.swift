@@ -24,6 +24,9 @@ struct ManifestRenderer {
         lines.append("- Total source files: \(manifest.summary.totalSourceFiles)")
         lines.append("- Visible review items: \(manifest.summary.visibleItems)")
         lines.append("- Imported files: \(manifest.summary.importedFiles)")
+        lines.append("- Excluded files: \(manifest.summary.excludedFiles)")
+        lines.append("- Candidate files: \(manifest.summary.candidateFiles)")
+        lines.append("- Undecided files: \(manifest.summary.undecidedFiles)")
         lines.append("- Files left on source SSD: \(manifest.summary.skippedFiles)")
         lines.append("- Cleanup pending: \(manifest.summary.cleanupPendingFiles)")
         lines.append("- Source files cleaned: \(manifest.summary.cleanedSourceFiles)")
@@ -36,6 +39,18 @@ struct ManifestRenderer {
         } else {
             for file in manifest.importedFiles {
                 lines.append("- `\(file.sourceFileName)` -> `\(file.archivePath)`")
+            }
+        }
+
+        lines.append("")
+        lines.append("## Excluded Files")
+        lines.append("")
+
+        if manifest.excludedFiles.isEmpty {
+            lines.append("_No excluded files._")
+        } else {
+            for file in manifest.excludedFiles {
+                lines.append("- `\(file.sourceFileName)` (`\(file.relativePath)`) - \(file.reason)")
             }
         }
 

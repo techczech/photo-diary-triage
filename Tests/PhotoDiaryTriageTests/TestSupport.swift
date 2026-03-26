@@ -90,9 +90,18 @@ func makeTestSession(
     title: String = "Test Walk",
     location: String = "Bristol",
     notes: String = "Test notes",
-    backupConfirmedAt: Date? = nil
+    backupConfirmedAt: Date? = nil,
+    workspaceSourceFolder: URL? = nil,
+    sessionKind: SessionKind = .walkDraft,
+    status: String = "draft"
 ) -> ImportSession {
-    var session = ImportSession(sourceFolder: sourceRoot, archiveRoot: archiveRoot)
+    var session = ImportSession(
+        sourceFolder: sourceRoot,
+        workspaceSourceFolder: workspaceSourceFolder ?? sourceRoot,
+        archiveRoot: archiveRoot,
+        sessionKind: sessionKind,
+        status: status
+    )
     session.walkMetadata.title = title
     session.walkMetadata.location = location
     session.walkMetadata.notes = notes

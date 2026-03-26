@@ -719,6 +719,63 @@ import Testing
 }
 
 @MainActor
+@Test func createWalkDraftFromSelectionPersistsDraftAndRemovesItemsFromInbox() async {
+    let items = makeSelectionItems(count: 4)
+    let state = AppState(testing: true)
+    let root = URL(fileURLWithPath: "/tmp/walk-draft-library", isDirectory: true)
+    state.currentSession = makeTestSession(
+        sourceRoot: root,
+        archiveRoot: root.appendingPathComponent("archive", isDirectory: true),
+        items: items,
+        title: "Holiday Day One",
+        workspaceSourceFolder: root,
+        sessionKind: .inbox
+    )
+    state.selectMediaItems([items[0].id, items[1].id])
+
+    state.createWalkDraftFromCurrentSelection()
+
+    #expect(state.currentSession?.sessionKind == .walkDraft)
+    #expect(state.currentSession?.mediaItems.map(\.id) == [items[0].id, items[1].id])
+    #expect(state.sidebarState.snapshot.savedWalkGroups.count == 1)
+    #expect(state.sidebarState.snapshot.savedWalkGroups.first?.drafts.count == 1)
+
+    await state.openSession(for: root)
+
+    #expect(state.currentSession?.sessionKind == .inbox)
+    #expect(state.currentSession?.mediaItems.map(\.id) == [items[2].id, items[3].id])
+}
+
+@MainActor
+@Test func openSavedWalkRestoresDraftAfterReturningToInbox() async throws {
+    let items = makeSelectionItems(count: 3)
+    let state = AppState(testing: true)
+    let root = URL(fileURLWithPath: "/tmp/walk-draft-resume", isDirectory: true)
+    state.currentSession = makeTestSession(
+        sourceRoot: root,
+        archiveRoot: root.appendingPathComponent("archive", isDirectory: true),
+        items: items,
+        title: "Holiday Day Two",
+        workspaceSourceFolder: root,
+        sessionKind: .inbox
+    )
+    state.selectMediaItems([items[0].id, items[1].id])
+
+    state.createWalkDraftFromCurrentSelection()
+    let draftID = try #require(state.currentSession?.id)
+
+    await state.openSession(for: root)
+    #expect(state.currentSession?.sessionKind == .inbox)
+
+    state.openSavedWalk(draftID)
+
+    #expect(state.currentSession?.id == draftID)
+    #expect(state.currentSession?.sessionKind == .walkDraft)
+    #expect(state.currentSession?.walkMetadata.title == "Holiday Day Two")
+    #expect(state.currentSession?.mediaItems.map(\.id) == [items[0].id, items[1].id])
+}
+
+@MainActor
 @Test func filterChangeReconcilesSelectionWhenHiddenItemsDropOut() {
     let sourceRoot = URL(fileURLWithPath: "/tmp/review-filter-reconcile", isDirectory: true)
     let base = Date(timeIntervalSince1970: 20_000)

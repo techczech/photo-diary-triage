@@ -189,6 +189,12 @@ struct PhotoDiaryCommands: Commands {
             .keyboardShortcut("r", modifiers: [.command, .option])
             .disabled(!appState.canToggleRawForSelection)
 
+            Button("Create Walk Draft From Selection") {
+                appState.createWalkDraftFromCurrentSelection()
+            }
+            .keyboardShortcut("w", modifiers: [.command, .shift])
+            .disabled(!appState.canCreateWalkDraftFromSelection)
+
             Button("Compare Selection") {
                 appState.openComparisonForCurrentSelection()
             }
