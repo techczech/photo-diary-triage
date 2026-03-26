@@ -202,6 +202,18 @@ struct ImportCoordinator: ImportCoordinating {
     private func buildWalkManifest(for session: ImportSession, archiveFolder: URL, fileManifests: [FileManifest]) -> WalkManifest {
         let cleanupPending = session.mediaItems.filter { $0.lifecycleState == .sourceCleanupPending }.count
         let cleaned = session.mediaItems.filter { $0.lifecycleState == .sourceCleaned }.count
+        let excludedFiles = session.mediaItems
+            .filter { $0.selectionState.isExcluded }
+            .map {
+                RejectedFileManifest(
+                    mediaItemID: $0.id,
+                    sourceFileName: $0.fileName,
+                    relativePath: $0.relativePath,
+                    reason: "excluded"
+                )
+            }
+        let candidateCount = session.mediaItems.filter { $0.selectionState.isCandidate }.count
+        let undecidedCount = session.mediaItems.filter { $0.selectionState.isUndecided }.count
 
         return WalkManifest(
             sessionID: session.id,
@@ -215,11 +227,15 @@ struct ImportCoordinator: ImportCoordinating {
                 totalSourceFiles: session.mediaItems.reduce(0) { $0 + 1 + $1.companionFiles.count },
                 visibleItems: session.mediaItems.count,
                 importedFiles: fileManifests.count + fileManifests.reduce(0) { $0 + $1.companionArchivePaths.count },
+                excludedFiles: excludedFiles.count,
+                candidateFiles: candidateCount,
+                undecidedFiles: undecidedCount,
                 skippedFiles: session.mediaItems.count - fileManifests.count,
                 cleanupPendingFiles: cleanupPending,
                 cleanedSourceFiles: cleaned
             ),
-            importedFiles: fileManifests
+            importedFiles: fileManifests,
+            excludedFiles: excludedFiles
         )
     }
 

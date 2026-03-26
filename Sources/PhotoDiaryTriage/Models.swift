@@ -156,6 +156,20 @@ struct WalkMetadata: Codable, Hashable, Sendable {
     static let empty = WalkMetadata(title: "", location: "", notes: "", backupConfirmedAt: nil)
 }
 
+enum SessionKind: String, Codable, Hashable, Sendable {
+    case inbox
+    case walkDraft
+
+    var title: String {
+        switch self {
+        case .inbox:
+            return "Inbox"
+        case .walkDraft:
+            return "Walk Draft"
+        }
+    }
+}
+
 struct AppSettings: Codable, Hashable, Sendable {
     var defaultSourceRoot: URL
     var archiveRoot: URL
@@ -272,31 +286,78 @@ struct AppSettings: Codable, Hashable, Sendable {
 struct ImportSession: Identifiable, Codable, Hashable, Sendable {
     let id: UUID
     var sourceFolder: URL
+    var workspaceSourceFolder: URL
     var startedAt: Date
     var lastUpdatedAt: Date
     var walkMetadata: WalkMetadata
     var archiveRoot: URL
+    var sessionKind: SessionKind
     var status: String
     var mediaItems: [MediaItem]
 
     init(
         id: UUID = UUID(),
         sourceFolder: URL,
+        workspaceSourceFolder: URL? = nil,
         startedAt: Date = Date(),
         lastUpdatedAt: Date = Date(),
         walkMetadata: WalkMetadata = .empty,
         archiveRoot: URL,
+        sessionKind: SessionKind = .walkDraft,
         status: String = "draft",
         mediaItems: [MediaItem] = []
     ) {
         self.id = id
         self.sourceFolder = sourceFolder
+        self.workspaceSourceFolder = workspaceSourceFolder ?? sourceFolder
         self.startedAt = startedAt
         self.lastUpdatedAt = lastUpdatedAt
         self.walkMetadata = walkMetadata
         self.archiveRoot = archiveRoot
+        self.sessionKind = sessionKind
         self.status = status
         self.mediaItems = mediaItems
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case sourceFolder
+        case workspaceSourceFolder
+        case startedAt
+        case lastUpdatedAt
+        case walkMetadata
+        case archiveRoot
+        case sessionKind
+        case status
+        case mediaItems
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        sourceFolder = try container.decode(URL.self, forKey: .sourceFolder)
+        workspaceSourceFolder = try container.decodeIfPresent(URL.self, forKey: .workspaceSourceFolder) ?? sourceFolder
+        startedAt = try container.decodeIfPresent(Date.self, forKey: .startedAt) ?? Date()
+        lastUpdatedAt = try container.decodeIfPresent(Date.self, forKey: .lastUpdatedAt) ?? startedAt
+        walkMetadata = try container.decodeIfPresent(WalkMetadata.self, forKey: .walkMetadata) ?? .empty
+        archiveRoot = try container.decode(URL.self, forKey: .archiveRoot)
+        sessionKind = try container.decodeIfPresent(SessionKind.self, forKey: .sessionKind) ?? .walkDraft
+        status = try container.decodeIfPresent(String.self, forKey: .status) ?? "draft"
+        mediaItems = try container.decodeIfPresent([MediaItem].self, forKey: .mediaItems) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(sourceFolder, forKey: .sourceFolder)
+        try container.encode(workspaceSourceFolder, forKey: .workspaceSourceFolder)
+        try container.encode(startedAt, forKey: .startedAt)
+        try container.encode(lastUpdatedAt, forKey: .lastUpdatedAt)
+        try container.encode(walkMetadata, forKey: .walkMetadata)
+        try container.encode(archiveRoot, forKey: .archiveRoot)
+        try container.encode(sessionKind, forKey: .sessionKind)
+        try container.encode(status, forKey: .status)
+        try container.encode(mediaItems, forKey: .mediaItems)
     }
 }
 
@@ -445,6 +506,9 @@ struct WalkManifest: Codable, Hashable, Sendable {
         var totalSourceFiles: Int
         var visibleItems: Int
         var importedFiles: Int
+        var excludedFiles: Int = 0
+        var candidateFiles: Int = 0
+        var undecidedFiles: Int = 0
         var skippedFiles: Int
         var cleanupPendingFiles: Int
         var cleanedSourceFiles: Int
@@ -459,6 +523,14 @@ struct WalkManifest: Codable, Hashable, Sendable {
     var notes: String
     var summary: Summary
     var importedFiles: [FileManifest]
+    var excludedFiles: [RejectedFileManifest] = []
+}
+
+struct RejectedFileManifest: Codable, Hashable, Sendable {
+    var mediaItemID: UUID
+    var sourceFileName: String
+    var relativePath: String
+    var reason: String
 }
 
 struct FileManifest: Codable, Hashable, Sendable {

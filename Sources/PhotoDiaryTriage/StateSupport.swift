@@ -122,7 +122,12 @@ final class SessionManager {
         let scannedItems = try scanner.scanFolder(folder, settings: settings)
         let grouped = groupingService.group(items: scannedItems, settings: settings)
 
-        var session = ImportSession(sourceFolder: folder, archiveRoot: settings.archiveRoot)
+        var session = ImportSession(
+            sourceFolder: folder,
+            workspaceSourceFolder: folder,
+            archiveRoot: settings.archiveRoot,
+            sessionKind: .inbox
+        )
         session.mediaItems = grouped.items
         logger.log("Opened session for \(folder.path, privacy: .public) with \(grouped.items.count) items")
 

@@ -28,13 +28,33 @@ struct SidebarPaneView: View {
                             .textSelection(.enabled)
                         Text("\(session.itemCount) visible items")
                             .font(.caption)
-                        Text("\(session.includedCount) included for import")
+                        Text("\(session.sessionKind.title) • \(session.status)")
                             .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("\(session.includedCount) selected • \(session.candidateCount) candidate • \(session.excludedCount) excluded")
+                            .font(.caption)
+
+                        if snapshot.canCreateWalkDraftFromSelection {
+                            Button("Create Walk Draft") {
+                                appState.createWalkDraftFromCurrentSelection()
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .shortcutHint("Cmd-Shift-W", help: "Create a saved walk draft from the current selection (Cmd-Shift-W)")
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             } else {
                 utilityButtons
+            }
+
+            GroupBox("Saved Walks") {
+                SavedWalkLibraryPane(
+                    appState: appState,
+                    groups: snapshot.savedWalkGroups,
+                    canCreateWalkDraftFromSelection: snapshot.canCreateWalkDraftFromSelection
+                )
             }
 
             if snapshot.canMutateImportSelection {
@@ -110,6 +130,88 @@ struct SidebarPaneView: View {
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
+    }
+}
+
+private struct SavedWalkLibraryPane: View {
+    let appState: AppState
+    let groups: [SavedWalkGroupSnapshot]
+    let canCreateWalkDraftFromSelection: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if canCreateWalkDraftFromSelection {
+                Button("Create Walk Draft From Selection") {
+                    appState.createWalkDraftFromCurrentSelection()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .shortcutHint("Cmd-Shift-W", help: "Create a saved walk draft from the current selection (Cmd-Shift-W)")
+            }
+
+            if groups.isEmpty {
+                Text("No saved walk drafts yet.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(groups) { group in
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack(spacing: 8) {
+                                    Text(group.workspaceSourceFolderPath)
+                                        .font(.caption.weight(.semibold))
+                                        .lineLimit(1)
+                                        .textSelection(.enabled)
+                                    if !group.sourceIsAvailable {
+                                        Text("Missing Source")
+                                            .font(.caption2.weight(.semibold))
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 3)
+                                            .background(Color.orange.opacity(0.16), in: Capsule())
+                                    }
+                                    Spacer()
+                                    Button("Open Inbox") {
+                                        appState.openSourceInbox(for: URL(fileURLWithPath: group.workspaceSourceFolderPath, isDirectory: true))
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.mini)
+                                    .disabled(!group.sourceIsAvailable)
+                                }
+
+                                ForEach(group.drafts) { draft in
+                                    HStack(spacing: 8) {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(draft.title)
+                                                .font(.caption.weight(.semibold))
+                                            Text("\(draft.itemCount) items • \(draft.includedCount) S • \(draft.candidateCount) C • \(draft.excludedCount) X • \(draft.status)")
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        Spacer()
+                                        if draft.isCurrentSession {
+                                            Text("Open")
+                                                .font(.caption2.weight(.semibold))
+                                                .foregroundStyle(.secondary)
+                                        } else {
+                                            Button("Resume") {
+                                                appState.openSavedWalk(draft.sessionID)
+                                            }
+                                            .buttonStyle(.bordered)
+                                            .controlSize(.mini)
+                                        }
+                                    }
+                                    .padding(.vertical, 2)
+                                }
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                }
+                .frame(maxHeight: 180)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

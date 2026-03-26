@@ -116,6 +116,7 @@ struct KeyboardHelpSheet: View {
                         ("Cmd-Shift-M", "Copy marked files into the archive."),
                         ("Cmd-Shift-B", "Confirm backup and enable cleanup."),
                         ("Cmd-Shift-K", "Clean imported files from the SSD."),
+                        ("Cmd-Shift-W", "Create a saved walk draft from the current selection."),
                         ("Cmd-Shift-/", "Open this shortcuts panel.")
                     ])
                 }

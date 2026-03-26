@@ -204,8 +204,11 @@ import Testing
         title: "Harbour",
         location: "Bristol",
         notes: "Foggy morning",
-        summary: .init(totalSourceFiles: 20, visibleItems: 15, importedFiles: 5, skippedFiles: 15, cleanupPendingFiles: 5, cleanedSourceFiles: 0),
-        importedFiles: []
+        summary: .init(totalSourceFiles: 20, visibleItems: 15, importedFiles: 5, excludedFiles: 4, candidateFiles: 3, undecidedFiles: 8, skippedFiles: 15, cleanupPendingFiles: 5, cleanedSourceFiles: 0),
+        importedFiles: [],
+        excludedFiles: [
+            RejectedFileManifest(mediaItemID: UUID(), sourceFileName: "IMG_0004.JPG", relativePath: "100CANON/IMG_0004.JPG", reason: "excluded")
+        ]
     )
 
     let markdown = ManifestRenderer().renderWalkManifest(manifest)
@@ -213,4 +216,9 @@ import Testing
     #expect(markdown.contains("Files left on source SSD: 15"))
     #expect(markdown.contains("Cleanup pending: 5"))
     #expect(markdown.contains("Visible review items: 15"))
+    #expect(markdown.contains("Excluded files: 4"))
+    #expect(markdown.contains("Candidate files: 3"))
+    #expect(markdown.contains("Undecided files: 8"))
+    #expect(markdown.contains("## Excluded Files"))
+    #expect(markdown.contains("IMG_0004.JPG"))
 }
