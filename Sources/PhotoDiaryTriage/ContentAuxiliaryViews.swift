@@ -381,6 +381,7 @@ struct CompareSheet: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+                compareColumnControls
                 Toggle("Lock Pan", isOn: $isPanLocked)
                     .toggleStyle(.switch)
                     .controlSize(.small)
@@ -399,7 +400,8 @@ struct CompareSheet: View {
             } else {
                 GeometryReader { gridProxy in
                     let metrics = CompareGridMetrics(
-                        availableSize: gridProxy.size,
+                        availableWidth: gridProxy.size.width,
+                        requestedColumnCount: appState.compareGridColumnCount,
                         itemCount: items.count
                     )
                     let columns = Array(
@@ -420,8 +422,7 @@ struct CompareSheet: View {
                                     zoom: zoom,
                                     synchronizedViewport: $synchronizedViewport,
                                     isPanLocked: isPanLocked,
-                                    imageWidth: CGFloat(metrics.imageWidth),
-                                    imageHeight: CGFloat(metrics.imageHeight)
+                                    imageWidth: CGFloat(metrics.imageWidth)
                                 )
                                 .frame(width: CGFloat(metrics.cardWidth), alignment: .topLeading)
                             }
@@ -437,6 +438,41 @@ struct CompareSheet: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+
+    private var compareColumnControls: some View {
+        HStack(spacing: 6) {
+            Text("Columns")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+
+            Button {
+                appState.decreaseCompareGridColumnCount()
+            } label: {
+                Image(systemName: "minus")
+            }
+            .disabled(appState.compareGridColumnCount <= 1)
+
+            Text("\(min(appState.compareGridColumnCount, max(items.count, 1)))")
+                .font(.caption.monospacedDigit())
+                .frame(width: 22)
+
+            Button {
+                appState.increaseCompareGridColumnCount()
+            } label: {
+                Image(systemName: "plus")
+            }
+            .disabled(appState.compareGridColumnCount >= max(items.count, 1))
+
+            Button {
+                appState.resetCompareGridColumnCount()
+            } label: {
+                Image(systemName: "arrow.counterclockwise")
+            }
+            .disabled(appState.compareGridColumnCount == CompareGridMetrics.defaultColumnCount(for: items.count))
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+    }
 }
 
 struct CompareItemCard: View {
@@ -446,7 +482,6 @@ struct CompareItemCard: View {
     @Binding var synchronizedViewport: CompareViewport
     let isPanLocked: Bool
     let imageWidth: CGFloat
-    let imageHeight: CGFloat
 
     private var isSelected: Bool {
         appState.selectedMediaItemIDs.contains(item.id)
@@ -454,6 +489,10 @@ struct CompareItemCard: View {
 
     private var isFocused: Bool {
         appState.focusedReviewItemID == item.id
+    }
+
+    private var imageHeight: CGFloat {
+        max(imageWidth / CGFloat(item.displayAspectRatio), 1)
     }
 
     var body: some View {
@@ -493,7 +532,7 @@ struct CompareItemCard: View {
                 isPanLocked: isPanLocked
             )
                 .frame(width: imageWidth, height: imageHeight)
-                .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
                 .overlay {
                     ReviewGridClickTarget { click in
                         appState.handleGridSelection(for: item.id, click: click)

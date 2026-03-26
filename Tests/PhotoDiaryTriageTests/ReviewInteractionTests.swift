@@ -10,32 +10,58 @@ import Testing
     #expect(wide.columnCount == 4)
 }
 
-@Test func compareGridMetricsChooseBalancedAutoFillLayout() {
-    let metrics = CompareGridMetrics(
-        availableSize: CGSize(width: 1_600, height: 900),
-        itemCount: 4
-    )
-
-    #expect(metrics.columnCount == 2)
-    #expect(metrics.rowCount == 2)
-    #expect(metrics.cardWidth > 700)
-    #expect(metrics.imageHeight > 250)
+@Test func compareGridDefaultColumnCountMatchesCompareExpectations() {
+    #expect(CompareGridMetrics.defaultColumnCount(for: 2) == 2)
+    #expect(CompareGridMetrics.defaultColumnCount(for: 3) == 3)
+    #expect(CompareGridMetrics.defaultColumnCount(for: 4) == 4)
+    #expect(CompareGridMetrics.defaultColumnCount(for: 8) == 4)
 }
 
-@Test func compareGridMetricsMakeRemainingItemsLargerAfterNarrowing() {
-    let fourUp = CompareGridMetrics(
-        availableSize: CGSize(width: 1_600, height: 900),
-        itemCount: 4
+@Test func compareGridMetricsUseRequestedColumnsAndClampToItemCount() {
+    let fourColumns = CompareGridMetrics(
+        availableWidth: 1_600,
+        requestedColumnCount: 4,
+        itemCount: 8
     )
-    let twoUp = CompareGridMetrics(
-        availableSize: CGSize(width: 1_600, height: 900),
-        itemCount: 2
+    let clampedColumns = CompareGridMetrics(
+        availableWidth: 1_600,
+        requestedColumnCount: 8,
+        itemCount: 3
     )
 
-    #expect(twoUp.columnCount == 2)
-    #expect(twoUp.rowCount == 1)
-    #expect(twoUp.cardWidth >= fourUp.cardWidth)
-    #expect(twoUp.imageHeight > fourUp.imageHeight)
+    #expect(fourColumns.columnCount == 4)
+    #expect(fourColumns.rowCount == 2)
+    #expect(fourColumns.cardWidth > 300)
+    #expect(clampedColumns.columnCount == 3)
+    #expect(clampedColumns.rowCount == 1)
+}
+
+@Test func mediaItemDisplayAspectRatioUsesMetadataOrFallback() {
+    let withMetadata = MediaItem(
+        sourceURL: URL(fileURLWithPath: "/tmp/a.jpg"),
+        relativePath: "a.jpg",
+        fileName: "a.jpg",
+        baseName: "a",
+        mediaKind: .jpeg,
+        fileSizeBytes: 1,
+        capturedAt: nil,
+        metadata: MediaMetadata(capturedAt: nil, pixelWidth: 6_000, pixelHeight: 4_000, cameraModel: nil, lensModel: nil, latitude: nil, longitude: nil, raw: [:]),
+        thumbnailCacheKey: "a"
+    )
+    let fallback = MediaItem(
+        sourceURL: URL(fileURLWithPath: "/tmp/b.jpg"),
+        relativePath: "b.jpg",
+        fileName: "b.jpg",
+        baseName: "b",
+        mediaKind: .jpeg,
+        fileSizeBytes: 1,
+        capturedAt: nil,
+        metadata: MediaMetadata(capturedAt: nil, pixelWidth: nil, pixelHeight: nil, cameraModel: nil, lensModel: nil, latitude: nil, longitude: nil, raw: [:]),
+        thumbnailCacheKey: "b"
+    )
+
+    #expect(abs(withMetadata.displayAspectRatio - 1.5) < 0.0001)
+    #expect(abs(fallback.displayAspectRatio - (4.0 / 3.0)) < 0.0001)
 }
 
 @Test func compareViewportRoundTripsNormalizedAndContentOrigins() {
@@ -119,6 +145,7 @@ import Testing
 
     #expect(state.compareSheetTitle == "Compare Burst")
     #expect(state.comparingMediaItemIDs == [items[0].id, items[1].id])
+    #expect(state.compareGridColumnCount == 2)
 }
 
 @MainActor
@@ -127,15 +154,19 @@ import Testing
     let state = makeReviewAppState(items: items)
 
     state.openComparison(for: items.map(\.id), title: "Compare Burst")
+    state.setCompareGridColumnCount(3)
     state.removeItemFromComparison(items[1].id)
 
     #expect(state.comparingMediaItemIDs == [items[0].id, items[2].id])
+    #expect(state.compareGridColumnCount == 2)
 
     state.removeItemFromComparison(items[0].id)
     #expect(state.comparingMediaItemIDs == [items[2].id])
+    #expect(state.compareGridColumnCount == 1)
 
     state.removeItemFromComparison(items[2].id)
     #expect(state.comparingMediaItemIDs.isEmpty)
+    #expect(state.compareGridColumnCount == 1)
 }
 
 @MainActor

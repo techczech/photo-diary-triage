@@ -66,6 +66,7 @@ final class AppState: ObservableObject {
     @Published var previewingMediaItemID: UUID?
     @Published var comparingMediaItemIDs: [UUID] = []
     @Published var compareSheetTitle: String = "Compare Selection"
+    @Published var compareGridColumnCount: Int = CompareGridMetrics.defaultColumnCount(for: 0)
     @Published var reviewGridColumnCount: Int = 1
     @Published var statusMessage: String = "Choose a source folder on the SSD to begin."
     @Published var thumbnailFailures: Set<UUID> = []
@@ -666,6 +667,23 @@ final class AppState: ObservableObject {
         setReviewGridCardWidth(ReviewGridMetrics.defaultCardWidth)
     }
 
+    func setCompareGridColumnCount(_ count: Int) {
+        let upperBound = max(comparingMediaItemIDs.count, 1)
+        compareGridColumnCount = min(max(count, 1), upperBound)
+    }
+
+    func increaseCompareGridColumnCount() {
+        setCompareGridColumnCount(compareGridColumnCount + 1)
+    }
+
+    func decreaseCompareGridColumnCount() {
+        setCompareGridColumnCount(compareGridColumnCount - 1)
+    }
+
+    func resetCompareGridColumnCount() {
+        compareGridColumnCount = CompareGridMetrics.defaultColumnCount(for: comparingMediaItemIDs.count)
+    }
+
     func setBurstThresholdSeconds(_ threshold: TimeInterval) {
         let clamped = min(max(threshold, 0.5), 10)
         guard settings.burstThresholdSeconds != clamped else { return }
@@ -1086,6 +1104,7 @@ final class AppState: ObservableObject {
         }
         guard deduplicatedIDs.count >= 2 else { return }
         reviewGridHasFocus = false
+        compareGridColumnCount = CompareGridMetrics.defaultColumnCount(for: deduplicatedIDs.count)
         compareSheetTitle = title
         comparingMediaItemIDs = deduplicatedIDs
         statusMessage = "Opened compare view for \(deduplicatedIDs.count) item(s)."
@@ -1093,6 +1112,7 @@ final class AppState: ObservableObject {
 
     func closeComparison() {
         comparingMediaItemIDs.removeAll()
+        compareGridColumnCount = CompareGridMetrics.defaultColumnCount(for: 0)
     }
 
     func removeItemFromComparison(_ itemID: UUID) {
@@ -1109,6 +1129,7 @@ final class AppState: ObservableObject {
         if focusedReviewItemID == itemID {
             focusedReviewItemID = comparingMediaItemIDs.first
         }
+        compareGridColumnCount = min(compareGridColumnCount, max(comparingMediaItemIDs.count, 1))
 
         statusMessage = "Removed item from compare. \(comparingMediaItemIDs.count) item(s) remain."
     }
