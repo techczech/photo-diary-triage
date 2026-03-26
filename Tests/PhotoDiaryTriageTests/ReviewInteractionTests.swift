@@ -500,6 +500,35 @@ import Testing
 }
 
 @MainActor
+@Test func focusOnlyReviewMovesDoNotRefreshSidebarSnapshot() {
+    let items = makeSelectionItems(count: 6)
+    let state = makeReviewAppState(items: items)
+
+    let initialSidebarGeneration = state.sidebarSnapshotGeneration
+    state.focusReviewSurface()
+    let sidebarGenerationAfterFocus = state.sidebarSnapshotGeneration
+
+    state.moveGridSelection(by: 1, extending: false)
+
+    #expect(initialSidebarGeneration == sidebarGenerationAfterFocus)
+    #expect(state.sidebarSnapshotGeneration == sidebarGenerationAfterFocus)
+    #expect(state.reviewSnapshotGeneration > 0)
+    #expect(state.navigationSnapshotGeneration > 0)
+}
+
+@MainActor
+@Test func triageUpdatesDoNotRebuildBrowserTree() {
+    let items = makeSelectionItems(count: 4)
+    let state = makeReviewAppState(items: items)
+    let initialRootIDs = state.browserRoots.map(\.id)
+
+    state.focusReviewSurface()
+    state.performReviewShortcut("S")
+
+    #expect(state.browserRoots.map(\.id) == initialRootIDs)
+}
+
+@MainActor
 @Test func keyboardSelectionRequestsScrollWhenFocusLeavesEstimatedVisiblePage() {
     let items = makeSelectionItems(count: 20)
     let state = makeReviewAppState(items: items)

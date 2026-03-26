@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 struct InspectorCollapsedRail: View {
-    @ObservedObject var appState: AppState
+    let appState: AppState
 
     var body: some View {
         VStack(spacing: 12) {
@@ -35,7 +35,8 @@ struct InspectorCollapsedRail: View {
 }
 
 struct DetailsInspectorView: View {
-    @ObservedObject var appState: AppState
+    let appState: AppState
+    @ObservedObject var state: InspectorState
 
     var body: some View {
         ScrollView {
@@ -67,7 +68,7 @@ struct DetailsInspectorView: View {
     private var folderSection: some View {
         GroupBox("Current Folder") {
             VStack(alignment: .leading, spacing: 8) {
-                if let node = appState.inspectorBrowserNode {
+                if let node = state.snapshot.browserNode {
                     inspectorRow("Name", node.title)
                     inspectorRow("Kind", kindLabel(node.kind))
                     inspectorRow("Photos", "\(node.mediaItemIDs.count)")
@@ -77,16 +78,14 @@ struct DetailsInspectorView: View {
                     }
                     if let folderURL = node.folderURL {
                         inspectorRow("Path", folderURL.path)
-                    } else if node.kind == .sessionRoot, let session = appState.currentSession {
-                        inspectorRow("Path", session.sourceFolder.path)
+                    } else if node.kind == .sessionRoot, let fallbackPath = state.snapshot.fallbackFolderPath {
+                        inspectorRow("Path", fallbackPath)
                     }
-                    if let session = appState.currentSession {
-                        if let title = session.walkMetadata.title.nonEmpty {
-                            inspectorRow("Walk Title", title)
-                        }
-                        if let location = session.walkMetadata.location.nonEmpty {
-                            inspectorRow("Location", location)
-                        }
+                    if let title = state.snapshot.walkTitle {
+                        inspectorRow("Walk Title", title)
+                    }
+                    if let location = state.snapshot.walkLocation {
+                        inspectorRow("Location", location)
                     }
                 } else {
                     Text("No folder selected.")
@@ -101,21 +100,19 @@ struct DetailsInspectorView: View {
     private var photoSection: some View {
         GroupBox("Selected Photo") {
             VStack(alignment: .leading, spacing: 8) {
-                if let item = appState.inspectorMediaItem {
-                    if let image = appState.thumbnailImage(for: item) {
-                        Image(nsImage: image)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 180)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                    } else {
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(.quaternary)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 180)
-                            .overlay(ProgressView())
-                    }
+                if let item = state.snapshot.mediaItem {
+                    ThumbnailImageSurface(
+                        appState: appState,
+                        item: item,
+                        thumbnailFailed: false,
+                        retryThumbnail: {
+                            appState.requestThumbnail(for: item)
+                        },
+                        contentMode: .fit
+                    )
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 180)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
 
                     inspectorRow("File", item.fileName)
                     inspectorRow("Relative Path", item.relativePath)
@@ -147,8 +144,8 @@ struct DetailsInspectorView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .task(id: appState.inspectorMediaItem?.id) {
-                if let item = appState.inspectorMediaItem {
+            .task(id: state.snapshot.mediaItem?.id) {
+                if let item = state.snapshot.mediaItem {
                     appState.requestThumbnail(for: item)
                 }
             }

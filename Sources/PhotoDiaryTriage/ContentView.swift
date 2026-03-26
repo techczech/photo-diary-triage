@@ -2,7 +2,13 @@ import AppKit
 import SwiftUI
 
 struct ContentView: View {
-    @ObservedObject var appState: AppState
+    let appState: AppState
+    @ObservedObject private var sidebarState: SidebarState
+    @ObservedObject private var reviewState: ReviewState
+    @ObservedObject private var reviewNavigationState: ReviewNavigationState
+    @ObservedObject private var inspectorState: InspectorState
+    @ObservedObject private var compareState: CompareState
+    @ObservedObject private var presentationState: PresentationState
 
     @State private var walkTitle: String = ""
     @State private var walkLocation: String = ""
@@ -10,10 +16,21 @@ struct ContentView: View {
 
     private let appRelease = AppRelease.current
 
+    init(appState: AppState) {
+        self.appState = appState
+        _sidebarState = ObservedObject(wrappedValue: appState.sidebarState)
+        _reviewState = ObservedObject(wrappedValue: appState.reviewState)
+        _reviewNavigationState = ObservedObject(wrappedValue: appState.reviewNavigationState)
+        _inspectorState = ObservedObject(wrappedValue: appState.inspectorState)
+        _compareState = ObservedObject(wrappedValue: appState.compareState)
+        _presentationState = ObservedObject(wrappedValue: appState.presentationState)
+    }
+
     var body: some View {
         NavigationSplitView {
             SidebarPaneView(
                 appState: appState,
+                state: sidebarState,
                 walkTitle: $walkTitle,
                 walkLocation: $walkLocation,
                 walkNotes: $walkNotes,
@@ -24,11 +41,10 @@ struct ContentView: View {
             detailPane
         }
         .overlay {
-            if !appState.comparingMediaItemIDs.isEmpty {
+            if !compareState.snapshot.itemIDs.isEmpty {
                 CompareSheet(
                     appState: appState,
-                    title: appState.compareSheetTitle,
-                    items: appState.comparingMediaItems,
+                    state: compareState,
                     onClose: {
                         appState.closeComparison()
                     }
@@ -42,28 +58,38 @@ struct ContentView: View {
 
     private var detailPane: some View {
         HStack(alignment: .top, spacing: 12) {
-            BrowserOrReviewPaneView(appState: appState)
+            BrowserOrReviewPaneView(
+                appState: appState,
+                state: reviewState,
+                navigationState: reviewNavigationState
+            )
                 .frame(minWidth: 720, maxWidth: .infinity, alignment: .leading)
                 .layoutPriority(1)
 
-            DetailsInspectorView(appState: appState)
+            DetailsInspectorView(appState: appState, state: inspectorState)
                 .frame(
-                    minWidth: appState.isDetailsInspectorVisible ? 300 : 0,
-                    idealWidth: appState.isDetailsInspectorVisible ? 340 : 0,
-                    maxWidth: appState.isDetailsInspectorVisible ? 380 : 0,
+                    minWidth: inspectorState.snapshot.isVisible ? 300 : 0,
+                    idealWidth: inspectorState.snapshot.isVisible ? 340 : 0,
+                    maxWidth: inspectorState.snapshot.isVisible ? 380 : 0,
                     maxHeight: .infinity,
                     alignment: .top
                 )
-                .opacity(appState.isDetailsInspectorVisible ? 1 : 0)
-                .allowsHitTesting(appState.isDetailsInspectorVisible)
+                .opacity(inspectorState.snapshot.isVisible ? 1 : 0)
+                .allowsHitTesting(inspectorState.snapshot.isVisible)
                 .clipped()
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .sheet(isPresented: $appState.showKeyboardHelp) {
+        .sheet(isPresented: Binding(
+            get: { presentationState.snapshot.showKeyboardHelp },
+            set: { appState.showKeyboardHelp = $0 }
+        )) {
             KeyboardHelpSheet()
         }
-        .alert(item: $appState.startupAlert) { alert in
+        .alert(item: Binding(
+            get: { presentationState.snapshot.startupAlert },
+            set: { _ in appState.dismissStartupAlert() }
+        )) { alert in
             if alert.recoveryAction == .resetSupportData {
                 return Alert(
                     title: Text(alert.title),
@@ -86,17 +112,17 @@ struct ContentView: View {
             )
         }
         .sheet(item: Binding(
-            get: { appState.previewingMediaItem },
+            get: { presentationState.snapshot.previewingMediaItem },
             set: { _ in appState.previewingMediaItemID = nil }
         )) { item in
             FullPhotoSheet(appState: appState, item: item)
         }
         .onAppear(perform: hydrateForm)
-        .onChange(of: appState.currentSession?.id) { _, _ in
+        .onChange(of: sidebarState.snapshot.sessionSummary?.sessionID) { _, _ in
             hydrateForm()
         }
         .onExitCommand {
-            if appState.reviewGridHasFocus {
+            if reviewNavigationState.snapshot.reviewGridHasFocus {
                 appState.deactivateReviewGridFocus()
             } else {
                 appState.navigateToParent()
@@ -105,9 +131,9 @@ struct ContentView: View {
     }
 
     private func hydrateForm() {
-        walkTitle = appState.currentSession?.walkMetadata.title ?? ""
-        walkLocation = appState.currentSession?.walkMetadata.location ?? ""
-        walkNotes = appState.currentSession?.walkMetadata.notes ?? ""
+        walkTitle = sidebarState.snapshot.sessionSummary?.walkMetadata.title ?? ""
+        walkLocation = sidebarState.snapshot.sessionSummary?.walkMetadata.location ?? ""
+        walkNotes = sidebarState.snapshot.sessionSummary?.walkMetadata.notes ?? ""
         appState.updateWalkDetailsExpansion(for: appState.currentSession)
     }
 
