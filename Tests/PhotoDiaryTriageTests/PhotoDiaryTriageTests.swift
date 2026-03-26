@@ -6,6 +6,18 @@ import Testing
     #expect(Slugifier.makeSlug(from: "Bristol Harbour Walk!") == "bristol-harbour-walk")
 }
 
+@Test func selectionStateDecodesLegacyAndCurrentValues() throws {
+    let decoder = JSONDecoder()
+
+    let legacySelected = try decoder.decode(SelectionState.self, from: Data(#""selected""#.utf8))
+    let legacySkipped = try decoder.decode(SelectionState.self, from: Data(#""skipped""#.utf8))
+    let currentExcluded = try decoder.decode(SelectionState.self, from: Data(#""excluded""#.utf8))
+
+    #expect(legacySelected == .included)
+    #expect(legacySkipped == .undecided)
+    #expect(currentExcluded == .excluded)
+}
+
 @Test func archivePlannerBuildsDateBasedFolderAndHandlesCollisions() throws {
     let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
     try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true, attributes: nil)
@@ -17,8 +29,8 @@ import Testing
     var session = ImportSession(sourceFolder: tempRoot, archiveRoot: tempRoot)
     session.walkMetadata.title = "Morning Canal Walk"
     session.mediaItems = [
-        MediaItem(sourceURL: tempRoot.appendingPathComponent("a.jpg"), relativePath: "a.jpg", fileName: "a.jpg", baseName: "a", mediaKind: .jpeg, fileSizeBytes: 10, capturedAt: capturedAt, metadata: metadata, thumbnailCacheKey: "1", selectionState: .selected, lifecycleState: .selectedForImport),
-        MediaItem(sourceURL: tempRoot.appendingPathComponent("a-duplicate.jpg"), relativePath: "a-duplicate.jpg", fileName: "a.jpg", baseName: "a", mediaKind: .jpeg, fileSizeBytes: 10, capturedAt: capturedAt, metadata: metadata, thumbnailCacheKey: "2", selectionState: .selected, lifecycleState: .selectedForImport)
+        MediaItem(sourceURL: tempRoot.appendingPathComponent("a.jpg"), relativePath: "a.jpg", fileName: "a.jpg", baseName: "a", mediaKind: .jpeg, fileSizeBytes: 10, capturedAt: capturedAt, metadata: metadata, thumbnailCacheKey: "1", selectionState: .included, lifecycleState: .selectedForImport),
+        MediaItem(sourceURL: tempRoot.appendingPathComponent("a-duplicate.jpg"), relativePath: "a-duplicate.jpg", fileName: "a.jpg", baseName: "a", mediaKind: .jpeg, fileSizeBytes: 10, capturedAt: capturedAt, metadata: metadata, thumbnailCacheKey: "2", selectionState: .included, lifecycleState: .selectedForImport)
     ]
 
     let plan = ArchivePlanner(fileManager: .default).plan(for: session)
@@ -46,7 +58,7 @@ import Testing
             capturedAt: capturedAt,
             metadata: metadata,
             thumbnailCacheKey: "a",
-            selectionState: .selected,
+            selectionState: .included,
             importRawCompanions: true,
             companionFiles: [
                 CompanionFile(

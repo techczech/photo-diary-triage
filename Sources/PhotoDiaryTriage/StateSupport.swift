@@ -160,7 +160,7 @@ final class ImportWorkflow: ObservableObject {
         session: ImportSession,
         progressHandler: (@MainActor (ImportProgress?) -> Void)? = nil
     ) async throws -> ImportResult {
-        importProgress = ImportProgress(current: 0, total: session.mediaItems.filter { $0.selectionState == .selected }.count)
+        importProgress = ImportProgress(current: 0, total: session.mediaItems.filter { $0.selectionState.isIncluded }.count)
         progressHandler?(importProgress)
         defer {
             importProgress = nil

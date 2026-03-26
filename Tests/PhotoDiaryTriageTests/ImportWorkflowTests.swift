@@ -16,7 +16,7 @@ import Testing
         sourceRoot: sourceRoot,
         fileName: "IMG_0001.jpg",
         capturedAt: capturedAt,
-        selectionState: .selected,
+        selectionState: .included,
         lifecycleState: .selectedForImport
     )
     let session = makeTestSession(sourceRoot: sourceRoot, archiveRoot: archiveRoot, items: [item], title: "Morning Walk")
@@ -51,7 +51,7 @@ import Testing
         sourceRoot: sourceRoot,
         fileName: "IMG_0002.jpg",
         capturedAt: capturedAt,
-        selectionState: .selected,
+        selectionState: .included,
         importRawCompanions: true,
         companionFiles: [companion],
         lifecycleState: .selectedForImport
@@ -83,7 +83,7 @@ import Testing
         sourceRoot: sourceRoot,
         fileName: "IMG_0003.jpg",
         capturedAt: capturedAt,
-        selectionState: .selected,
+        selectionState: .included,
         lifecycleState: .selectedForImport
     )
     let session = makeTestSession(
@@ -113,7 +113,7 @@ import Testing
         sourceRoot: sourceRoot,
         fileName: "IMG_0004.jpg",
         capturedAt: Date(timeIntervalSince1970: 14_000),
-        selectionState: .selected,
+        selectionState: .included,
         lifecycleState: .verified
     )
     let session = makeTestSession(sourceRoot: sourceRoot, archiveRoot: archiveRoot, items: [item])
@@ -142,7 +142,7 @@ import Testing
         sourceRoot: sourceRoot,
         fileName: "IMG_0005.jpg",
         capturedAt: Date(timeIntervalSince1970: 15_000),
-        selectionState: .selected,
+        selectionState: .included,
         importRawCompanions: true,
         companionFiles: [companion],
         lifecycleState: .sourceCleanupPending
@@ -255,7 +255,7 @@ private func makeWorkflowSession(selectedCount: Int) -> ImportSession {
             sourceRoot: sourceRoot,
             fileName: "workflow-\(index).jpg",
             capturedAt: base.addingTimeInterval(Double(index)),
-            selectionState: .selected,
+            selectionState: .included,
             lifecycleState: .selectedForImport
         )
     }

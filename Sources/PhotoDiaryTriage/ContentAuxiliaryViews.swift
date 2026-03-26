@@ -76,8 +76,8 @@ struct KeyboardHelpSheet: View {
                     shortcutSection("Review Selection", rows: [
                         ("Arrow Keys", "Move grid focus; hold Shift to extend selection."),
                         ("Space", "Toggle the focused photo selection."),
-                        ("I", "Mark the current selection for import."),
-                        ("D", "Unmark the current selection."),
+                        ("I", "Include the current selection for import."),
+                        ("D", "Clear the current selection back to undecided."),
                         ("R", "Toggle RAW companion import for the current selection."),
                         ("S", "Keep only the focused photo selected."),
                         ("A", "Select all visible photos."),
@@ -494,11 +494,11 @@ struct CompareItemCard: View {
                         .lineLimit(2)
                 }
                 Spacer()
-                Text(item.selectionState == .selected ? "Marked" : "Not Marked")
+                Text(item.selectionState.statusLabel)
                     .font(.caption2)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(item.selectionState == .selected ? Color.accentColor.opacity(0.15) : Color.secondary.opacity(0.12))
+                    .background(statusBadgeColor(for: item.selectionState))
                     .clipShape(Capsule())
             }
 
@@ -532,16 +532,16 @@ struct CompareItemCard: View {
 
             if appState.canMutateImportSelection {
                 HStack {
-                    Button(item.selectionState == .selected ? "Unmark" : "Mark") {
+                    Button(item.selectionState.isIncluded ? "Clear" : "Include") {
                         appState.selectMediaItems([item.id])
-                        if item.selectionState == .selected {
+                        if item.selectionState.isIncluded {
                             appState.unmarkCurrentSelectionForImport()
                         } else {
                             appState.markCurrentSelectionForImport()
                         }
                     }
                     .buttonStyle(.borderedProminent)
-                    .shortcutHint(item.selectionState == .selected ? "D / Cmd-Shift-I" : "I / Cmd-I", help: item.selectionState == .selected ? "Remove this item from import" : "Mark this item for import")
+                    .shortcutHint(item.selectionState.isIncluded ? "D / Cmd-Shift-I" : "I / Cmd-I", help: item.selectionState.isIncluded ? "Clear this item back to undecided" : "Include this item for import")
 
                     if !item.companionFiles.isEmpty {
                         Toggle("RAW", isOn: Binding(
@@ -563,16 +563,21 @@ struct CompareItemCard: View {
                 .stroke(Color.secondary.opacity(0.16), lineWidth: 1)
         }
         .overlay {
-            if isSelected {
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(Color.accentColor.opacity(0.07))
-            }
-        }
-        .overlay {
             if isSelected || isFocused {
                 RoundedRectangle(cornerRadius: 16)
                     .stroke(Color.accentColor, lineWidth: isSelected ? 3 : 2)
             }
+        }
+    }
+
+    private func statusBadgeColor(for selectionState: SelectionState) -> Color {
+        switch selectionState {
+        case .included:
+            return Color.accentColor.opacity(0.15)
+        case .excluded:
+            return Color.red.opacity(0.14)
+        case .undecided:
+            return Color.secondary.opacity(0.12)
         }
     }
 }
