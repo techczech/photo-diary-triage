@@ -380,6 +380,25 @@ extension MediaItem {
 
         return 4.0 / 3.0
     }
+
+    var compactDisplayName: String {
+        let stem = baseName
+        if let trailingDigits = stem.range(of: #"\d+$"#, options: .regularExpression) {
+            return String(stem[trailingDigits])
+        }
+
+        let components = stem.split(separator: "_")
+        if let last = components.last, !last.isEmpty {
+            return String(last)
+        }
+
+        return stem
+    }
+
+    var compactCapturedAtLabel: String? {
+        guard let capturedAt else { return nil }
+        return DateFormatting.reviewCardTimestamp.string(from: capturedAt)
+    }
 }
 
 struct BurstGroup: Identifiable, Codable, Hashable, Sendable {

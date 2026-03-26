@@ -1,0 +1,27 @@
+# PDT-2026-03-26-018 Compact review and compare card chrome report
+
+- item ID: PDT-2026-03-26-018
+- summary of what changed:
+  - Added compact media identifiers and short review timestamps for card use.
+  - Removed long path, archive preview, and long timestamp blocks from review and compare cards so the inspector becomes the place for full detail.
+  - Reworked main review cards to use a short metadata line and one compact action row beneath the image.
+  - Reworked compare cards to use the same compact metadata/action pattern with smaller button labels.
+  - Added tests covering compact display-name extraction and compact timestamp formatting.
+- files changed:
+  - `Sources/PhotoDiaryTriage/ContentAuxiliaryViews.swift`
+  - `Sources/PhotoDiaryTriage/ContentReviewItemViews.swift`
+  - `Sources/PhotoDiaryTriage/Models.swift`
+  - `Sources/PhotoDiaryTriage/Utilities.swift`
+  - `Tests/PhotoDiaryTriageTests/ReviewInteractionTests.swift`
+  - `changelog/backlog/PDT-2026-03-26-018-compact-review-and-compare-card-chrome.md`
+  - `changelog/backlog.jsonl`
+  - `changelog/changelog.jsonl`
+  - `APP_RELEASE.env`
+- verification performed:
+  - `swift build`
+  - `swift test`
+- known gaps or follow-up items:
+  - compare column controls still do not have dedicated keyboard shortcuts
+  - grouped review escape behavior remains a separate bug track
+- shipped release version: 0.1.56
+- shipped feature slug: compact-review-and-compare-card-chrome

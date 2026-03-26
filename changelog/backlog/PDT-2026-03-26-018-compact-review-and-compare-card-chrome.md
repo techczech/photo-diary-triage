@@ -1,0 +1,30 @@
+# PDT-2026-03-26-018 Compact review and compare card chrome
+
+- item ID: PDT-2026-03-26-018
+- title: Compact review and compare card chrome
+- user request summary:
+  - The review and compare layouts now work well, but the per-photo chrome still wastes too much space.
+  - The card design should use at most two compact rows beneath the image: one short metadata row and one small action row.
+  - The cards should stop repeating long file paths, long timestamps, and archive details that already exist in the inspector.
+  - File labels should be reduced to a compact identifier rather than showing the full prefix and extension.
+- constraints:
+  - Preserve the current review and compare functionality, keyboard shortcuts, and selection behavior.
+  - Keep the inspector as the place for full details.
+  - Do not regress card responsiveness or image sizing.
+- implementation intent:
+  - Add compact media labels and short review timestamps.
+  - Redesign review and compare cards to show only a short metadata line plus a compact action row.
+  - Remove archive preview text and long path/date labels from the card bodies.
+  - Reduce button chrome and inline the RAW control into the compact action row.
+- test conditions:
+  - manual review of card density in review and compare
+  - `swift build`
+  - `swift test`
+- success criteria:
+  - review and compare cards use no more than two compact rows of metadata/actions beneath the image
+  - long file/path/date details no longer consume card space
+  - card actions remain usable and keyboard-first
+  - full item details remain available in the inspector
+- current status: awaiting_user_review
+- target release version: 0.1.56
+- target feature slug: compact-review-and-compare-card-chrome

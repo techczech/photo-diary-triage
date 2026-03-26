@@ -17,42 +17,25 @@ struct ReviewGridCard: View {
     let excludeFromImport: () -> Void
     let clearTriageState: () -> Void
 
+    private var metadataSummary: String {
+        var parts = [item.compactDisplayName]
+        if let captured = item.compactCapturedAtLabel {
+            parts.append(captured)
+        }
+        if item.importRawCompanions, !item.companionFiles.isEmpty {
+            parts.append("RAW")
+        }
+        return parts.joined(separator: "  ")
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             selectionSurface
 
-            if canMutateImportSelection && !item.companionFiles.isEmpty {
-                Toggle("Import RAW sidecar\(item.companionFiles.count == 1 ? "" : "s") too", isOn: Binding(
-                    get: { item.importRawCompanions },
-                    set: setIncludeRaw
-                ))
-                .toggleStyle(.checkbox)
-                .shortcutHint("R / Cmd-Option-R", help: "Include RAW companions for this item (R / Cmd-Option-R)")
-            }
-
-            HStack {
-                if canMutateImportSelection {
-                    Button("Select (S)", action: includeForImport)
-                        .buttonStyle(.bordered)
-                        .disabled(item.selectionState.isIncluded)
-                        .shortcutHint("S / Cmd-I", help: "Select this item for import (S / Cmd-I)")
-
-                    Button("Exclude (X)", action: excludeFromImport)
-                        .buttonStyle(.bordered)
-                        .disabled(item.selectionState.isExcluded)
-                        .shortcutHint("X / Cmd-Shift-X", help: "Exclude this item from import (X / Cmd-Shift-X)")
-
-                    if !item.selectionState.isUndecided {
-                        Button("Clear (D)", action: clearTriageState)
-                            .buttonStyle(.bordered)
-                            .shortcutHint("D / Cmd-Shift-I", help: "Clear this item back to undecided (D / Cmd-Shift-I)")
-                    }
-                }
-                Spacer()
-            }
+            compactActionRow
         }
         .frame(width: cardWidth, alignment: .topLeading)
-        .padding()
+        .padding(10)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 16))
         .overlay {
             RoundedRectangle(cornerRadius: 16)
@@ -83,15 +66,16 @@ struct ReviewGridCard: View {
     }
 
     private var selectionSurface: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             thumbnail
                 .frame(height: CGFloat(ReviewGridMetrics.thumbnailHeight(for: cardWidth)))
                 .clipShape(RoundedRectangle(cornerRadius: 12))
 
             HStack {
-                Text(item.fileName)
-                    .font(.headline)
+                Text(metadataSummary)
+                    .font(.caption.weight(.semibold))
                     .lineLimit(1)
+                    .truncationMode(.tail)
                 Spacer()
                 Text(item.selectionState.statusLabel)
                     .font(.caption2)
@@ -100,29 +84,49 @@ struct ReviewGridCard: View {
                     .background(statusBadgeColor)
                     .clipShape(Capsule())
             }
-
-            Text(item.relativePath)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-
-            if let capturedAt = item.capturedAt {
-                Text(DateFormatting.iso8601.string(from: capturedAt))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-
-            if item.selectionState.isIncluded, !archivePreview.isEmpty {
-                Text(archivePreview)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(4)
-            }
         }
         .contentShape(RoundedRectangle(cornerRadius: 12))
         .shortcutHint("Shift-click / Cmd-click / Double-click", help: "Click to select. Shift-click extends the selection, Command-click toggles selection, and double-click opens preview.")
         .overlay {
             ReviewGridClickTarget(onClick: onClick)
+        }
+    }
+
+    @ViewBuilder
+    private var compactActionRow: some View {
+        if canMutateImportSelection {
+            HStack(spacing: 6) {
+                Button("S", action: includeForImport)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(item.selectionState.isIncluded)
+                    .shortcutHint("S / Cmd-I", help: "Select this item for import (S / Cmd-I)")
+
+                Button("X", action: excludeFromImport)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(item.selectionState.isExcluded)
+                    .shortcutHint("X / Cmd-Shift-X", help: "Exclude this item from import (X / Cmd-Shift-X)")
+
+                if !item.selectionState.isUndecided {
+                    Button("D", action: clearTriageState)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .shortcutHint("D / Cmd-Shift-I", help: "Clear this item back to undecided (D / Cmd-Shift-I)")
+                }
+
+                if !item.companionFiles.isEmpty {
+                    Toggle("RAW", isOn: Binding(
+                        get: { item.importRawCompanions },
+                        set: setIncludeRaw
+                    ))
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .shortcutHint("R / Cmd-Option-R", help: "Include RAW companions for this item (R / Cmd-Option-R)")
+                }
+
+                Spacer(minLength: 0)
+            }
         }
     }
 
@@ -174,6 +178,17 @@ struct MediaItemRow: View {
     let retryThumbnail: () -> Void
     let setIncludeRaw: (Bool) -> Void
 
+    private var metadataSummary: String {
+        var parts = [item.compactDisplayName]
+        if let captured = item.compactCapturedAtLabel {
+            parts.append(captured)
+        }
+        if item.importRawCompanions, !item.companionFiles.isEmpty {
+            parts.append("RAW")
+        }
+        return parts.joined(separator: "  ")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 12) {
@@ -183,8 +198,9 @@ struct MediaItemRow: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
-                        Text(item.fileName)
-                            .font(.headline)
+                        Text(metadataSummary)
+                            .font(.caption.weight(.semibold))
+                            .lineLimit(1)
                         Spacer()
                         Text(item.selectionState.statusLabel)
                             .font(.caption2)
@@ -193,57 +209,10 @@ struct MediaItemRow: View {
                             .background(statusBadgeColor)
                             .clipShape(Capsule())
                     }
-
-                    Text(item.relativePath)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-
-                    if let capturedAt = item.capturedAt {
-                        Text(DateFormatting.iso8601.string(from: capturedAt))
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    if canMutateImportSelection && !item.companionFiles.isEmpty {
-                        Toggle("Import RAW sidecar\(item.companionFiles.count == 1 ? "" : "s") too", isOn: Binding(
-                            get: { item.importRawCompanions },
-                            set: setIncludeRaw
-                        ))
-                        .toggleStyle(.checkbox)
-                        .shortcutHint("R / Cmd-Option-R", help: "Include RAW companions for this item (R / Cmd-Option-R)")
-                    }
                 }
             }
 
-            HStack {
-                if canMutateImportSelection {
-                    Button("Select (S)", action: includeForImport)
-                        .buttonStyle(.bordered)
-                        .disabled(item.selectionState.isIncluded)
-                        .shortcutHint("S / Cmd-I", help: "Select this item for import (S / Cmd-I)")
-
-                    Button("Exclude (X)", action: excludeFromImport)
-                        .buttonStyle(.bordered)
-                        .disabled(item.selectionState.isExcluded)
-                        .shortcutHint("X / Cmd-Shift-X", help: "Exclude this item from import (X / Cmd-Shift-X)")
-
-                    if !item.selectionState.isUndecided {
-                        Button("Clear (D)", action: clearTriageState)
-                            .buttonStyle(.bordered)
-                            .shortcutHint("D / Cmd-Shift-I", help: "Clear this item back to undecided (D / Cmd-Shift-I)")
-                    }
-                }
-                Spacer()
-            }
-
-            if item.selectionState.isIncluded, !archivePreview.isEmpty {
-                Text(archivePreview)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-                    .lineLimit(4)
-            }
+            compactActionRow
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
@@ -254,6 +223,44 @@ struct MediaItemRow: View {
         .overlay {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(isSelected || isFocused ? Color.accentColor : Color.clear, lineWidth: isSelected ? 3 : (isFocused ? 2 : 0))
+        }
+    }
+
+    @ViewBuilder
+    private var compactActionRow: some View {
+        if canMutateImportSelection {
+            HStack(spacing: 6) {
+                Button("S", action: includeForImport)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(item.selectionState.isIncluded)
+                    .shortcutHint("S / Cmd-I", help: "Select this item for import (S / Cmd-I)")
+
+                Button("X", action: excludeFromImport)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(item.selectionState.isExcluded)
+                    .shortcutHint("X / Cmd-Shift-X", help: "Exclude this item from import (X / Cmd-Shift-X)")
+
+                if !item.selectionState.isUndecided {
+                    Button("D", action: clearTriageState)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .shortcutHint("D / Cmd-Shift-I", help: "Clear this item back to undecided (D / Cmd-Shift-I)")
+                }
+
+                if !item.companionFiles.isEmpty {
+                    Toggle("RAW", isOn: Binding(
+                        get: { item.importRawCompanions },
+                        set: setIncludeRaw
+                    ))
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .shortcutHint("R / Cmd-Option-R", help: "Include RAW companions for this item (R / Cmd-Option-R)")
+                }
+
+                Spacer(minLength: 0)
+            }
         }
     }
 

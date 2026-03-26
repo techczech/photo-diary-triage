@@ -495,18 +495,24 @@ struct CompareItemCard: View {
         max(imageWidth / CGFloat(item.displayAspectRatio), 1)
     }
 
+    private var metadataSummary: String {
+        var parts = [item.compactDisplayName]
+        if let captured = item.compactCapturedAtLabel {
+            parts.append(captured)
+        }
+        if item.importRawCompanions, !item.companionFiles.isEmpty {
+            parts.append("RAW")
+        }
+        return parts.joined(separator: "  ")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(item.fileName)
-                        .font(.headline)
-                        .lineLimit(1)
-                    Text(item.relativePath)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
+                Text(metadataSummary)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                 Spacer()
                 Text(item.selectionState.statusLabel)
                     .font(.caption2)
@@ -539,29 +545,25 @@ struct CompareItemCard: View {
                     }
                 }
 
-            HStack {
+            HStack(spacing: 6) {
                 Button("Only") {
                     appState.selectMediaItems([item.id])
                 }
                 .help("Select only this item")
 
-                Button("Toggle") {
+                Button("Tgl") {
                     appState.toggleSelectionForComparisonItem(item.id)
                 }
                 .help("Toggle this item in the current selection")
 
-                Button("Preview") {
+                Button("Open") {
                     appState.selectMediaItems([item.id])
                     appState.openFocusedReviewItem()
                 }
                 .help("Open this item in preview")
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
 
-            if appState.canMutateImportSelection {
-                HStack {
-                    Button("Select") {
+                if appState.canMutateImportSelection {
+                    Button("S") {
                         appState.selectMediaItems([item.id])
                         appState.markCurrentSelectionForImport()
                     }
@@ -569,7 +571,7 @@ struct CompareItemCard: View {
                     .disabled(item.selectionState.isIncluded)
                     .shortcutHint("S / Cmd-I", help: "Select this item for import")
 
-                    Button("Exclude") {
+                    Button("X") {
                         appState.selectMediaItems([item.id])
                         appState.excludeCurrentSelectionFromImport()
                     }
@@ -578,7 +580,7 @@ struct CompareItemCard: View {
                     .shortcutHint("X / Cmd-Shift-X", help: "Exclude this item from import")
 
                     if !item.selectionState.isUndecided {
-                        Button("Clear") {
+                        Button("D") {
                             appState.selectMediaItems([item.id])
                             appState.unmarkCurrentSelectionForImport()
                         }
@@ -594,11 +596,12 @@ struct CompareItemCard: View {
                         .toggleStyle(.switch)
                         .shortcutHint("R / Cmd-Option-R", help: "Include RAW companions for this compare item")
                     }
-
-                    Spacer()
                 }
-                .controlSize(.small)
+
+                Spacer(minLength: 0)
             }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
         }
         .padding(12)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 16))
