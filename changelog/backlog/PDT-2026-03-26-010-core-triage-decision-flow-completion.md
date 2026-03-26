@@ -1,0 +1,28 @@
+# PDT-2026-03-26-010 Core triage decision flow completion
+
+- item ID: PDT-2026-03-26-010
+- title: Core triage decision flow completion
+- user request summary:
+  - The app basics now work well enough to focus on the remaining core triage functionality.
+  - Selected photos should not be dimmed by a tinted overlay; selection should be communicated by border only.
+  - Compare needs to become a real decision surface: default fill of available space, better zoom, locked compare zoom/pan, and the ability to remove items from compare while keeping the rest.
+  - Review needs filter controls for selected, unselected, and explicitly excluded items.
+  - The workflow needs an explicit negative mark or exclude state so the user can work in “exclude mode” and then audit included/excluded sets.
+- constraints:
+  - Preserve the current speed and keyboard baseline.
+  - Do not regress the working layout improvements in `0.1.48`.
+  - Keep compare and filtering usable for real large-session triage, not just as demo controls.
+- implementation intent:
+  - Finish the remaining decision workflow in a few focused slices rather than mixing it with unrelated UI cleanup.
+  - Define a consistent three-state triage model and expose filters and compare behaviors around it.
+- test conditions:
+  - manual review of selection visibility, compare decisions, filters, and include/exclude workflow
+  - `swift build`
+  - `swift test`
+- success criteria:
+  - Selection remains visually clear without obscuring the image.
+  - Compare can be used to inspect detail at matched positions and narrow a candidate set.
+  - Users can explicitly include, exclude, and filter triage states for audit and cleanup.
+- current status: draft
+- target release version: planning-only
+- target feature slug: core-triage-decision-flow-completion
