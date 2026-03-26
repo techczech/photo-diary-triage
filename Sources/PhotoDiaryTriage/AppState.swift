@@ -1010,7 +1010,7 @@ final class AppState: ObservableObject {
         let uppercased = key.uppercased()
 
         switch uppercased {
-        case "I":
+        case "S":
             markCurrentSelectionForImport()
         case "X":
             excludeCurrentSelectionFromImport()
@@ -1020,8 +1020,6 @@ final class AppState: ObservableObject {
             toggleRawForCurrentMediaSelection()
         case "A":
             selectAllVisibleMedia()
-        case "S":
-            selectFocusedReviewItemOnly()
         case "C":
             openComparisonForCurrentSelection()
         default:
@@ -1156,14 +1154,18 @@ final class AppState: ObservableObject {
 
     func markCurrentSelectionForImport() {
         guard canMutateImportSelection else { return }
-        updateTriageState(for: currentSelectionMediaIDs(), selectionState: .included)
-        statusMessage = "Included \(currentSelectionMediaIDs().count) item(s) for import."
+        let selectedIDs = currentSelectionMediaIDs()
+        updateTriageState(for: selectedIDs, selectionState: .included)
+        statusMessage = "Selected \(selectedIDs.count) item(s) for import."
+        advanceAfterTriageAction(for: selectedIDs)
     }
 
     func excludeCurrentSelectionFromImport() {
         guard canMutateImportSelection else { return }
-        updateTriageState(for: currentSelectionMediaIDs(), selectionState: .excluded)
-        statusMessage = "Excluded \(currentSelectionMediaIDs().count) item(s) from import."
+        let selectedIDs = currentSelectionMediaIDs()
+        updateTriageState(for: selectedIDs, selectionState: .excluded)
+        statusMessage = "Excluded \(selectedIDs.count) item(s) from import."
+        advanceAfterTriageAction(for: selectedIDs)
     }
 
     func unmarkCurrentSelectionForImport() {
@@ -1223,7 +1225,13 @@ final class AppState: ObservableObject {
     private func currentSelectionMediaIDs() -> Set<UUID> {
         switch activePane {
         case .media:
-            return selectedMediaItemIDs
+            if !selectedMediaItemIDs.isEmpty {
+                return selectedMediaItemIDs
+            }
+            if let focusedReviewItemID {
+                return [focusedReviewItemID]
+            }
+            return []
         case .folders:
             let ids = selectedFolderNodeIDs.compactMap { browserNodeMap[$0]?.mediaItemIDs }
             return Set(ids.flatMap { $0 })
@@ -1646,6 +1654,24 @@ final class AppState: ObservableObject {
         if let currentReviewSelectionAnchorID = reviewSelectionAnchorID, !visibleIDs.contains(currentReviewSelectionAnchorID) {
             reviewSelectionAnchorID = selectedMediaItemIDs.first
         }
+    }
+
+    private func advanceAfterTriageAction(for selectedIDs: Set<UUID>) {
+        guard activePane == .media,
+              reviewKeyboardTarget == .items,
+              selectedIDs.count == 1,
+              let currentID = selectedIDs.first,
+              let currentIndex = reviewInteractionItems.firstIndex(where: { $0.id == currentID }),
+              !reviewInteractionItems.isEmpty else {
+            return
+        }
+
+        let targetIndex = min(currentIndex + 1, reviewInteractionItems.count - 1)
+        let targetID = reviewInteractionItems[targetIndex].id
+        selectedMediaItemIDs = [targetID]
+        focusedReviewItemID = targetID
+        reviewSelectionAnchorID = targetID
+        pendingReviewScrollTargetID = targetID
     }
 
     private func focusSidebarFirstResponder() {

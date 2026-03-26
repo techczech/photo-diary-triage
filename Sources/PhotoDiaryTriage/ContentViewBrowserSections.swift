@@ -525,7 +525,7 @@ struct ReviewPaneView: View {
             .disabled(appState.selectedMediaItemIDs.isEmpty)
 
             if appState.canMutateImportSelection {
-                Button("Include For Import") {
+                Button("Select For Import") {
                     appState.markCurrentSelectionForImport()
                 }
                 .disabled(!appState.canMarkSelectionForImport)

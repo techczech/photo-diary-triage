@@ -57,6 +57,34 @@ import Testing
 }
 
 @MainActor
+@Test func selectShortcutMarksFocusedItemAndAdvancesToNextItem() {
+    let items = makeSelectionItems(count: 3)
+    let state = makeReviewAppState(items: items)
+    state.focusReviewSurface()
+
+    state.performReviewShortcut("S")
+
+    let updatedItem = state.currentSession?.mediaItems.first(where: { $0.id == items[0].id })
+    #expect(updatedItem?.selectionState == .included)
+    #expect(state.focusedReviewItemID == items[1].id)
+    #expect(state.selectedMediaItemIDs == [items[1].id])
+}
+
+@MainActor
+@Test func excludeShortcutMarksFocusedItemAndAdvancesToNextItem() {
+    let items = makeSelectionItems(count: 3)
+    let state = makeReviewAppState(items: items)
+    state.focusReviewSurface()
+
+    state.performReviewShortcut("X")
+
+    let updatedItem = state.currentSession?.mediaItems.first(where: { $0.id == items[0].id })
+    #expect(updatedItem?.selectionState == .excluded)
+    #expect(state.focusedReviewItemID == items[1].id)
+    #expect(state.selectedMediaItemIDs == [items[1].id])
+}
+
+@MainActor
 @Test func compareRequestDeduplicatesIDsAndStoresTitle() {
     let items = makeSelectionItems(count: 3)
     let state = makeReviewAppState(items: items)

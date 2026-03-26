@@ -76,11 +76,10 @@ struct KeyboardHelpSheet: View {
                     shortcutSection("Review Selection", rows: [
                         ("Arrow Keys", "Move grid focus; hold Shift to extend selection."),
                         ("Space", "Toggle the focused photo selection."),
-                        ("I", "Include the current selection for import."),
+                        ("S", "Select the current selection for import."),
                         ("X", "Exclude the current selection from import."),
                         ("D", "Clear the current selection back to undecided."),
                         ("R", "Toggle RAW companion import for the current selection."),
-                        ("S", "Keep only the focused photo selected."),
                         ("A", "Select all visible photos."),
                         ("C", "Open compare for the current selection."),
                         ("Return", "Open the focused photo preview, or enter the focused grouped section for item navigation."),
@@ -111,7 +110,7 @@ struct KeyboardHelpSheet: View {
                         ("Cmd-Return", "Open the current item, jump from sidebar into review, or drill into the focused grouped section."),
                         ("Cmd-Option-I", "Toggle the right-side inspector."),
                         ("Cmd-Option-S", "Toggle the left sidebar."),
-                        ("Cmd-I", "Mark the current selection for import."),
+                        ("Cmd-I", "Select the current selection for import."),
                         ("Cmd-Shift-X", "Exclude the current selection from import."),
                         ("Cmd-Shift-I", "Remove the current selection from import."),
                         ("Cmd-Shift-M", "Copy marked files into the archive."),
@@ -308,7 +307,7 @@ final class ReviewKeyResponderView: NSView {
                 onZoomOut?()
             } else if rawText == "0" {
                 onZoomReset?()
-            } else if ["I", "D", "R", "A", "S", "C"].contains(text) {
+            } else if ["S", "X", "D", "R", "A", "C"].contains(text) {
                 onSingleKey?(text)
             } else {
                 super.keyDown(with: event)
@@ -535,13 +534,13 @@ struct CompareItemCard: View {
 
             if appState.canMutateImportSelection {
                 HStack {
-                    Button("Include") {
+                    Button("Select") {
                         appState.selectMediaItems([item.id])
                         appState.markCurrentSelectionForImport()
                     }
                     .buttonStyle(.bordered)
                     .disabled(item.selectionState.isIncluded)
-                    .shortcutHint("I / Cmd-I", help: "Include this item for import")
+                    .shortcutHint("S / Cmd-I", help: "Select this item for import")
 
                     Button("Exclude") {
                         appState.selectMediaItems([item.id])
