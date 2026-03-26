@@ -245,6 +245,17 @@ struct ReviewPaneView: View {
     private var reviewToolbar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
+                Button {
+                    appState.toggleSidebarVisibility()
+                } label: {
+                    Image(systemName: appState.isSidebarVisible ? "sidebar.leading" : "sidebar.trailing")
+                        .font(.system(size: 14, weight: .semibold))
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .shortcutHint("Cmd-Option-S", help: "\(appState.isSidebarVisible ? "Hide" : "Show") sidebar (Cmd-Option-S)")
+
                 if !state.snapshot.breadcrumbTitles.isEmpty {
                     Text(state.snapshot.breadcrumbTitles.joined(separator: " / "))
                         .font(.caption.weight(.semibold))

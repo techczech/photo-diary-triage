@@ -28,23 +28,25 @@ struct ContentView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            SidebarPaneView(
-                appState: appState,
-                state: sidebarState,
-                walkTitle: $walkTitle,
-                walkLocation: $walkLocation,
-                walkNotes: $walkNotes,
-                summary: walkDetailsSummary,
-                appRelease: appRelease
-            )
-            .frame(width: sidebarState.snapshot.isVisible ? 320 : 0, alignment: .leading)
-            .opacity(sidebarState.snapshot.isVisible ? 1 : 0)
-            .allowsHitTesting(sidebarState.snapshot.isVisible)
-            .clipped()
+            if sidebarState.snapshot.isVisible {
+                SidebarPaneView(
+                    appState: appState,
+                    state: sidebarState,
+                    walkTitle: $walkTitle,
+                    walkLocation: $walkLocation,
+                    walkNotes: $walkNotes,
+                    summary: walkDetailsSummary,
+                    appRelease: appRelease
+                )
+                .frame(width: 320, alignment: .leading)
+                .clipped()
+            } else {
+                collapsedSidebarRail
+                    .frame(width: 42, alignment: .leading)
+            }
 
             Divider()
-                .frame(width: sidebarState.snapshot.isVisible ? 1 : 0)
-                .opacity(sidebarState.snapshot.isVisible ? 1 : 0)
+                .frame(width: 1)
 
             detailPane
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -132,6 +134,14 @@ struct ContentView: View {
                 appState.navigateToParent()
             }
         }
+    }
+
+    private var collapsedSidebarRail: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Spacer(minLength: 0)
+        }
+        .frame(maxHeight: .infinity, alignment: .topLeading)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.16))
     }
 
     private func hydrateForm() {
