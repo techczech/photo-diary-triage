@@ -39,6 +39,16 @@ final class AppState: ObservableObject {
     @Published var reviewGridHasFocus = false
     @Published var isDetailsInspectorVisible = true
     @Published var isWalkDetailsExpanded = true
+    @Published var reviewFilter: ReviewFilter = .all {
+        didSet {
+            guard reviewFilter != oldValue else { return }
+            invalidateInlineSectionCaches()
+            if dayDetailDisplayMode == .sections {
+                ensureFocusedInlineSection()
+            }
+            reconcileReviewSelectionWithVisibleItems()
+        }
+    }
     @Published var dayOrganizationMode: DayOrganizationMode = .days {
         didSet {
             invalidateOrganizedInlineSectionCache()
@@ -106,7 +116,7 @@ final class AppState: ObservableObject {
     private var cachedOrganizedInlineSectionsMode: DayOrganizationMode = .days
     private var cachedOrganizedInlineSections: [InlineSection] = []
 
-    init() {
+    init(testing: Bool = false) {
         self.fileManager = .default
         self.supportRoot = AppPaths.supportRoot()
         let settingsStore = SettingsStore(fileURL: self.supportRoot.appendingPathComponent("settings.json"))
@@ -131,6 +141,10 @@ final class AppState: ObservableObject {
         self.browserViewModel = BrowserViewModel(scanner: self.scanner)
         self.archiveYearFolders = ArchiveLibraryInspector.existingYearFolders(in: settings.archiveRoot)
         rebuildBrowserCaches()
+
+        if testing {
+            return
+        }
 
         configurePersistence()
         loadMostRecentSession()
@@ -206,12 +220,16 @@ final class AppState: ObservableObject {
         return selectedBrowserNode
     }
 
-    var visibleMediaItems: [MediaItem] {
+    var contextMediaItems: [MediaItem] {
         if !drilledInlineSectionMediaItemIDs.isEmpty {
             return orderedMediaItems(for: drilledInlineSectionMediaItemIDs)
         }
         guard let node = selectedBrowserNode else { return [] }
-        return visibleMediaItems(for: node)
+        return baseVisibleMediaItems(for: node)
+    }
+
+    var visibleMediaItems: [MediaItem] {
+        filterReviewItems(contextMediaItems)
     }
 
     var inlineDaySections: [InlineDaySection] {
@@ -229,7 +247,7 @@ final class AppState: ObservableObject {
     }
 
     var shouldShowInlineDaySections: Bool {
-        !inlineDaySections.isEmpty
+        !groupableInlineDaySections.isEmpty
     }
 
     var canUseGroupedReviewMode: Bool {
@@ -332,6 +350,10 @@ final class AppState: ObservableObject {
     }
 
     var canMarkSelectionForImport: Bool {
+        canMutateImportSelection && !currentSelectionMediaIDs().isEmpty
+    }
+
+    var canExcludeSelectionFromImport: Bool {
         canMutateImportSelection && !currentSelectionMediaIDs().isEmpty
     }
 
@@ -614,6 +636,15 @@ final class AppState: ObservableObject {
         settings.reviewPresentationMode = mode
         updateReviewGridMetrics(availableWidth: nil)
         persistSettings()
+    }
+
+    func setReviewFilter(_ filter: ReviewFilter) {
+        reviewFilter = filter
+        if filter == .all {
+            statusMessage = "Showing all visible photos."
+        } else {
+            statusMessage = "Showing \(filter.title.lowercased()) photos."
+        }
     }
 
     func setReviewGridCardWidth(_ width: Double) {
@@ -981,6 +1012,8 @@ final class AppState: ObservableObject {
         switch uppercased {
         case "I":
             markCurrentSelectionForImport()
+        case "X":
+            excludeCurrentSelectionFromImport()
         case "D":
             unmarkCurrentSelectionForImport()
         case "R":
@@ -1123,13 +1156,19 @@ final class AppState: ObservableObject {
 
     func markCurrentSelectionForImport() {
         guard canMutateImportSelection else { return }
-        updateImportState(for: currentSelectionMediaIDs(), selected: true)
+        updateTriageState(for: currentSelectionMediaIDs(), selectionState: .included)
         statusMessage = "Included \(currentSelectionMediaIDs().count) item(s) for import."
+    }
+
+    func excludeCurrentSelectionFromImport() {
+        guard canMutateImportSelection else { return }
+        updateTriageState(for: currentSelectionMediaIDs(), selectionState: .excluded)
+        statusMessage = "Excluded \(currentSelectionMediaIDs().count) item(s) from import."
     }
 
     func unmarkCurrentSelectionForImport() {
         guard canMutateImportSelection else { return }
-        updateImportState(for: currentSelectionMediaIDs(), selected: false)
+        updateTriageState(for: currentSelectionMediaIDs(), selectionState: .undecided)
         statusMessage = "Cleared \(currentSelectionMediaIDs().count) item(s) back to undecided."
     }
 
@@ -1176,9 +1215,9 @@ final class AppState: ObservableObject {
         }
     }
 
-    private func updateImportState(for mediaIDs: Set<UUID>, selected: Bool) {
+    private func updateTriageState(for mediaIDs: Set<UUID>, selectionState: SelectionState) {
         guard let currentSession else { return }
-        save(sessionMutationCoordinator.sessionByUpdatingImportSelection(currentSession, mediaIDs: mediaIDs, selected: selected))
+        save(sessionMutationCoordinator.sessionByUpdatingTriageState(currentSession, mediaIDs: mediaIDs, selectionState: selectionState))
     }
 
     private func currentSelectionMediaIDs() -> Set<UUID> {
@@ -1189,7 +1228,7 @@ final class AppState: ObservableObject {
             let ids = selectedFolderNodeIDs.compactMap { browserNodeMap[$0]?.mediaItemIDs }
             return Set(ids.flatMap { $0 })
         case .sidebar:
-            return Set(selectedBrowserNode?.mediaItemIDs ?? [])
+            return Set(visibleMediaItems.map(\.id))
         }
     }
 
@@ -1593,7 +1632,12 @@ final class AppState: ObservableObject {
 
     private func reconcileReviewSelectionWithVisibleItems() {
         let visibleIDs = Set(reviewInteractionItems.map(\.id))
-        guard !visibleIDs.isEmpty || dayDetailDisplayMode == .sections else { return }
+        if visibleIDs.isEmpty {
+            selectedMediaItemIDs.removeAll()
+            focusedReviewItemID = nil
+            reviewSelectionAnchorID = nil
+            return
+        }
 
         selectedMediaItemIDs = selectedMediaItemIDs.intersection(visibleIDs)
         if let currentFocusedReviewItemID = focusedReviewItemID, !visibleIDs.contains(currentFocusedReviewItemID) {
@@ -1656,7 +1700,24 @@ final class AppState: ObservableObject {
         return nil
     }
 
-    private func visibleMediaItems(for node: BrowserNode) -> [MediaItem] {
+    private var groupableInlineDaySections: [InlineDaySection] {
+        inlineSectionOrganizer.inlineDaySections(from: selectedBrowserNode, visibleItems: contextMediaItems)
+    }
+
+    private func filterReviewItems(_ items: [MediaItem]) -> [MediaItem] {
+        switch reviewFilter {
+        case .all:
+            return items
+        case .included:
+            return items.filter { $0.selectionState.isIncluded }
+        case .excluded:
+            return items.filter { $0.selectionState.isExcluded }
+        case .undecided:
+            return items.filter { $0.selectionState.isUndecided }
+        }
+    }
+
+    private func baseVisibleMediaItems(for node: BrowserNode) -> [MediaItem] {
         if let cachedArchiveItems = archiveMediaCache[node.id] {
             return cachedArchiveItems
         }
