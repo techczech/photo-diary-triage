@@ -1,0 +1,22 @@
+# PDT-2026-03-26-009 Inspector toggle relocation and command recovery report
+
+- item ID: PDT-2026-03-26-009
+- summary of what changed:
+  - moved the inspector toggle out of the left sidebar and back into the top review control strip
+  - added an explicit app-level sidebar toggle action and keyboard shortcut path instead of relying only on the stock sidebar command
+  - kept the inspector view alive at zero width while hidden so reopening it no longer rebuilds the full pane from scratch
+- files changed:
+  - `Sources/PhotoDiaryTriage/AppState.swift`
+  - `Sources/PhotoDiaryTriage/AppCommands.swift`
+  - `Sources/PhotoDiaryTriage/ContentView.swift`
+  - `Sources/PhotoDiaryTriage/ContentViewBrowserSections.swift`
+  - `Sources/PhotoDiaryTriage/ContentViewSections.swift`
+  - `APP_RELEASE.env`
+- verification performed:
+  - `swift build`
+  - `swift test`
+- known gaps or follow-up items:
+  - grouped-review escape still remains a separate follow-up area
+  - inspector responsiveness still needs real-user validation on large sessions
+- shipped release version: 0.1.48
+- shipped feature slug: inspector-toggle-relocation-and-command-recovery

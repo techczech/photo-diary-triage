@@ -95,11 +95,6 @@ struct SidebarPaneView: View {
                 NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
             }
 
-            Button(appState.isDetailsInspectorVisible ? "Hide Inspector" : "Show Inspector") {
-                appState.toggleDetailsInspector()
-            }
-            .shortcutHint("Cmd-Option-I", help: "\(appState.isDetailsInspectorVisible ? "Hide" : "Show") inspector (Cmd-Option-I)")
-
             Button("Shortcuts") {
                 appState.showKeyboardHelp = true
             }

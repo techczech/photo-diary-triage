@@ -41,15 +41,22 @@ struct ContentView: View {
     }
 
     private var detailPane: some View {
-        HSplitView {
+        HStack(alignment: .top, spacing: 12) {
             BrowserOrReviewPaneView(appState: appState)
-            .frame(minWidth: 720, maxWidth: .infinity, alignment: .leading)
-            .layoutPriority(1)
+                .frame(minWidth: 720, maxWidth: .infinity, alignment: .leading)
+                .layoutPriority(1)
 
-            if appState.isDetailsInspectorVisible {
-                DetailsInspectorView(appState: appState)
-                    .frame(minWidth: 300, idealWidth: 340, maxWidth: 380, maxHeight: .infinity, alignment: .top)
-            }
+            DetailsInspectorView(appState: appState)
+                .frame(
+                    minWidth: appState.isDetailsInspectorVisible ? 300 : 0,
+                    idealWidth: appState.isDetailsInspectorVisible ? 340 : 0,
+                    maxWidth: appState.isDetailsInspectorVisible ? 380 : 0,
+                    maxHeight: .infinity,
+                    alignment: .top
+                )
+                .opacity(appState.isDetailsInspectorVisible ? 1 : 0)
+                .allowsHitTesting(appState.isDetailsInspectorVisible)
+                .clipped()
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
