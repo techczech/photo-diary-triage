@@ -77,11 +77,12 @@ struct KeyboardHelpSheet: View {
                         ("Arrow Keys", "Move grid focus; hold Shift to extend selection."),
                         ("Space", "Toggle the focused photo selection."),
                         ("S", "Select the current selection for import."),
+                        ("C", "Mark the current selection as candidate."),
                         ("X", "Exclude the current selection from import."),
                         ("D", "Clear the current selection back to undecided."),
                         ("R", "Toggle RAW companion import for the current selection."),
                         ("A", "Select all visible photos."),
-                        ("C", "Open compare for the current selection."),
+                        ("Cmd-Shift-C", "Open compare for the current selection."),
                         ("Return", "Open the focused photo preview, or enter the focused grouped section for item navigation."),
                         ("Escape", "Return to grouped-section selection, or exit review-grid keyboard focus.")
                     ])
@@ -98,7 +99,7 @@ struct KeyboardHelpSheet: View {
                     shortcutSection("View And Compare", rows: [
                         ("+ / - / 0", "Change review grid columns, or zoom compare images when compare is open. Reset returns compare to Fit."),
                         ("Cmd-3 / Cmd-4", "Switch flat review or grouped review."),
-                        ("Cmd-Control-A / I / X / U", "Filter review items to all, included, excluded, or undecided."),
+                        ("Cmd-Control-A / I / C / X / U", "Filter review items to all, included, candidate, excluded, or undecided."),
                         ("Cmd-Option-G / Cmd-Option-L", "Switch grid or list layout."),
                         ("Cmd-Shift-C", "Open compare from the command menu path.")
                     ])
@@ -564,6 +565,15 @@ struct CompareItemCard: View {
                     .disabled(item.selectionState.isIncluded)
                     .shortcutHint("S / Cmd-I", help: "Select this item for import")
 
+                    Button("C") {
+                        appState.selectMediaItems([item.id])
+                        appState.markCurrentSelectionAsCandidate()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+                    .disabled(item.selectionState.isCandidate)
+                    .shortcutHint("C", help: "Mark this item as candidate")
+
                     Button("X") {
                         appState.selectMediaItems([item.id])
                         appState.excludeCurrentSelectionFromImport()
@@ -666,6 +676,8 @@ struct CompareItemCard: View {
         switch selectionState {
         case .included:
             return Color.accentColor.opacity(0.15)
+        case .candidate:
+            return Color.orange.opacity(0.18)
         case .excluded:
             return Color.red.opacity(0.14)
         case .undecided:

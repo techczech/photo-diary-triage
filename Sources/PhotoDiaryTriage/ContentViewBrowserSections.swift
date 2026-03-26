@@ -334,8 +334,8 @@ struct ReviewPaneView: View {
             }
         }
         .pickerStyle(.segmented)
-        .frame(width: 320)
-        .shortcutHint("Cmd-Ctrl-A / I / X / U", help: "Filter review items to all, included, excluded, or undecided photos.")
+        .frame(width: 400)
+        .shortcutHint("Cmd-Ctrl-A / I / C / X / U", help: "Filter review items to all, included, candidate, excluded, or undecided photos.")
     }
 
     private var inspectorToggleButton: some View {
@@ -378,6 +378,11 @@ struct ReviewPaneView: View {
                                 guard appState.canMutateImportSelection else { return }
                                 appState.selectMediaItems([item.id])
                                 appState.markCurrentSelectionForImport()
+                            },
+                            markAsCandidate: {
+                                guard appState.canMutateImportSelection else { return }
+                                appState.selectMediaItems([item.id])
+                                appState.markCurrentSelectionAsCandidate()
                             },
                             excludeFromImport: {
                                 guard appState.canMutateImportSelection else { return }
@@ -528,7 +533,7 @@ struct ReviewPaneView: View {
                 appState.openComparisonForCurrentSelection()
             }
             .disabled(!state.snapshot.canOpenComparison)
-            .shortcutHint("C / Cmd-Shift-C", help: "Compare the current selection (C / Cmd-Shift-C)")
+            .shortcutHint("Cmd-Shift-C", help: "Compare the current selection (Cmd-Shift-C)")
         }
     }
 
@@ -548,6 +553,11 @@ struct ReviewPaneView: View {
                     appState.markCurrentSelectionForImport()
                 }
                 .disabled(!state.snapshot.canMarkSelectionForImport)
+
+                Button("Mark As Candidate") {
+                    appState.markCurrentSelectionAsCandidate()
+                }
+                .disabled(!state.snapshot.canMarkSelectionAsCandidate)
 
                 Button("Exclude From Import") {
                     appState.excludeCurrentSelectionFromImport()
@@ -584,6 +594,11 @@ struct ReviewPaneView: View {
                         guard state.snapshot.canMutateImportSelection else { return }
                         appState.selectMediaItems([item.id])
                         appState.markCurrentSelectionForImport()
+                    },
+                    markAsCandidate: {
+                        guard state.snapshot.canMutateImportSelection else { return }
+                        appState.selectMediaItems([item.id])
+                        appState.markCurrentSelectionAsCandidate()
                     },
                     excludeFromImport: {
                         guard state.snapshot.canMutateImportSelection else { return }
@@ -830,6 +845,11 @@ private struct GroupedReviewSectionNodeView: View {
                 appState.selectMediaItems([item.id])
                 appState.markCurrentSelectionForImport()
             },
+            markAsCandidate: {
+                guard state.snapshot.canMutateImportSelection else { return }
+                appState.selectMediaItems([item.id])
+                appState.markCurrentSelectionAsCandidate()
+            },
             excludeFromImport: {
                 guard state.snapshot.canMutateImportSelection else { return }
                 appState.selectMediaItems([item.id])
@@ -853,6 +873,11 @@ private struct GroupedReviewSectionNodeView: View {
                 guard state.snapshot.canMutateImportSelection else { return }
                 appState.selectMediaItems([item.id])
                 appState.markCurrentSelectionForImport()
+            },
+            markAsCandidate: {
+                guard state.snapshot.canMutateImportSelection else { return }
+                appState.selectMediaItems([item.id])
+                appState.markCurrentSelectionAsCandidate()
             },
             excludeFromImport: {
                 guard state.snapshot.canMutateImportSelection else { return }

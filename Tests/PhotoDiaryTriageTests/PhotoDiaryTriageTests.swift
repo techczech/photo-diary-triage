@@ -11,10 +11,12 @@ import Testing
 
     let legacySelected = try decoder.decode(SelectionState.self, from: Data(#""selected""#.utf8))
     let legacySkipped = try decoder.decode(SelectionState.self, from: Data(#""skipped""#.utf8))
+    let currentCandidate = try decoder.decode(SelectionState.self, from: Data(#""candidate""#.utf8))
     let currentExcluded = try decoder.decode(SelectionState.self, from: Data(#""excluded""#.utf8))
 
     #expect(legacySelected == .included)
     #expect(legacySkipped == .undecided)
+    #expect(currentCandidate == .candidate)
     #expect(currentExcluded == .excluded)
 }
 

@@ -81,6 +81,11 @@ struct PhotoDiaryCommands: Commands {
             }
             .keyboardShortcut("i", modifiers: [.command, .control])
 
+            Button("Show Candidate Photos") {
+                appState.setReviewFilter(.candidate)
+            }
+            .keyboardShortcut("c", modifiers: [.command, .control])
+
             Button("Show Excluded Photos") {
                 appState.setReviewFilter(.excluded)
             }
@@ -166,6 +171,11 @@ struct PhotoDiaryCommands: Commands {
             }
             .keyboardShortcut("x", modifiers: [.command, .shift])
             .disabled(!appState.canExcludeSelectionFromImport)
+
+            Button("Mark Selection As Candidate") {
+                appState.markCurrentSelectionAsCandidate()
+            }
+            .disabled(!appState.canMarkSelectionAsCandidate)
 
             Button("Clear Selection To Undecided") {
                 appState.unmarkCurrentSelectionForImport()

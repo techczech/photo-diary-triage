@@ -40,6 +40,14 @@ final class SessionMutationCoordinator {
         guard let index = updatedSession.mediaItems.firstIndex(where: { $0.id == itemID }) else {
             return updatedSession
         }
+        if enabled {
+            do {
+                updatedSession.mediaItems[index].lifecycleState = try updatedSession.mediaItems[index].lifecycleState.transition(to: .selectedForImport)
+            } catch {
+                logger.error("Failed to promote RAW-enabled item for \(updatedSession.mediaItems[index].sourceURL.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            }
+            updatedSession.mediaItems[index].selectionState = .included
+        }
         updatedSession.mediaItems[index].importRawCompanions = enabled
         return updatedSession
     }
@@ -103,7 +111,16 @@ final class SessionMutationCoordinator {
 
         for index in updatedSession.mediaItems.indices
         where selectedIDs.contains(updatedSession.mediaItems[index].id) && !updatedSession.mediaItems[index].companionFiles.isEmpty {
-            updatedSession.mediaItems[index].importRawCompanions.toggle()
+            let enabled = !updatedSession.mediaItems[index].importRawCompanions
+            if enabled {
+                do {
+                    updatedSession.mediaItems[index].lifecycleState = try updatedSession.mediaItems[index].lifecycleState.transition(to: .selectedForImport)
+                } catch {
+                    logger.error("Failed to promote RAW-toggled item for \(updatedSession.mediaItems[index].sourceURL.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                }
+                updatedSession.mediaItems[index].selectionState = .included
+            }
+            updatedSession.mediaItems[index].importRawCompanions = enabled
         }
 
         return updatedSession

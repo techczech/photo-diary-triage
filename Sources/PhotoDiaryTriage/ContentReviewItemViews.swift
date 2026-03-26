@@ -74,6 +74,7 @@ struct ReviewGridCard: View {
     let retryThumbnail: () -> Void
     let setIncludeRaw: (Bool) -> Void
     let includeForImport: () -> Void
+    let markAsCandidate: () -> Void
     let excludeFromImport: () -> Void
     let clearTriageState: () -> Void
 
@@ -160,6 +161,12 @@ struct ReviewGridCard: View {
                         .disabled(item.selectionState.isIncluded)
                         .shortcutHint("S / Cmd-I", help: "Select this item for import (S / Cmd-I)")
 
+                    Button("C", action: markAsCandidate)
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+                        .disabled(item.selectionState.isCandidate)
+                        .shortcutHint("C", help: "Mark this item as a candidate (C)")
+
                     Button("X", action: excludeFromImport)
                         .buttonStyle(.bordered)
                         .controlSize(.mini)
@@ -204,6 +211,8 @@ struct ReviewGridCard: View {
         switch item.selectionState {
         case .included:
             return Color.accentColor.opacity(0.15)
+        case .candidate:
+            return Color.orange.opacity(0.18)
         case .excluded:
             return Color.red.opacity(0.14)
         case .undecided:
@@ -217,6 +226,7 @@ struct MediaItemRow: View {
     let snapshot: ReviewItemSnapshot
     let canMutateImportSelection: Bool
     let includeForImport: () -> Void
+    let markAsCandidate: () -> Void
     let excludeFromImport: () -> Void
     let clearTriageState: () -> Void
     let retryThumbnail: () -> Void
@@ -290,6 +300,12 @@ struct MediaItemRow: View {
                     .disabled(item.selectionState.isIncluded)
                     .shortcutHint("S / Cmd-I", help: "Select this item for import (S / Cmd-I)")
 
+                Button("C", action: markAsCandidate)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(item.selectionState.isCandidate)
+                    .shortcutHint("C", help: "Mark this item as a candidate (C)")
+
                 Button("X", action: excludeFromImport)
                     .buttonStyle(.bordered)
                     .controlSize(.small)
@@ -322,6 +338,8 @@ struct MediaItemRow: View {
         switch item.selectionState {
         case .included:
             return Color.accentColor.opacity(0.15)
+        case .candidate:
+            return Color.orange.opacity(0.18)
         case .excluded:
             return Color.red.opacity(0.14)
         case .undecided:

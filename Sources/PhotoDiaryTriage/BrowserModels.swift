@@ -46,6 +46,7 @@ enum ReviewPresentationMode: String, Codable, CaseIterable, Sendable {
 enum ReviewFilter: String, CaseIterable, Sendable {
     case all
     case included
+    case candidate
     case excluded
     case undecided
 
@@ -55,6 +56,8 @@ enum ReviewFilter: String, CaseIterable, Sendable {
             return "All"
         case .included:
             return "Included"
+        case .candidate:
+            return "Candidate"
         case .excluded:
             return "Excluded"
         case .undecided:
