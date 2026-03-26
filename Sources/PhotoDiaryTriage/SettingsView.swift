@@ -55,11 +55,11 @@ struct SettingsView: View {
                 .pickerStyle(.segmented)
                 .frame(width: 220)
 
-                Stepper(value: reviewGridCardWidthBinding, in: ReviewGridMetrics.minCardWidth...ReviewGridMetrics.maxCardWidth, step: ReviewGridMetrics.cardWidthStep) {
+                Stepper(value: reviewGridColumnCountBinding, in: 1...ReviewGridMetrics.maxSuggestedColumns, step: 1) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Grid card width")
+                        Text("Grid columns")
                             .font(.subheadline.weight(.semibold))
-                        Text("Current size: \(Int(appState.reviewGridCardWidth)) pt")
+                        Text("Current columns: \(appState.reviewGridPreferredColumnCount)")
                             .font(.callout.monospacedDigit())
                     }
                 }
@@ -135,10 +135,10 @@ struct SettingsView: View {
         )
     }
 
-    private var reviewGridCardWidthBinding: Binding<Double> {
+    private var reviewGridColumnCountBinding: Binding<Int> {
         Binding(
-            get: { appState.reviewGridCardWidth },
-            set: { appState.setReviewGridCardWidth($0) }
+            get: { appState.reviewGridPreferredColumnCount },
+            set: { appState.setReviewGridColumnCount($0) }
         )
     }
 

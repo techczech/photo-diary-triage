@@ -1,0 +1,31 @@
+# PDT-2026-03-26-017 Zoom fit feedback and review grid columns report
+
+- item ID: PDT-2026-03-26-017
+- summary of what changed:
+  - Reworked the zoom toolbar so it shows a clear `Fit` reset action instead of an ambiguous static `100%` label.
+  - Kept a live zoom percentage readout next to the compare and preview zoom controls.
+  - Converted the main review grid from a point-width preference to an explicit preferred column-count model derived from the measured review pane width.
+  - Replaced review grid size controls, review keyboard resize actions, and settings UI with review column controls.
+  - Added legacy settings decoding so older saved `reviewGridCardWidth` values still map into a sensible review column preference.
+- files changed:
+  - `Sources/PhotoDiaryTriage/AppState.swift`
+  - `Sources/PhotoDiaryTriage/ContentAuxiliaryViews.swift`
+  - `Sources/PhotoDiaryTriage/ContentViewBrowserSections.swift`
+  - `Sources/PhotoDiaryTriage/Models.swift`
+  - `Sources/PhotoDiaryTriage/ReviewInteractionSupport.swift`
+  - `Sources/PhotoDiaryTriage/SettingsView.swift`
+  - `Tests/PhotoDiaryTriageTests/PhotoDiaryTriageTests.swift`
+  - `Tests/PhotoDiaryTriageTests/ReviewInteractionTests.swift`
+  - `Tests/PhotoDiaryTriageTests/TestSupport.swift`
+  - `changelog/backlog/PDT-2026-03-26-017-zoom-fit-feedback-and-review-grid-columns.md`
+  - `changelog/backlog.jsonl`
+  - `changelog/changelog.jsonl`
+  - `APP_RELEASE.env`
+- verification performed:
+  - `swift build`
+  - `swift test`
+- known gaps or follow-up items:
+  - compare column controls still do not have dedicated keyboard shortcuts
+  - grouped review escape behavior remains a separate bug track
+- shipped release version: 0.1.55
+- shipped feature slug: zoom-fit-feedback-and-review-grid-columns
