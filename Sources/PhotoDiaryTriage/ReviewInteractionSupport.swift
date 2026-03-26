@@ -41,7 +41,7 @@ struct ReviewGridMetrics: Equatable, Sendable {
         let usableWidth = max(availableWidth - (Self.gridPadding * 2), Self.minCardWidth)
         let totalSpacing = Double(max(columns - 1, 0)) * Self.gridSpacing
         let fittedWidth = (usableWidth - totalSpacing) / Double(columns)
-        return min(max(fittedWidth, Self.minCardWidth), Self.maxCardWidth)
+        return max(fittedWidth, Self.minCardWidth)
     }
 
     static func thumbnailHeight(for cardWidth: Double) -> Double {
