@@ -720,9 +720,21 @@ import Testing
 
 @MainActor
 @Test func createWalkDraftFromSelectionPersistsDraftAndRemovesItemsFromInbox() async {
-    let items = makeSelectionItems(count: 4)
     let state = AppState(testing: true)
-    let root = URL(fileURLWithPath: "/tmp/walk-draft-library", isDirectory: true)
+    let root = try! makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let base = Date(timeIntervalSince1970: 20_000)
+    let fileNames = ["0.jpg", "1.jpg", "2.jpg", "3.jpg"]
+    for fileName in fileNames {
+        _ = try? writeTestFile(root.appendingPathComponent(fileName), contents: fileName)
+    }
+    let items = fileNames.enumerated().map { index, fileName in
+        makeTestMediaItem(
+            sourceRoot: root,
+            fileName: fileName,
+            capturedAt: base.addingTimeInterval(Double(index))
+        )
+    }
     state.currentSession = makeTestSession(
         sourceRoot: root,
         archiveRoot: root.appendingPathComponent("archive", isDirectory: true),
@@ -743,14 +755,26 @@ import Testing
     await state.openSession(for: root)
 
     #expect(state.currentSession?.sessionKind == .inbox)
-    #expect(state.currentSession?.mediaItems.map(\.id) == [items[2].id, items[3].id])
+    #expect(state.currentSession?.mediaItems.map(\.relativePath) == ["2.jpg", "3.jpg"])
 }
 
 @MainActor
 @Test func openSavedWalkRestoresDraftAfterReturningToInbox() async throws {
-    let items = makeSelectionItems(count: 3)
     let state = AppState(testing: true)
-    let root = URL(fileURLWithPath: "/tmp/walk-draft-resume", isDirectory: true)
+    let root = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let base = Date(timeIntervalSince1970: 30_000)
+    let fileNames = ["0.jpg", "1.jpg", "2.jpg"]
+    for fileName in fileNames {
+        try writeTestFile(root.appendingPathComponent(fileName), contents: fileName)
+    }
+    let items = fileNames.enumerated().map { index, fileName in
+        makeTestMediaItem(
+            sourceRoot: root,
+            fileName: fileName,
+            capturedAt: base.addingTimeInterval(Double(index))
+        )
+    }
     state.currentSession = makeTestSession(
         sourceRoot: root,
         archiveRoot: root.appendingPathComponent("archive", isDirectory: true),

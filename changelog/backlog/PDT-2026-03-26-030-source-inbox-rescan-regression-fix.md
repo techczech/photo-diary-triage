@@ -1,0 +1,23 @@
+# PDT-2026-03-26-030 Source Inbox Rescan Regression Fix
+
+- Item ID: `PDT-2026-03-26-030`
+- Title: `Source inbox rescan regression fix`
+- User request summary: `Restore reliable source-folder access after the multi-walk draft changes. Opening the SSD source should rescan and show the remaining unassigned media instead of reopening a stale or empty inbox.`
+- Constraints:
+  - Preserve the new multi-walk draft library and exclusive ownership model.
+  - Keep existing drafts and their decisions intact.
+  - Fix the regression without removing inbox persistence entirely.
+- Implementation intent:
+  - Change inbox opening to rescan the source folder every time and then subtract assigned draft items.
+  - Reuse the existing inbox session ID and metadata when rebuilding the inbox.
+  - Add regression coverage for reopening a source folder after draft creation.
+- Test conditions:
+  - Reopening a source folder after splitting a draft still shows the remaining unassigned photos.
+  - Existing draft metadata remains intact.
+  - The rebuilt inbox persists normally.
+- Success criteria:
+  - Source access works again from the picker and saved-walk library.
+  - Empty or stale inbox sessions no longer block loading from the SSD.
+- Current status: `approved_for_implementation`
+- Target release version: `0.1.68`
+- Target feature slug: `source-inbox-rescan-regression-fix`

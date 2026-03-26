@@ -743,37 +743,31 @@ final class AppState: ObservableObject {
     func openSession(for folder: URL) async {
         do {
             let standardizedFolder = folder.standardizedFileURL
+            let standardizedFolderPath = standardizedFolder.path
             try reloadPersistedSessionsFromStore()
-
-            if let existingInbox = persistedSessions.first(where: {
-                $0.0.sessionKind == .inbox && $0.0.workspaceSourceFolder.standardizedFileURL == standardizedFolder
-            }) {
-                let normalizedInbox = normalizeInboxRecord(existingInbox)
-                if normalizedInbox.0 != existingInbox.0 || normalizedInbox.1 != existingInbox.1 || normalizedInbox.2 != existingInbox.2 {
-                    try sessionManager.save(normalizedInbox.0, bursts: normalizedInbox.1, clusters: normalizedInbox.2, to: sessionStore)
-                    storePersistedSession(normalizedInbox.0, bursts: normalizedInbox.1, clusters: normalizedInbox.2)
-                }
-                openPersistedSessionRecord(
-                    normalizedInbox,
-                    status: "Loaded inbox with \(normalizedInbox.0.mediaItems.count) unassigned items from \(standardizedFolder.lastPathComponent)."
-                )
-                requestVisibleThumbnails(prefetching: normalizedInbox.0.mediaItems)
-                return
-            }
-
             statusMessage = "Scanning source folder..."
-            let opened = try sessionLifecycleCoordinator.openSession(
-                for: standardizedFolder,
-                settings: settings,
-                using: sessionManager,
-                store: sessionStore
+            let scanned = try sessionManager.openSession(for: standardizedFolder, settings: settings)
+            let existingInbox = persistedSessions.first(where: {
+                $0.0.sessionKind == .inbox && $0.0.workspaceSourceFolder.standardizedFileURL.path == standardizedFolderPath
+            })
+            let rebuiltInbox = rebuildInboxSession(
+                from: scanned,
+                workspaceSourceFolder: standardizedFolder,
+                existingInbox: existingInbox?.0
             )
-            let normalizedInbox = normalizeInboxRecord((opened.session, opened.bursts, opened.clusters))
+            let normalizedInbox = normalizeInboxRecord((rebuiltInbox, scanned.bursts, scanned.clusters))
             try sessionManager.save(normalizedInbox.0, bursts: normalizedInbox.1, clusters: normalizedInbox.2, to: sessionStore)
             storePersistedSession(normalizedInbox.0, bursts: normalizedInbox.1, clusters: normalizedInbox.2)
+
+            let message: String
+            if normalizedInbox.0.mediaItems.isEmpty {
+                message = "Loaded inbox for \(standardizedFolder.lastPathComponent); all visible photos are already assigned to saved walks."
+            } else {
+                message = "Loaded inbox with \(normalizedInbox.0.mediaItems.count) unassigned items from \(standardizedFolder.lastPathComponent)."
+            }
             openPersistedSessionRecord(
                 normalizedInbox,
-                status: "Loaded \(normalizedInbox.0.mediaItems.count) visible items from \(standardizedFolder.lastPathComponent)."
+                status: message
             )
             requestVisibleThumbnails(prefetching: normalizedInbox.0.mediaItems)
         } catch {
@@ -1962,13 +1956,13 @@ final class AppState: ObservableObject {
         for workspaceSourceFolder: URL,
         excludingSessionIDs: Set<UUID> = []
     ) -> Set<String> {
-        let standardizedFolder = workspaceSourceFolder.standardizedFileURL
+        let standardizedFolderPath = workspaceSourceFolder.standardizedFileURL.path
         return Set(
             persistedSessions
                 .filter {
                     $0.0.sessionKind == .walkDraft &&
                     !excludingSessionIDs.contains($0.0.id) &&
-                    $0.0.workspaceSourceFolder.standardizedFileURL == standardizedFolder
+                    $0.0.workspaceSourceFolder.standardizedFileURL.path == standardizedFolderPath
                 }
                 .flatMap { $0.0.mediaItems.map(\.relativePath) }
         )
@@ -1991,6 +1985,26 @@ final class AppState: ObservableObject {
         session.mediaItems = regrouped.items
         session.lastUpdatedAt = Date()
         return (session, regrouped.burstGroups, regrouped.timeClusters)
+    }
+
+    private func rebuildInboxSession(
+        from scanned: SessionOpenResult,
+        workspaceSourceFolder: URL,
+        existingInbox: ImportSession?
+    ) -> ImportSession {
+        let existing = existingInbox
+        return ImportSession(
+            id: existing?.id ?? scanned.session.id,
+            sourceFolder: scanned.session.sourceFolder,
+            workspaceSourceFolder: workspaceSourceFolder,
+            startedAt: existing?.startedAt ?? scanned.session.startedAt,
+            lastUpdatedAt: Date(),
+            walkMetadata: existing?.walkMetadata ?? scanned.session.walkMetadata,
+            archiveRoot: scanned.session.archiveRoot,
+            sessionKind: .inbox,
+            status: "draft",
+            mediaItems: scanned.session.mediaItems
+        )
     }
 
     private func save(_ session: ImportSession) {
