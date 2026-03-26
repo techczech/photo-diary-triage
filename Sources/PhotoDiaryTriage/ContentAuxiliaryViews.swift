@@ -373,11 +373,47 @@ struct CompareSheet: View {
         let snapshot = state.snapshot
 
         VStack(alignment: .leading, spacing: 18) {
+            ReviewKeyInputView(
+                isFocused: !snapshot.items.isEmpty,
+                onArrow: { dx, dy, _ in
+                    appState.moveComparisonFocus(dx: dx, dy: dy)
+                },
+                onSectionArrow: { _, _ in },
+                onSectionExpandCollapse: { _ in },
+                onSingleKey: { key in
+                    appState.performReviewShortcut(key)
+                },
+                onSpace: {
+                    appState.toggleFocusedReviewItemSelection()
+                },
+                onOpen: {
+                    appState.openFocusedReviewItem()
+                },
+                onCommandOpen: {
+                    appState.openFocusedReviewItem()
+                },
+                onEscape: {
+                    onClose()
+                },
+                onSelectAll: { },
+                onDeselectAll: { },
+                onZoomIn: {
+                    zoom = min(4, zoom + 0.25)
+                },
+                onZoomOut: {
+                    zoom = max(0.25, zoom - 0.25)
+                },
+                onZoomReset: {
+                    zoom = 1
+                }
+            )
+            .frame(width: 1, height: 1)
+
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(snapshot.title)
                         .font(.title2.weight(.semibold))
-                    Text("\(snapshot.items.count) selected image(s)")
+                    Text("\(snapshot.items.count) compare image(s)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

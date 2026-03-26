@@ -202,6 +202,8 @@ import Testing
     #expect(state.compareSheetTitle == "Compare Burst")
     #expect(state.comparingMediaItemIDs == [items[0].id, items[1].id])
     #expect(state.compareGridColumnCount == 2)
+    #expect(state.selectedMediaItemIDs == [items[0].id])
+    #expect(state.focusedReviewItemID == items[0].id)
 }
 
 @MainActor
@@ -223,6 +225,37 @@ import Testing
     state.removeItemFromComparison(items[2].id)
     #expect(state.comparingMediaItemIDs.isEmpty)
     #expect(state.compareGridColumnCount == 1)
+}
+
+@MainActor
+@Test func compareArrowNavigationMovesFocusedItemWithinCompareSet() {
+    let items = makeSelectionItems(count: 4)
+    let state = makeReviewAppState(items: items)
+
+    state.openComparison(for: items.map(\.id), title: "Compare Burst")
+    state.moveComparisonFocus(dx: 1, dy: 0)
+
+    #expect(state.focusedReviewItemID == items[1].id)
+    #expect(state.selectedMediaItemIDs == [items[1].id])
+
+    state.moveComparisonFocus(dx: 0, dy: 1)
+
+    #expect(state.focusedReviewItemID == items[3].id)
+    #expect(state.selectedMediaItemIDs == [items[3].id])
+}
+
+@MainActor
+@Test func compareCloseRestoresPreviousReviewSelection() {
+    let items = makeSelectionItems(count: 4)
+    let state = makeReviewAppState(items: items)
+    state.selectMediaItems([items[2].id])
+
+    state.openComparison(for: [items[0].id, items[1].id], title: "Compare Burst")
+    state.closeComparison()
+
+    #expect(state.selectedMediaItemIDs == [items[2].id])
+    #expect(state.focusedReviewItemID == items[2].id)
+    #expect(!state.reviewGridHasFocus)
 }
 
 @MainActor
