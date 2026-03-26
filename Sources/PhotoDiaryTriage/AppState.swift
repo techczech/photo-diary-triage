@@ -746,7 +746,7 @@ final class AppState: ObservableObject {
             let standardizedFolderPath = standardizedFolder.path
             try reloadPersistedSessionsFromStore()
             statusMessage = "Scanning source folder..."
-            let scanned = try sessionManager.openSession(for: standardizedFolder, settings: settings)
+            let scanned = try await scanSourceFolder(for: standardizedFolder, settings: settings)
             let existingInbox = persistedSessions.first(where: {
                 $0.0.sessionKind == .inbox && $0.0.workspaceSourceFolder.standardizedFileURL.path == standardizedFolderPath
             })
@@ -982,7 +982,10 @@ final class AppState: ObservableObject {
     func setDefaultSourceRoot(_ sourceRoot: URL) {
         settings.defaultSourceRoot = sourceRoot
         persistSettings()
-        statusMessage = "Default SSD root set to \(sourceRoot.path)."
+        statusMessage = "Default SSD root set to \(sourceRoot.path). Loading source folder..."
+        Task {
+            await attemptAutoLoadFromDefaultSource(reason: .launch)
+        }
     }
 
     func setReviewPresentationMode(_ mode: ReviewPresentationMode) {
@@ -2005,6 +2008,13 @@ final class AppState: ObservableObject {
             status: "draft",
             mediaItems: scanned.session.mediaItems
         )
+    }
+
+    private func scanSourceFolder(for folder: URL, settings: AppSettings) async throws -> SessionOpenResult {
+        try await Task.detached(priority: .userInitiated) {
+            let sessionManager = SessionManager(scanner: FileScanner(), groupingService: GroupingService())
+            return try sessionManager.openSession(for: folder, settings: settings)
+        }.value
     }
 
     private func save(_ session: ImportSession) {
