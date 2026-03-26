@@ -541,18 +541,66 @@ struct CompareItemCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top) {
+            HStack(alignment: .center, spacing: 6) {
                 Text(metadataSummary)
                     .font(.caption.weight(.semibold))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Spacer()
+                Spacer(minLength: 0)
                 Text(item.selectionState.statusLabel)
                     .font(.caption2)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(statusBadgeColor(for: item.selectionState))
                     .clipShape(Capsule())
+
+                if appState.canMutateImportSelection {
+                    Button("S") {
+                        appState.selectMediaItems([item.id])
+                        appState.markCurrentSelectionForImport()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+                    .disabled(item.selectionState.isIncluded)
+                    .shortcutHint("S / Cmd-I", help: "Select this item for import")
+
+                    Button("X") {
+                        appState.selectMediaItems([item.id])
+                        appState.excludeCurrentSelectionFromImport()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+                    .disabled(item.selectionState.isExcluded)
+                    .shortcutHint("X / Cmd-Shift-X", help: "Exclude this item from import")
+
+                    if !item.selectionState.isUndecided {
+                        Button("D") {
+                            appState.selectMediaItems([item.id])
+                            appState.unmarkCurrentSelectionForImport()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+                        .shortcutHint("D / Cmd-Shift-I", help: "Clear this item back to undecided")
+                    }
+
+                    if !item.companionFiles.isEmpty {
+                        if item.importRawCompanions {
+                            Button("R") {
+                                appState.setImportRawCompanions(for: item, enabled: false)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.mini)
+                            .shortcutHint("R / Cmd-Option-R", help: "Toggle RAW companions for this compare item")
+                        } else {
+                            Button("R") {
+                                appState.setImportRawCompanions(for: item, enabled: true)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.mini)
+                            .shortcutHint("R / Cmd-Option-R", help: "Toggle RAW companions for this compare item")
+                        }
+                    }
+                }
 
                 Button {
                     appState.removeItemFromComparison(item.id)
@@ -594,42 +642,6 @@ struct CompareItemCard: View {
                     appState.openFocusedReviewItem()
                 }
                 .help("Open this item in preview")
-
-                if appState.canMutateImportSelection {
-                    Button("S") {
-                        appState.selectMediaItems([item.id])
-                        appState.markCurrentSelectionForImport()
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(item.selectionState.isIncluded)
-                    .shortcutHint("S / Cmd-I", help: "Select this item for import")
-
-                    Button("X") {
-                        appState.selectMediaItems([item.id])
-                        appState.excludeCurrentSelectionFromImport()
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(item.selectionState.isExcluded)
-                    .shortcutHint("X / Cmd-Shift-X", help: "Exclude this item from import")
-
-                    if !item.selectionState.isUndecided {
-                        Button("D") {
-                            appState.selectMediaItems([item.id])
-                            appState.unmarkCurrentSelectionForImport()
-                        }
-                        .buttonStyle(.bordered)
-                        .shortcutHint("D / Cmd-Shift-I", help: "Clear this item back to undecided")
-                    }
-
-                    if !item.companionFiles.isEmpty {
-                        Toggle("RAW", isOn: Binding(
-                            get: { item.importRawCompanions },
-                            set: { appState.setImportRawCompanions(for: item, enabled: $0) }
-                        ))
-                        .toggleStyle(.switch)
-                        .shortcutHint("R / Cmd-Option-R", help: "Include RAW companions for this compare item")
-                    }
-                }
 
                 Spacer(minLength: 0)
             }
