@@ -80,6 +80,7 @@ struct ReviewSnapshot: Equatable, Sendable {
     let canCollapseAllGroupedSections: Bool
     let canOpenComparison: Bool
     let canMarkSelectionForImport: Bool
+    let canMarkSelectionAsCandidate: Bool
     let canExcludeSelectionFromImport: Bool
     let canUnmarkSelectionForImport: Bool
     let canToggleRawForSelection: Bool
@@ -112,6 +113,7 @@ struct ReviewSnapshot: Equatable, Sendable {
         canCollapseAllGroupedSections: false,
         canOpenComparison: false,
         canMarkSelectionForImport: false,
+        canMarkSelectionAsCandidate: false,
         canExcludeSelectionFromImport: false,
         canUnmarkSelectionForImport: false,
         canToggleRawForSelection: false

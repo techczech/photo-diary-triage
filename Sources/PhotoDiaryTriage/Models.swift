@@ -47,6 +47,7 @@ enum LifecycleTransitionError: LocalizedError, Sendable {
 
 enum SelectionState: String, Codable, CaseIterable, Sendable {
     case undecided
+    case candidate
     case included
     case excluded
 
@@ -57,6 +58,8 @@ enum SelectionState: String, Codable, CaseIterable, Sendable {
         switch rawValue {
         case "selected", "included":
             self = .included
+        case "candidate":
+            self = .candidate
         case "skipped", "undecided":
             self = .undecided
         case "excluded":
@@ -75,6 +78,10 @@ enum SelectionState: String, Codable, CaseIterable, Sendable {
         self == .included
     }
 
+    var isCandidate: Bool {
+        self == .candidate
+    }
+
     var isExcluded: Bool {
         self == .excluded
     }
@@ -87,6 +94,8 @@ enum SelectionState: String, Codable, CaseIterable, Sendable {
         switch self {
         case .undecided:
             return "Undecided"
+        case .candidate:
+            return "Candidate"
         case .included:
             return "Included"
         case .excluded:

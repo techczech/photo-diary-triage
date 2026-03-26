@@ -580,6 +580,10 @@ final class AppState: ObservableObject {
         canMutateImportSelection && !currentSelectionMediaIDs().isEmpty
     }
 
+    var canMarkSelectionAsCandidate: Bool {
+        canMutateImportSelection && !currentSelectionMediaIDs().isEmpty
+    }
+
     var canUnmarkSelectionForImport: Bool {
         canMutateImportSelection && !currentSelectionMediaIDs().isEmpty
     }
@@ -1310,6 +1314,8 @@ final class AppState: ObservableObject {
         switch uppercased {
         case "S":
             markCurrentSelectionForImport()
+        case "C":
+            markCurrentSelectionAsCandidate()
         case "X":
             excludeCurrentSelectionFromImport()
         case "D":
@@ -1318,8 +1324,6 @@ final class AppState: ObservableObject {
             toggleRawForCurrentMediaSelection()
         case "A":
             selectAllVisibleMedia()
-        case "C":
-            openComparisonForCurrentSelection()
         default:
             break
         }
@@ -1532,6 +1536,14 @@ final class AppState: ObservableObject {
         let selectedIDs = currentSelectionMediaIDs()
         updateTriageState(for: selectedIDs, selectionState: .excluded)
         statusMessage = "Excluded \(selectedIDs.count) item(s) from import."
+        advanceAfterTriageAction(for: selectedIDs)
+    }
+
+    func markCurrentSelectionAsCandidate() {
+        guard canMutateImportSelection else { return }
+        let selectedIDs = currentSelectionMediaIDs()
+        updateTriageState(for: selectedIDs, selectionState: .candidate)
+        statusMessage = "Marked \(selectedIDs.count) item(s) as candidates."
         advanceAfterTriageAction(for: selectedIDs)
     }
 
@@ -2028,6 +2040,7 @@ final class AppState: ObservableObject {
             canCollapseAllGroupedSections: canCollapseAllGroupedSections,
             canOpenComparison: canOpenComparison,
             canMarkSelectionForImport: canMarkSelectionForImport,
+            canMarkSelectionAsCandidate: canMarkSelectionAsCandidate,
             canExcludeSelectionFromImport: canExcludeSelectionFromImport,
             canUnmarkSelectionForImport: canUnmarkSelectionForImport,
             canToggleRawForSelection: canToggleRawForSelection
@@ -2361,6 +2374,8 @@ final class AppState: ObservableObject {
             return items
         case .included:
             return items.filter { $0.selectionState.isIncluded }
+        case .candidate:
+            return items.filter { $0.selectionState.isCandidate }
         case .excluded:
             return items.filter { $0.selectionState.isExcluded }
         case .undecided:

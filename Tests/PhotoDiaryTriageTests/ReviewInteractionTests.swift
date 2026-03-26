@@ -195,6 +195,21 @@ import Testing
 }
 
 @MainActor
+@Test func candidateShortcutMarksFocusedItemAndAdvancesToNextItem() {
+    let items = makeSelectionItems(count: 3)
+    let state = makeReviewAppState(items: items)
+    state.focusReviewSurface()
+
+    state.performReviewShortcut("C")
+
+    let updatedItem = state.currentSession?.mediaItems.first(where: { $0.id == items[0].id })
+    #expect(updatedItem?.selectionState == .candidate)
+    #expect(updatedItem?.importRawCompanions == false)
+    #expect(state.focusedReviewItemID == items[1].id)
+    #expect(state.selectedMediaItemIDs == [items[1].id])
+}
+
+@MainActor
 @Test func compareRequestDeduplicatesIDsAndStoresTitle() {
     let items = makeSelectionItems(count: 3)
     let state = makeReviewAppState(items: items)
@@ -614,22 +629,26 @@ import Testing
     let base = Date(timeIntervalSince1970: 20_000)
     let items = [
         makeTestMediaItem(sourceRoot: sourceRoot, fileName: "included.jpg", capturedAt: base, selectionState: .included),
-        makeTestMediaItem(sourceRoot: sourceRoot, fileName: "excluded.jpg", capturedAt: base.addingTimeInterval(1), selectionState: .excluded),
-        makeTestMediaItem(sourceRoot: sourceRoot, fileName: "undecided.jpg", capturedAt: base.addingTimeInterval(2), selectionState: .undecided)
+        makeTestMediaItem(sourceRoot: sourceRoot, fileName: "candidate.jpg", capturedAt: base.addingTimeInterval(1), selectionState: .candidate),
+        makeTestMediaItem(sourceRoot: sourceRoot, fileName: "excluded.jpg", capturedAt: base.addingTimeInterval(2), selectionState: .excluded),
+        makeTestMediaItem(sourceRoot: sourceRoot, fileName: "undecided.jpg", capturedAt: base.addingTimeInterval(3), selectionState: .undecided)
     ]
     let state = makeReviewAppState(items: items)
 
     state.setReviewFilter(.included)
     #expect(state.visibleMediaItems.map(\.id) == [items[0].id])
 
-    state.setReviewFilter(.excluded)
+    state.setReviewFilter(.candidate)
     #expect(state.visibleMediaItems.map(\.id) == [items[1].id])
 
-    state.setReviewFilter(.undecided)
+    state.setReviewFilter(.excluded)
     #expect(state.visibleMediaItems.map(\.id) == [items[2].id])
 
+    state.setReviewFilter(.undecided)
+    #expect(state.visibleMediaItems.map(\.id) == [items[3].id])
+
     state.setReviewFilter(.all)
-    #expect(state.visibleMediaItems.count == 3)
+    #expect(state.visibleMediaItems.count == 4)
 }
 
 @MainActor
@@ -664,6 +683,39 @@ import Testing
     #expect(updatedItem?.selectionState == .excluded)
     #expect(updatedItem?.lifecycleState == .discovered)
     #expect(updatedItem?.importRawCompanions == false)
+}
+
+@MainActor
+@Test func rawTogglePromotesSelectedItemToIncluded() {
+    let sourceRoot = URL(fileURLWithPath: "/tmp/review-raw-promotion", isDirectory: true)
+    let capturedAt = Date(timeIntervalSince1970: 20_000)
+    let companion = CompanionFile(
+        sourceURL: sourceRoot.appendingPathComponent("first.cr3"),
+        relativePath: "first.cr3",
+        fileName: "first.cr3",
+        fileSizeBytes: 1,
+        kind: .raw
+    )
+    let items = [
+        makeTestMediaItem(
+            sourceRoot: sourceRoot,
+            fileName: "first.jpg",
+            capturedAt: capturedAt,
+            selectionState: .undecided,
+            importRawCompanions: false,
+            companionFiles: [companion],
+            lifecycleState: .discovered
+        )
+    ]
+    let state = makeReviewAppState(items: items)
+    state.selectMediaItems([items[0].id])
+
+    state.toggleRawForCurrentMediaSelection()
+
+    let updatedItem = state.currentSession?.mediaItems.first(where: { $0.id == items[0].id })
+    #expect(updatedItem?.selectionState == .included)
+    #expect(updatedItem?.lifecycleState == .selectedForImport)
+    #expect(updatedItem?.importRawCompanions == true)
 }
 
 @MainActor
