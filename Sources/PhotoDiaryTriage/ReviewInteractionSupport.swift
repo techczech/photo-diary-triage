@@ -47,6 +47,10 @@ struct ReviewGridMetrics: Equatable, Sendable {
     static func thumbnailHeight(for cardWidth: Double) -> Double {
         max(150, cardWidth * 0.68)
     }
+
+    static func estimatedCardHeight(for cardWidth: Double) -> Double {
+        thumbnailHeight(for: cardWidth) + 90
+    }
 }
 
 struct CompareGridMetrics: Equatable, Sendable {

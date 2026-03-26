@@ -201,10 +201,16 @@ struct ReviewPaneView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .clipped()
                 .onAppear {
-                    appState.updateReviewGridMetrics(availableWidth: proxy.size.width)
+                    appState.updateReviewGridMetrics(
+                        availableWidth: proxy.size.width,
+                        availableHeight: proxy.size.height
+                    )
                 }
-                .onChange(of: proxy.size.width) { _, width in
-                    appState.updateReviewGridMetrics(availableWidth: width)
+                .onChange(of: proxy.size) { _, size in
+                    appState.updateReviewGridMetrics(
+                        availableWidth: size.width,
+                        availableHeight: size.height
+                    )
                 }
             }
             .contentShape(Rectangle())

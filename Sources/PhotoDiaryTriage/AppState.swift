@@ -118,9 +118,11 @@ final class AppState: ObservableObject {
     private var volumeMountObserver: NSObjectProtocol?
     private var hasAttemptedInitialAutoLoad = false
     private var lastMeasuredReviewPaneWidth: Double = 0
+    private var lastMeasuredReviewPaneHeight: Double = 0
     private var reviewKeyboardTarget: ReviewKeyboardTarget = .items
     private var currentSessionUpdateKind: CurrentSessionUpdateKind = .full
     private var pendingSessionPersistenceWorkItem: DispatchWorkItem?
+    private var estimatedVisibleReviewIndexRange: ClosedRange<Int>?
     private var inlineSectionCacheGeneration: Int = 0
     private var cachedInlineDaySectionsGeneration: Int = -1
     private var cachedInlineDaySectionsNodeID: String?
@@ -747,14 +749,18 @@ final class AppState: ObservableObject {
         activateReviewGridFocus()
     }
 
-    func updateReviewGridMetrics(availableWidth: CGFloat?) {
+    func updateReviewGridMetrics(availableWidth: CGFloat?, availableHeight: CGFloat? = nil) {
         if let availableWidth, availableWidth > 0 {
             lastMeasuredReviewPaneWidth = Double(availableWidth)
+        }
+        if let availableHeight, availableHeight > 0 {
+            lastMeasuredReviewPaneHeight = Double(availableHeight)
         }
 
         let width = max(lastMeasuredReviewPaneWidth, 0)
         let metrics = ReviewGridMetrics(availableWidth: width, requestedColumnCount: settings.reviewGridColumnCount)
         reviewGridColumnCount = reviewPresentationMode == .grid ? metrics.columnCount : 1
+        updateEstimatedVisibleReviewRange(around: focusedReviewItemID)
     }
 
     func toggleDetailsInspector() {
@@ -1324,13 +1330,14 @@ final class AppState: ObservableObject {
         if state.activePane == .media,
            state.reviewGridHasFocus,
            focusedReviewItemID != previousFocusedReviewItemID {
-            pendingReviewScrollTargetID = focusedReviewItemID
+            requestReviewScrollIfNeeded(to: focusedReviewItemID)
         }
     }
 
     private func resetInlineExpansionState() {
         expandedInlineSectionIDs = Set(inlineSectionOrganizer.flattenSectionIDs(from: organizedInlineSections))
         pendingInlineSectionScrollTargetID = nil
+        estimatedVisibleReviewIndexRange = nil
 
         if dayDetailDisplayMode == .sections {
             ensureFocusedInlineSection()
@@ -1636,6 +1643,7 @@ final class AppState: ObservableObject {
         pendingInlineSectionScrollTargetID = nil
         pendingInlineSectionScrollRevision = 0
         pendingReviewScrollTargetID = nil
+        estimatedVisibleReviewIndexRange = nil
     }
 
     private func invalidateOrganizedInlineSectionCache() {
@@ -1698,6 +1706,69 @@ final class AppState: ObservableObject {
         }
     }
 
+    private func requestReviewScrollIfNeeded(to itemID: UUID?) {
+        guard let itemID,
+              let targetIndex = reviewInteractionItems.firstIndex(where: { $0.id == itemID }) else {
+            pendingReviewScrollTargetID = nil
+            estimatedVisibleReviewIndexRange = nil
+            return
+        }
+
+        if reviewPresentationMode != .grid {
+            pendingReviewScrollTargetID = itemID
+            updateEstimatedVisibleReviewRange(around: itemID)
+            return
+        }
+
+        if estimatedVisibleReviewIndexRange == nil {
+            updateEstimatedVisibleReviewRange(around: itemID)
+            pendingReviewScrollTargetID = nil
+            return
+        }
+
+        if let estimatedVisibleReviewIndexRange,
+           estimatedVisibleReviewIndexRange.contains(targetIndex) {
+            pendingReviewScrollTargetID = nil
+            return
+        }
+
+        pendingReviewScrollTargetID = itemID
+        updateEstimatedVisibleReviewRange(around: itemID)
+    }
+
+    private func updateEstimatedVisibleReviewRange(around itemID: UUID?) {
+        guard let itemID,
+              let targetIndex = reviewInteractionItems.firstIndex(where: { $0.id == itemID }),
+              !reviewInteractionItems.isEmpty else {
+            estimatedVisibleReviewIndexRange = nil
+            return
+        }
+
+        let pageCapacity = estimatedVisibleReviewPageCapacity()
+        let centeredOffset = max(pageCapacity / 2, 0)
+        var lowerBound = max(0, targetIndex - centeredOffset)
+        let upperBound = min(reviewInteractionItems.count - 1, lowerBound + pageCapacity - 1)
+
+        if upperBound - lowerBound + 1 < pageCapacity {
+            lowerBound = max(0, upperBound - pageCapacity + 1)
+        }
+
+        estimatedVisibleReviewIndexRange = lowerBound...upperBound
+    }
+
+    private func estimatedVisibleReviewPageCapacity() -> Int {
+        let columns = max(reviewGridColumnCount, 1)
+        if reviewPresentationMode != .grid {
+            return max(1, columns)
+        }
+
+        let cardHeight = ReviewGridMetrics.estimatedCardHeight(for: reviewGridCardWidth)
+        let usableHeight = max(lastMeasuredReviewPaneHeight - (ReviewGridMetrics.gridPadding * 2), cardHeight)
+        let rowStride = max(cardHeight + ReviewGridMetrics.gridSpacing, 1)
+        let rows = max(1, Int(floor((usableHeight + ReviewGridMetrics.gridSpacing) / rowStride)))
+        return max(1, rows * columns)
+    }
+
     private func syncFocusedInlineSectionToFocusedItem() {
         guard dayDetailDisplayMode == .sections,
               let focusedReviewItemID,
@@ -1740,7 +1811,7 @@ final class AppState: ObservableObject {
         selectedMediaItemIDs = [targetID]
         focusedReviewItemID = targetID
         reviewSelectionAnchorID = targetID
-        pendingReviewScrollTargetID = targetID
+        requestReviewScrollIfNeeded(to: targetID)
     }
 
     private func focusSidebarFirstResponder() {
