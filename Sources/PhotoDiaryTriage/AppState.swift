@@ -97,6 +97,7 @@ final class AppState: ObservableObject {
     private let logger = AppLogger.appState
     private let thumbnailScheduler = ThumbnailScheduler()
     private let thumbnailImageCache = NSCache<NSURL, NSImage>()
+    private var thumbnailDecodeTasks: [String: Task<Void, Never>] = [:]
     private var cachedBrowserRoots: [BrowserNode] = []
     private var cachedBrowserNodeMap: [String: BrowserNode] = [:]
     private var sessionMediaByID: [UUID: MediaItem] = [:]
@@ -600,20 +601,22 @@ final class AppState: ObservableObject {
             return nil
         }
 
-        guard fileManager.fileExists(atPath: imageURL.path),
-              let image = NSImage(contentsOf: imageURL) else {
+        guard fileManager.fileExists(atPath: imageURL.path) else {
             missingThumbnailPaths.insert(imageURL.path)
             return nil
         }
 
-        missingThumbnailPaths.remove(imageURL.path)
-        thumbnailImageCache.setObject(image, forKey: url)
-        return image
+        decodeThumbnailIfNeeded(from: imageURL)
+        return nil
     }
 
     func requestThumbnail(for item: MediaItem) {
         let imageURL = thumbnailURL(for: item)
-        if thumbnailImageCache.object(forKey: imageURL as NSURL) != nil || fileManager.fileExists(atPath: imageURL.path) {
+        if thumbnailImageCache.object(forKey: imageURL as NSURL) != nil {
+            return
+        }
+        if fileManager.fileExists(atPath: imageURL.path) {
+            decodeThumbnailIfNeeded(from: imageURL)
             return
         }
         enqueueThumbnailRequests([item], priority: .visible)
@@ -1527,6 +1530,8 @@ final class AppState: ObservableObject {
             if let item = sessionMediaByID[itemID] {
                 missingThumbnailPaths.remove(thumbnailURL(for: item).path)
                 thumbnailImageCache.removeObject(forKey: thumbnailURL(for: item) as NSURL)
+                await DecodedImagePipeline.shared.removeCachedImage(for: Self.thumbnailDecodeCacheKey(for: thumbnailURL(for: item)))
+                decodeThumbnailIfNeeded(from: thumbnailURL(for: item))
             }
         } else {
             thumbnailFailures.insert(itemID)
@@ -1562,6 +1567,8 @@ final class AppState: ObservableObject {
         guard let currentSession else {
             sessionMediaByID = [:]
             archivePreviewByMediaItemID = [:]
+            thumbnailDecodeTasks.values.forEach { $0.cancel() }
+            thumbnailDecodeTasks.removeAll()
             missingThumbnailPaths.removeAll()
             thumbnailImageCache.removeAllObjects()
             return
@@ -1574,6 +1581,8 @@ final class AppState: ObservableObject {
             previews[entry.mediaItemID, default: []].append(entry.destinationURL.path)
         }
         archivePreviewByMediaItemID = previews.mapValues { $0.joined(separator: "\n") }
+        thumbnailDecodeTasks.values.forEach { $0.cancel() }
+        thumbnailDecodeTasks.removeAll()
         missingThumbnailPaths.removeAll()
         thumbnailImageCache.removeAllObjects()
     }
@@ -1843,6 +1852,37 @@ final class AppState: ObservableObject {
             return String(format: "%.0fm", minutes)
         }
         return String(format: "%.1fm", minutes)
+    }
+
+    private static func thumbnailDecodeCacheKey(for imageURL: URL) -> String {
+        "thumbnail:\(imageURL.path)"
+    }
+
+    private func decodeThumbnailIfNeeded(from imageURL: URL) {
+        let path = imageURL.path
+        guard thumbnailDecodeTasks[path] == nil else { return }
+
+        thumbnailDecodeTasks[path] = Task { [weak self] in
+            guard let self else { return }
+            let decoded = await DecodedImagePipeline.shared.image(
+                at: imageURL,
+                cacheKey: Self.thumbnailDecodeCacheKey(for: imageURL),
+                priority: .utility
+            )
+            guard !Task.isCancelled else { return }
+            self.finishThumbnailDecode(image: decoded, imageURL: imageURL)
+        }
+    }
+
+    private func finishThumbnailDecode(image: NSImage?, imageURL: URL) {
+        thumbnailDecodeTasks[imageURL.path] = nil
+        if let image {
+            missingThumbnailPaths.remove(imageURL.path)
+            thumbnailImageCache.setObject(image, forKey: imageURL as NSURL)
+            objectWillChange.send()
+        } else {
+            missingThumbnailPaths.insert(imageURL.path)
+        }
     }
 
     private func startVolumeMonitoring() {

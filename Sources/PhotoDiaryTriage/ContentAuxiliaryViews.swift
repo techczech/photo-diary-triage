@@ -531,7 +531,7 @@ struct CompareItemCard: View {
                 .help("Remove this item from compare")
             }
 
-            LockedCompareImageCanvas(
+            LoadedLockedCompareImageCanvas(
                 imageURL: item.sourceURL,
                 zoom: zoom,
                 synchronizedViewport: $synchronizedViewport,
@@ -664,10 +664,11 @@ struct ZoomToolbar: View {
 struct ZoomableImageCanvas: View {
     let imageURL: URL
     let zoom: CGFloat
+    @StateObject private var imageModel = DecodedImageModel()
 
     var body: some View {
         GeometryReader { proxy in
-            if let image = NSImage(contentsOf: imageURL) {
+            if let image = imageModel.image {
                 let imageSize = image.size
                 let fitScale = min(
                     proxy.size.width / max(imageSize.width, 1),
@@ -688,14 +689,45 @@ struct ZoomableImageCanvas: View {
             } else {
                 Rectangle()
                     .fill(.quaternary)
-                    .overlay(Text("Unable to load full photo"))
+                    .overlay(ProgressView())
             }
+        }
+        .task(id: imageURL) {
+            imageModel.load(.fullSize(imageURL))
+        }
+    }
+}
+
+struct LoadedLockedCompareImageCanvas: View {
+    let imageURL: URL
+    let zoom: CGFloat
+    @Binding var synchronizedViewport: CompareViewport
+    let isPanLocked: Bool
+    @StateObject private var imageModel = DecodedImageModel()
+
+    var body: some View {
+        Group {
+            if let image = imageModel.image {
+                LockedCompareImageCanvas(
+                    image: image,
+                    zoom: zoom,
+                    synchronizedViewport: $synchronizedViewport,
+                    isPanLocked: isPanLocked
+                )
+            } else {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(.quaternary)
+                    .overlay(ProgressView())
+            }
+        }
+        .task(id: imageURL) {
+            imageModel.load(.fullSize(imageURL))
         }
     }
 }
 
 struct LockedCompareImageCanvas: NSViewRepresentable {
-    let imageURL: URL
+    let image: NSImage
     let zoom: CGFloat
     @Binding var synchronizedViewport: CompareViewport
     let isPanLocked: Bool
@@ -712,7 +744,7 @@ struct LockedCompareImageCanvas: NSViewRepresentable {
 
     func updateNSView(_ nsView: LockedCompareCanvasView, context: Context) {
         context.coordinator.parent = self
-        nsView.updateImage(imageURL: imageURL, zoom: zoom)
+        nsView.updateImage(image: image, zoom: zoom)
         context.coordinator.applySynchronizedViewportIfNeeded()
     }
 
@@ -774,7 +806,7 @@ struct LockedCompareImageCanvas: NSViewRepresentable {
 
 final class LockedCompareCanvasView: NSScrollView {
     private let imageView = NSImageView()
-    private var currentImageURL: URL?
+    private weak var currentImage: NSImage?
     private var currentImageSize: CGSize = .zero
     private var currentZoom: CGFloat = 1
 
@@ -800,12 +832,11 @@ final class LockedCompareCanvasView: NSScrollView {
         updateImageLayout()
     }
 
-    func updateImage(imageURL: URL, zoom: CGFloat) {
-        if currentImageURL != imageURL {
-            currentImageURL = imageURL
-            let image = NSImage(contentsOf: imageURL)
+    func updateImage(image: NSImage, zoom: CGFloat) {
+        if currentImage !== image {
+            currentImage = image
             imageView.image = image
-            currentImageSize = image?.size ?? .zero
+            currentImageSize = image.size
         }
         currentZoom = zoom
         updateImageLayout()

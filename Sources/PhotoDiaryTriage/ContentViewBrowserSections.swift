@@ -95,9 +95,7 @@ struct InlineDaySectionsPaneView: View {
                 .onChange(of: appState.pendingInlineScrollTargetID) { _, targetID in
                     guard let targetID else { return }
                     DispatchQueue.main.async {
-                        withAnimation {
-                            proxy.scrollTo(targetID, anchor: .center)
-                        }
+                        proxy.scrollTo(targetID, anchor: .center)
                         appState.pendingInlineScrollTargetID = nil
                     }
                 }
@@ -381,9 +379,7 @@ struct ReviewPaneView: View {
             .onChange(of: appState.pendingReviewScrollTargetID) { _, targetID in
                 guard let targetID else { return }
                 DispatchQueue.main.async {
-                    withAnimation {
-                        proxy.scrollTo(targetID, anchor: .center)
-                    }
+                    proxy.scrollTo(targetID, anchor: .center)
                     appState.pendingReviewScrollTargetID = nil
                 }
             }
@@ -416,18 +412,14 @@ struct ReviewPaneView: View {
             .onChange(of: appState.pendingInlineScrollTargetID) { _, targetID in
                 guard let targetID else { return }
                 DispatchQueue.main.async {
-                    withAnimation {
-                        proxy.scrollTo(targetID, anchor: .center)
-                    }
+                    proxy.scrollTo(targetID, anchor: .center)
                     appState.pendingInlineScrollTargetID = nil
                 }
             }
             .onChange(of: appState.pendingReviewScrollTargetID) { _, targetID in
                 guard let targetID else { return }
                 DispatchQueue.main.async {
-                    withAnimation {
-                        proxy.scrollTo(targetID, anchor: .center)
-                    }
+                    proxy.scrollTo(targetID, anchor: .center)
                     appState.pendingReviewScrollTargetID = nil
                 }
             }
@@ -618,18 +610,14 @@ struct ReviewPaneView: View {
             .onChange(of: appState.pendingInlineScrollTargetID) { _, targetID in
                 guard let targetID else { return }
                 DispatchQueue.main.async {
-                    withAnimation {
-                        proxy.scrollTo(targetID, anchor: .center)
-                    }
+                    proxy.scrollTo(targetID, anchor: .center)
                     appState.pendingInlineScrollTargetID = nil
                 }
             }
             .onChange(of: appState.pendingReviewScrollTargetID) { _, targetID in
                 guard let targetID else { return }
                 DispatchQueue.main.async {
-                    withAnimation {
-                        proxy.scrollTo(targetID, anchor: .center)
-                    }
+                    proxy.scrollTo(targetID, anchor: .center)
                     appState.pendingReviewScrollTargetID = nil
                 }
             }
