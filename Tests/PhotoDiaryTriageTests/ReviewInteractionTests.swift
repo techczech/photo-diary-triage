@@ -67,6 +67,59 @@ import Testing
     #expect(abs(fallback.displayAspectRatio - (4.0 / 3.0)) < 0.0001)
 }
 
+@Test func mediaItemCompactDisplayNameUsesTrailingDigitsWhenPresent() {
+    let numbered = MediaItem(
+        sourceURL: URL(fileURLWithPath: "/tmp/IMG_0042.JPG"),
+        relativePath: "100CANON/IMG_0042.JPG",
+        fileName: "IMG_0042.JPG",
+        baseName: "IMG_0042",
+        mediaKind: .jpeg,
+        fileSizeBytes: 1,
+        capturedAt: nil,
+        metadata: MediaMetadata(capturedAt: nil, pixelWidth: nil, pixelHeight: nil, cameraModel: nil, lensModel: nil, latitude: nil, longitude: nil, raw: [:]),
+        thumbnailCacheKey: "img42"
+    )
+    let fallback = MediaItem(
+        sourceURL: URL(fileURLWithPath: "/tmp/BRIDGE.JPG"),
+        relativePath: "BRIDGE.JPG",
+        fileName: "BRIDGE.JPG",
+        baseName: "BRIDGE",
+        mediaKind: .jpeg,
+        fileSizeBytes: 1,
+        capturedAt: nil,
+        metadata: MediaMetadata(capturedAt: nil, pixelWidth: nil, pixelHeight: nil, cameraModel: nil, lensModel: nil, latitude: nil, longitude: nil, raw: [:]),
+        thumbnailCacheKey: "bridge"
+    )
+
+    #expect(numbered.compactDisplayName == "0042")
+    #expect(fallback.compactDisplayName == "BRIDGE")
+}
+
+@Test func mediaItemCompactCapturedAtLabelUsesShortReviewTimestamp() {
+    var components = DateComponents()
+    components.year = 2026
+    components.month = 3
+    components.day = 26
+    components.hour = 8
+    components.minute = 4
+    components.timeZone = TimeZone(secondsFromGMT: 0)
+    let date = Calendar(identifier: .gregorian).date(from: components)!
+
+    let item = MediaItem(
+        sourceURL: URL(fileURLWithPath: "/tmp/a.jpg"),
+        relativePath: "a.jpg",
+        fileName: "a.jpg",
+        baseName: "a",
+        mediaKind: .jpeg,
+        fileSizeBytes: 1,
+        capturedAt: date,
+        metadata: MediaMetadata(capturedAt: date, pixelWidth: nil, pixelHeight: nil, cameraModel: nil, lensModel: nil, latitude: nil, longitude: nil, raw: [:]),
+        thumbnailCacheKey: "a"
+    )
+
+    #expect(item.compactCapturedAtLabel == "26 Mar 08:04")
+}
+
 @Test func compareViewportRoundTripsNormalizedAndContentOrigins() {
     let contentSize = CGSize(width: 2_000, height: 1_500)
     let viewportSize = CGSize(width: 800, height: 600)

@@ -60,6 +60,14 @@ enum DateFormatting {
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter
     }()
+
+    static let reviewCardTimestamp: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_GB_POSIX")
+        formatter.dateFormat = "dd MMM HH:mm"
+        return formatter
+    }()
 }
 
 enum ArchiveLibraryInspector {
