@@ -62,7 +62,7 @@ final class SessionStore: SessionPersisting {
 
     func loadSessions() throws -> [(ImportSession, [BurstGroup], [TimeCluster])] {
         let sql = """
-        SELECT session_json, burst_groups_json, time_clusters_json
+        SELECT rowid, session_json, burst_groups_json, time_clusters_json
         FROM import_sessions
         ORDER BY updated_at DESC;
         """
@@ -74,17 +74,25 @@ final class SessionStore: SessionPersisting {
         var result: [(ImportSession, [BurstGroup], [TimeCluster])] = []
 
         while sqlite3_step(statement) == SQLITE_ROW {
-            guard let sessionBytes = sqlite3_column_blob(statement, 0) else { continue }
-            let sessionLength = Int(sqlite3_column_bytes(statement, 0))
-            let sessionData = Data(bytes: sessionBytes, count: sessionLength)
-            let session = try decoder.decode(ImportSession.self, from: sessionData)
+            let rowID = sqlite3_column_int64(statement, 0)
+            do {
+                guard let sessionBytes = sqlite3_column_blob(statement, 1) else {
+                    throw NSError(domain: "SessionStore", code: 2, userInfo: [NSLocalizedDescriptionKey: "Missing session blob"])
+                }
+                let sessionLength = Int(sqlite3_column_bytes(statement, 1))
+                let sessionData = Data(bytes: sessionBytes, count: sessionLength)
+                let session = try decoder.decode(ImportSession.self, from: sessionData)
 
-            let burstData = blobData(statement: statement, column: 1)
-            let clusterData = blobData(statement: statement, column: 2)
+                let burstData = blobData(statement: statement, column: 2)
+                let clusterData = blobData(statement: statement, column: 3)
 
-            let bursts = try decoder.decode([BurstGroup].self, from: burstData)
-            let clusters = try decoder.decode([TimeCluster].self, from: clusterData)
-            result.append((session, bursts, clusters))
+                let bursts = try decoder.decode([BurstGroup].self, from: burstData)
+                let clusters = try decoder.decode([TimeCluster].self, from: clusterData)
+                result.append((session, bursts, clusters))
+            } catch {
+                logger.error("Skipping corrupt persisted session row \(rowID, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                continue
+            }
         }
 
         logger.debug("Loaded \(result.count) persisted sessions from SQLite")

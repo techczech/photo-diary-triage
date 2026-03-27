@@ -1,0 +1,25 @@
+# PDT-2026-03-27-037 Photo Log Workflow Reset
+
+- Item ID: `PDT-2026-03-27-037`
+- Title: `Photo log workflow reset`
+- User request summary: `Plan a much clearer photo-log workflow because the current saved-walk behavior is confusing, can appear to lose work, duplicates creation entrypoints, hides owned photos from folder views, and lacks basic management actions like edit or delete.`
+- Constraints:
+  - Preserve existing session data and recoverability; do not strand current saved work.
+  - Keep keyboard-first triage and source-inbox ownership rules.
+  - The next implementation should reduce ambiguity, not add more modes.
+- Implementation intent:
+  - Consolidate “saved walk draft” and “photo log” terminology into one user-facing concept.
+  - Replace duplicated creation entrypoints with one explicit creation flow that states the selected item count and resulting behavior before it commits.
+  - Add first-class management for existing photo logs: resume, rename/edit metadata, inspect contents, delete, and reveal owned photos.
+  - Make inbox and folder visibility rules understandable so users can tell when photos are hidden because they belong to a photo log.
+- Test conditions:
+  - The design defines one canonical create flow and one canonical management surface.
+  - Existing saved work remains discoverable after the workflow rename/migration.
+  - Users can distinguish inbox photos, log-owned photos, and archived photos without guessing.
+- Success criteria:
+  - Creating a photo log from a multi-photo selection feels explicit and safe.
+  - Users can see, resume, edit, or delete photo logs without losing track of where photos went.
+  - The folder view no longer makes claimed photos seem to disappear without explanation.
+- Current status: `awaiting_user_review`
+- Target release version: `0.1.75`
+- Target feature slug: `photo-log-workflow-reset`

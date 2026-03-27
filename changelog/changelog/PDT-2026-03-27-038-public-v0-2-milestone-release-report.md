@@ -1,0 +1,28 @@
+# PDT-2026-03-27-038 Public v0.2 Milestone Release Report
+
+- Item ID: `PDT-2026-03-27-038`
+- Summary of what changed:
+  - Prepared the project for public release as `v0.2.0`.
+  - Added a public `README.md` that explains the app’s purpose, workflow, current functionality, and milestone status.
+  - Added an MIT `LICENSE`.
+  - Updated release metadata in `APP_RELEASE.env` for the public milestone.
+  - Created the public GitHub repository `https://github.com/techczech/photo-diary-triage`.
+  - Marked this checkpoint as a key milestone: the project is now public at the point where creating and managing one useful record quickly became viable, and the next phase can focus on adding features on top of that baseline.
+- Files changed:
+  - `APP_RELEASE.env`
+  - `README.md`
+  - `LICENSE`
+  - `changelog/backlog/PDT-2026-03-27-038-public-v0-2-milestone-release.md`
+  - `changelog/changelog/PDT-2026-03-27-038-public-v0-2-milestone-release-report.md`
+  - `changelog/backlog.jsonl`
+  - `changelog/changelog.jsonl`
+  - plus the current app and test changes included in the `v0.2.0` milestone snapshot
+- Verification performed:
+  - `swift test`
+  - `gh repo create techczech/photo-diary-triage --public --source=. --remote=origin --description "Local-first macOS app for triaging photos on an SSD and selectively importing keepers into an archive"`
+- Known gaps or follow-up items:
+  - This is a milestone release, not a feature-complete product release.
+  - The app is still primarily run from source in the current repo workflow; packaged `.app` distribution work is still ahead.
+  - The next iteration is expected to add features on top of this now-public baseline.
+- Shipped release version: `0.2.0`
+- Shipped feature slug: `public-v0-2-milestone`

@@ -42,6 +42,7 @@ import Testing
     let decoded = try decoder.decode(ImportSession.self, from: Data(json.utf8))
 
     #expect(decoded.sessionKind == .inbox)
+    #expect(decoded.sessionKindWasExplicit == false)
     #expect(decoded.workspaceSourceFolder.path == "/Volumes/EOS_DIGITAL/DCIM")
 }
 

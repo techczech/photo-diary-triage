@@ -16,10 +16,11 @@ import Testing
 }
 
 @Test func compareGridDefaultColumnCountMatchesCompareExpectations() {
+    #expect(CompareGridMetrics.defaultColumnCount(for: 1) == 1)
     #expect(CompareGridMetrics.defaultColumnCount(for: 2) == 2)
-    #expect(CompareGridMetrics.defaultColumnCount(for: 3) == 3)
-    #expect(CompareGridMetrics.defaultColumnCount(for: 4) == 4)
-    #expect(CompareGridMetrics.defaultColumnCount(for: 8) == 4)
+    #expect(CompareGridMetrics.defaultColumnCount(for: 3) == 2)
+    #expect(CompareGridMetrics.defaultColumnCount(for: 4) == 2)
+    #expect(CompareGridMetrics.defaultColumnCount(for: 8) == 2)
 }
 
 @Test func compareGridMetricsUseRequestedColumnsAndClampToItemCount() {
@@ -138,6 +139,22 @@ import Testing
     #expect(abs(roundTrip.y - origin.y) < 0.001)
 }
 
+@Test func compareViewportNudgeClampsWithinBounds() {
+    let viewport = CompareViewport(x: 0.95, y: 0.08)
+    let nudged = viewport.nudged(dx: 1, dy: -1, step: 0.12)
+
+    #expect(nudged.x == 1)
+    #expect(nudged.y == 0)
+}
+
+@Test func compareKeyboardPanDirectionMapsVimKeys() {
+    #expect(CompareKeyboardPanDirection(key: "h") == .left)
+    #expect(CompareKeyboardPanDirection(key: "j") == .down)
+    #expect(CompareKeyboardPanDirection(key: "k") == .up)
+    #expect(CompareKeyboardPanDirection(key: "l") == .right)
+    #expect(CompareKeyboardPanDirection(key: "q") == nil)
+}
+
 @Test func reviewGridClickContextTracksModifiersAndDoubleClick() {
     let shiftDoubleClick = ReviewGridClickContext(modifiers: [.shift], clickCount: 2)
     let commandClick = ReviewGridClickContext(modifiers: [.command], clickCount: 1)
@@ -245,6 +262,18 @@ import Testing
 }
 
 @MainActor
+@Test func compareResetColumnsReturnsToTwoColumnDefault() {
+    let items = makeSelectionItems(count: 4)
+    let state = makeReviewAppState(items: items)
+
+    state.openComparison(for: items.map(\.id), title: "Compare Burst")
+    state.setCompareGridColumnCount(4)
+    state.resetCompareGridColumnCount()
+
+    #expect(state.compareGridColumnCount == 2)
+}
+
+@MainActor
 @Test func compareArrowNavigationMovesFocusedItemWithinCompareSet() {
     let items = makeSelectionItems(count: 4)
     let state = makeReviewAppState(items: items)
@@ -254,11 +283,13 @@ import Testing
 
     #expect(state.focusedReviewItemID == items[1].id)
     #expect(state.selectedMediaItemIDs == [items[1].id])
+    #expect(state.compareState.snapshot.preferredScrollTargetID == items[1].id)
 
     state.moveComparisonFocus(dx: 0, dy: 1)
 
     #expect(state.focusedReviewItemID == items[3].id)
     #expect(state.selectedMediaItemIDs == [items[3].id])
+    #expect(state.compareState.snapshot.preferredScrollTargetID == items[3].id)
 }
 
 @MainActor
@@ -273,6 +304,56 @@ import Testing
     #expect(state.selectedMediaItemIDs == [items[2].id])
     #expect(state.focusedReviewItemID == items[2].id)
     #expect(!state.reviewGridHasFocus)
+}
+
+@MainActor
+@Test func compareShortcutQRemovesFocusedItemAndKeepsNextFocused() {
+    let items = makeSelectionItems(count: 3)
+    let state = makeReviewAppState(items: items)
+
+    state.openComparison(for: items.map(\.id), title: "Compare Burst")
+    state.performCompareShortcut("Q")
+
+    #expect(state.comparingMediaItemIDs == [items[1].id, items[2].id])
+    #expect(state.focusedReviewItemID == items[1].id)
+    #expect(state.selectedMediaItemIDs == [items[1].id])
+    #expect(state.compareState.snapshot.preferredScrollTargetID == items[1].id)
+}
+
+@MainActor
+@Test func compareExcludeRemovesItemFromCompareAndAdvancesFocus() {
+    let items = makeSelectionItems(count: 3)
+    let state = makeReviewAppState(items: items)
+
+    state.openComparison(for: items.map(\.id), title: "Compare Burst")
+    state.performCompareShortcut("X")
+
+    #expect(state.currentSession?.mediaItems.first(where: { $0.id == items[0].id })?.selectionState == .excluded)
+    #expect(state.comparingMediaItemIDs == [items[1].id, items[2].id])
+    #expect(state.focusedReviewItemID == items[1].id)
+    #expect(state.selectedMediaItemIDs == [items[1].id])
+    #expect(state.compareState.snapshot.preferredScrollTargetID == items[1].id)
+}
+
+@MainActor
+@Test func compareIncludeAndCandidateKeepItemsInCompareAndAdvanceFocus() {
+    let items = makeSelectionItems(count: 3)
+    let state = makeReviewAppState(items: items)
+
+    state.openComparison(for: items.map(\.id), title: "Compare Burst")
+    state.performCompareShortcut("S")
+
+    #expect(state.currentSession?.mediaItems.first(where: { $0.id == items[0].id })?.selectionState == .included)
+    #expect(state.comparingMediaItemIDs == items.map(\.id))
+    #expect(state.focusedReviewItemID == items[1].id)
+    #expect(state.compareState.snapshot.preferredScrollTargetID == items[1].id)
+
+    state.performCompareShortcut("C")
+
+    #expect(state.currentSession?.mediaItems.first(where: { $0.id == items[1].id })?.selectionState == .candidate)
+    #expect(state.comparingMediaItemIDs == items.map(\.id))
+    #expect(state.focusedReviewItemID == items[2].id)
+    #expect(state.compareState.snapshot.preferredScrollTargetID == items[2].id)
 }
 
 @MainActor
@@ -732,7 +813,8 @@ import Testing
         makeTestMediaItem(
             sourceRoot: root,
             fileName: fileName,
-            capturedAt: base.addingTimeInterval(Double(index))
+            capturedAt: base.addingTimeInterval(Double(index)),
+            selectionState: index < 2 ? .included : .undecided
         )
     }
     state.currentSession = makeTestSession(
@@ -743,14 +825,18 @@ import Testing
         workspaceSourceFolder: root,
         sessionKind: .inbox
     )
-    state.selectMediaItems([items[0].id, items[1].id])
+    if let leafID = state.browserNodeMap.values.first(where: { ($0.children?.isEmpty ?? true) && $0.mediaItemIDs.count == items.count })?.id {
+        state.selectedSidebarNodeID = leafID
+    }
+    state.activePane = .media
 
-    state.createWalkDraftFromCurrentSelection()
+    state.presentPhotoLogCreation()
+    state.createPhotoLog(openAfterCreate: true)
 
     #expect(state.currentSession?.sessionKind == .walkDraft)
     #expect(state.currentSession?.mediaItems.map(\.id) == [items[0].id, items[1].id])
-    #expect(state.sidebarState.snapshot.savedWalkGroups.count == 1)
-    #expect(state.sidebarState.snapshot.savedWalkGroups.first?.drafts.count == 1)
+    #expect(state.sidebarState.snapshot.photoLogGroups.count == 1)
+    #expect(state.sidebarState.snapshot.photoLogGroups.first?.logs.count == 1)
 
     await state.openSession(for: root)
 
@@ -772,7 +858,8 @@ import Testing
         makeTestMediaItem(
             sourceRoot: root,
             fileName: fileName,
-            capturedAt: base.addingTimeInterval(Double(index))
+            capturedAt: base.addingTimeInterval(Double(index)),
+            selectionState: index < 2 ? .included : .undecided
         )
     }
     state.currentSession = makeTestSession(
@@ -783,9 +870,13 @@ import Testing
         workspaceSourceFolder: root,
         sessionKind: .inbox
     )
-    state.selectMediaItems([items[0].id, items[1].id])
+    if let leafID = state.browserNodeMap.values.first(where: { ($0.children?.isEmpty ?? true) && $0.mediaItemIDs.count == items.count })?.id {
+        state.selectedSidebarNodeID = leafID
+    }
+    state.activePane = .media
 
-    state.createWalkDraftFromCurrentSelection()
+    state.presentPhotoLogCreation()
+    state.createPhotoLog(openAfterCreate: true)
     let draftID = try #require(state.currentSession?.id)
 
     await state.openSession(for: root)
@@ -814,6 +905,108 @@ import Testing
 
     #expect(state.selectedMediaItemIDs.isEmpty)
     #expect(state.focusedReviewItemID == items[0].id)
+}
+
+@MainActor
+@Test func staleSourceLoadDoesNotOverrideSavedWalkResume() async throws {
+    let state = AppState(testing: true)
+    let root = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let base = Date(timeIntervalSince1970: 40_000)
+    let fileNames = ["0.jpg", "1.jpg", "2.jpg"]
+    for fileName in fileNames {
+        try writeTestFile(root.appendingPathComponent(fileName), contents: fileName)
+    }
+
+    let items = fileNames.enumerated().map { index, fileName in
+        makeTestMediaItem(
+            sourceRoot: root,
+            fileName: fileName,
+            capturedAt: base.addingTimeInterval(Double(index)),
+            selectionState: index < 2 ? .included : .undecided
+        )
+    }
+
+    state.currentSession = makeTestSession(
+        sourceRoot: root,
+        archiveRoot: root.appendingPathComponent("archive", isDirectory: true),
+        items: items,
+        title: "Delayed Scan Walk",
+        workspaceSourceFolder: root,
+        sessionKind: .inbox
+    )
+    if let leafID = state.browserNodeMap.values.first(where: { ($0.children?.isEmpty ?? true) && $0.mediaItemIDs.count == items.count })?.id {
+        state.selectedSidebarNodeID = leafID
+    }
+    state.activePane = .media
+
+    state.presentPhotoLogCreation()
+    state.createPhotoLog(openAfterCreate: true)
+    let draftID = try #require(state.currentSession?.id)
+
+    let blockedResult = SessionOpenResult(
+        session: makeTestSession(
+            sourceRoot: root,
+            archiveRoot: root.appendingPathComponent("archive", isDirectory: true),
+            items: items,
+            workspaceSourceFolder: root,
+            sessionKind: .inbox
+        ),
+        bursts: [],
+        clusters: []
+    )
+
+    let gate = SourceScanGate()
+    state.testingSourceScanHandler = { _, _ in
+        await gate.markStarted()
+        await gate.waitUntilReleased()
+        return blockedResult
+    }
+
+    state.loadSourceWorkspace(folder: root, origin: .savedWalkInbox)
+    await gate.waitUntilStarted()
+
+    state.openSavedWalk(draftID)
+    await gate.release()
+    try await Task.sleep(for: .milliseconds(50))
+
+    #expect(state.currentSession?.id == draftID)
+    #expect(state.currentSession?.sessionKind == .walkDraft)
+    #expect(state.currentSession?.walkMetadata.title == "Delayed Scan Walk")
+}
+
+private actor SourceScanGate {
+    private var started = false
+    private var released = false
+    private var startedContinuation: CheckedContinuation<Void, Never>?
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+
+    func markStarted() {
+        started = true
+        startedContinuation?.resume()
+        startedContinuation = nil
+    }
+
+    func waitUntilStarted() async {
+        guard started == false else { return }
+        await withCheckedContinuation { continuation in
+            startedContinuation = continuation
+        }
+    }
+
+    func release() {
+        released = true
+        releaseContinuation?.resume()
+        releaseContinuation = nil
+    }
+
+    func waitUntilReleased() async {
+        guard released == false else { return }
+        await withCheckedContinuation { continuation in
+            releaseContinuation = continuation
+        }
+    }
 }
 
 @MainActor

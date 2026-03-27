@@ -37,6 +37,13 @@ final class AppState: ObservableObject {
             refreshAllUIState()
         }
     }
+    @Published var sourceWorkspaceState: SourceWorkspaceState = .idle {
+        didSet {
+            guard sourceWorkspaceState != oldValue else { return }
+            rebuildBrowserCaches()
+            refreshSidebarState()
+        }
+    }
     @Published var burstGroups: [BurstGroup] = [] {
         didSet {
             rebuildBrowserCaches()
@@ -190,6 +197,16 @@ final class AppState: ObservableObject {
             refreshPresentationState()
         }
     }
+    @Published var activePhotoLogEditor: PhotoLogEditorState? {
+        didSet {
+            refreshPresentationState()
+        }
+    }
+    @Published var revealedPhotoLog: PhotoLogRevealState? {
+        didSet {
+            refreshPresentationState()
+        }
+    }
     @Published var comparingMediaItemIDs: [UUID] = [] {
         didSet {
             refreshCompareState()
@@ -259,11 +276,15 @@ final class AppState: ObservableObject {
     private var browserViewModel: BrowserViewModel
     private let selectionManager = SelectionManager()
     private let backupStore = BackupStore()
+    private let persistedSessionNormalizer = PersistedSessionNormalizer()
+    private let photoLogCreationResolver = PhotoLogCreationResolver()
     private let fileManager: FileManager
+    private let sourceWorkspaceFolderResolver: SourceWorkspaceFolderResolver
     private let supportRoot: URL
     private let logger = AppLogger.appState
     private let latencyRecorder = LatencyRecorder()
     private var compareSelectionBackup: CompareSelectionBackup?
+    var testingSourceScanHandler: ((URL, AppSettings) async throws -> SessionOpenResult)?
     private let sessionPersistenceQueue = DispatchQueue(label: "PhotoDiaryTriage.session-persistence", qos: .utility)
     private let thumbnailScheduler = ThumbnailScheduler()
     private let thumbnailImageCache = NSCache<NSURL, NSImage>()
@@ -278,6 +299,11 @@ final class AppState: ObservableObject {
     private var thumbnailTasks: [UUID: Task<Void, Never>] = [:]
     private var volumeMountObserver: NSObjectProtocol?
     private var hasAttemptedInitialAutoLoad = false
+    private let startupSelectionPolicy: StartupSelectionPolicy = .sourceInboxFirst
+    private var sourceLoadTask: Task<Void, Never>?
+    private var sourceLoadGeneration: Int = 0
+    private var pendingLegacyMigrationNoticeCount: Int = 0
+    private var hasShownLegacyMigrationNotice = false
     private var lastMeasuredReviewPaneWidth: Double = 0
     private var lastMeasuredReviewPaneHeight: Double = 0
     private var reviewKeyboardTarget: ReviewKeyboardTarget = .items
@@ -302,6 +328,7 @@ final class AppState: ObservableObject {
 
     init(testing: Bool = false) {
         self.fileManager = .default
+        self.sourceWorkspaceFolderResolver = SourceWorkspaceFolderResolver(fileManager: self.fileManager)
         self.supportRoot = AppPaths.supportRoot()
         let settingsStore = SettingsStore(fileURL: self.supportRoot.appendingPathComponent("settings.json"))
         let settings = settingsStore.load(defaults: AppSettings.default())
@@ -332,7 +359,7 @@ final class AppState: ObservableObject {
         }
 
         configurePersistence()
-        loadMostRecentSession()
+        primePersistedSessionCache()
         startVolumeMonitoring()
         refreshAllUIState()
     }
@@ -350,12 +377,15 @@ final class AppState: ObservableObject {
         }
 
         do {
+            invalidateInFlightSourceLoad()
             try sessionLifecycleCoordinator.resetSupportData()
             settings = settingsStore.load(defaults: AppSettings.default())
             configurePersistence()
             archiveYearFolders = ArchiveLibraryInspector.existingYearFolders(in: settings.archiveRoot)
             archiveMediaCache.removeAll()
-            loadMostRecentSession()
+            primePersistedSessionCache()
+            hasAttemptedInitialAutoLoad = false
+            performInitialAutoLoadIfNeeded()
             startupAlert = nil
             statusMessage = "Reset local app support data and restarted persistence."
         } catch {
@@ -593,8 +623,12 @@ final class AppState: ObservableObject {
         canMutateImportSelection && selectedMediaItems.contains { !$0.companionFiles.isEmpty }
     }
 
+    var canPresentPhotoLogCreation: Bool {
+        currentSession?.sessionKind == .inbox && proposedPhotoLogCreationPlan(mode: .decidedInScope) != nil
+    }
+
     var canCreateWalkDraftFromSelection: Bool {
-        currentSession?.sessionKind == .inbox && !currentSelectionMediaIDs().isEmpty
+        canPresentPhotoLogCreation
     }
 
     var selectedMediaItems: [MediaItem] {
@@ -700,16 +734,21 @@ final class AppState: ObservableObject {
         panel.directoryURL = settings.defaultSourceRoot
 
         if panel.runModal() == .OK, let folder = panel.urls.first {
-            Task {
-                await openSession(for: folder)
-            }
+            loadSourceWorkspace(folder: folder, origin: .manualPicker)
         }
     }
 
     func openSourceInbox(for workspaceSourceFolder: URL) {
-        Task {
-            await openSession(for: workspaceSourceFolder)
-        }
+        loadSourceWorkspace(folder: workspaceSourceFolder, origin: .savedWalkInbox)
+    }
+
+    func openDefaultSourceWorkspace() {
+        loadSourceWorkspace(folder: settings.defaultSourceRoot, origin: .openDefaultSource)
+    }
+
+    func reloadCurrentSourceWorkspace() {
+        let sourceFolder = currentSession?.workspaceSourceFolder ?? settings.defaultSourceRoot
+        loadSourceWorkspace(folder: sourceFolder, origin: .reloadCurrentSource)
     }
 
     func pickArchiveRoot() {
@@ -741,18 +780,43 @@ final class AppState: ObservableObject {
     }
 
     func openSession(for folder: URL) async {
+        let generation = invalidateInFlightSourceLoad()
+        await performSourceWorkspaceLoad(folder: folder, origin: .manualPicker, generation: generation)
+    }
+
+    func loadSourceWorkspace(folder: URL, origin: SourceLoadOrigin) {
+        let generation = invalidateInFlightSourceLoad()
+        sourceLoadTask = Task { [weak self] in
+            await self?.performSourceWorkspaceLoad(folder: folder, origin: origin, generation: generation)
+        }
+    }
+
+    private func performSourceWorkspaceLoad(
+        folder: URL,
+        origin: SourceLoadOrigin,
+        generation: Int
+    ) async {
+        let standardizedFolder = folder.standardizedFileURL
+        let resolvedFolder = sourceWorkspaceFolderResolver.resolve(selectedFolder: standardizedFolder)
         do {
-            let standardizedFolder = folder.standardizedFileURL
-            let standardizedFolderPath = standardizedFolder.path
+            let resolvedFolderPath = resolvedFolder.path
             try reloadPersistedSessionsFromStore()
-            statusMessage = "Scanning source folder..."
-            let scanned = try await scanSourceFolder(for: standardizedFolder, settings: settings)
+            logger.log("Starting source workspace load from \(standardizedFolder.path, privacy: .public) resolved to \(resolvedFolder.path, privacy: .public) via \(origin.rawValue, privacy: .public)")
+            sourceWorkspaceState = .loading(sourcePath: resolvedFolder.path)
+            statusMessage = "Scanning source folder \(resolvedFolder.lastPathComponent)..."
+
+            let scanned = try await scanSourceFolder(for: resolvedFolder, settings: settings)
+            guard !Task.isCancelled, generation == sourceLoadGeneration else {
+                logger.log("Discarded stale source load for \(resolvedFolder.path, privacy: .public)")
+                return
+            }
+
             let existingInbox = persistedSessions.first(where: {
-                $0.0.sessionKind == .inbox && $0.0.workspaceSourceFolder.standardizedFileURL.path == standardizedFolderPath
+                $0.0.sessionKind == .inbox && $0.0.workspaceSourceFolder.standardizedFileURL.path == resolvedFolderPath
             })
             let rebuiltInbox = rebuildInboxSession(
                 from: scanned,
-                workspaceSourceFolder: standardizedFolder,
+                workspaceSourceFolder: resolvedFolder,
                 existingInbox: existingInbox?.0
             )
             let normalizedInbox = normalizeInboxRecord((rebuiltInbox, scanned.bursts, scanned.clusters))
@@ -761,9 +825,17 @@ final class AppState: ObservableObject {
 
             let message: String
             if normalizedInbox.0.mediaItems.isEmpty {
-                message = "Loaded inbox for \(standardizedFolder.lastPathComponent); all visible photos are already assigned to saved walks."
+                sourceWorkspaceState = .empty(sourcePath: resolvedFolder.path)
+                message = sourceLoadStatusMessage(
+                    base: "Loaded inbox for \(resolvedFolder.lastPathComponent); no unassigned supported media are currently visible.",
+                    sourcePath: resolvedFolder.path
+                )
             } else {
-                message = "Loaded inbox with \(normalizedInbox.0.mediaItems.count) unassigned items from \(standardizedFolder.lastPathComponent)."
+                sourceWorkspaceState = .loaded(itemCount: normalizedInbox.0.mediaItems.count, sourcePath: resolvedFolder.path)
+                message = sourceLoadStatusMessage(
+                    base: "Loaded inbox with \(normalizedInbox.0.mediaItems.count) unassigned items from \(resolvedFolder.lastPathComponent).",
+                    sourcePath: resolvedFolder.path
+                )
             }
             openPersistedSessionRecord(
                 normalizedInbox,
@@ -771,55 +843,134 @@ final class AppState: ObservableObject {
             )
             requestVisibleThumbnails(prefetching: normalizedInbox.0.mediaItems)
         } catch {
+            guard generation == sourceLoadGeneration else { return }
             logger.error("Failed to open session for \(folder.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
-            statusMessage = error.localizedDescription
+            sourceWorkspaceState = .failed(sourcePath: resolvedFolder.path, message: error.localizedDescription)
+            statusMessage = "Failed to load source folder: \(error.localizedDescription)"
         }
     }
 
     func openSavedWalk(_ sessionID: UUID) {
         guard let record = persistedSessions.first(where: { $0.0.id == sessionID }) else {
-            statusMessage = "Saved walk could not be found in the local library."
+            statusMessage = "Photo log could not be found in the local library."
             return
         }
 
-        openPersistedSessionRecord(record, status: "Resumed \(record.0.walkMetadata.title.nonEmpty ?? "Untitled Walk").")
+        invalidateInFlightSourceLoad()
+        sourceWorkspaceState = .idle
+        openPersistedSessionRecord(record, status: "Resumed \(record.0.walkMetadata.title.nonEmpty ?? "Untitled Photo Log").")
         requestVisibleThumbnails(prefetching: record.0.mediaItems)
     }
 
-    func createWalkDraftFromCurrentSelection() {
+    func openPhotoLog(_ sessionID: UUID) {
+        openSavedWalk(sessionID)
+    }
+
+    func presentPhotoLogCreation() {
         guard let currentSession else { return }
         guard currentSession.sessionKind == .inbox else {
-            statusMessage = "Walk drafts can only be created from a source inbox."
+            statusMessage = "Photo logs can only be created from a source inbox."
+            return
+        }
+        guard let plan = proposedPhotoLogCreationPlan(mode: .decidedInScope) else {
+            statusMessage = "Focus the review grid or select one folder before creating a photo log."
             return
         }
 
-        let selectedIDs = currentSelectionMediaIDs()
-        guard !selectedIDs.isEmpty else {
-            statusMessage = "Select the photos for the new walk draft first."
+        let defaultTitle = currentSession.walkMetadata.title.nonEmpty ?? plan.scope.label.nonEmpty ?? "Untitled Photo Log"
+        activePhotoLogEditor = PhotoLogEditorState(
+            id: UUID(),
+            mode: .create,
+            creationMode: .decidedInScope,
+            title: defaultTitle,
+            location: currentSession.walkMetadata.location,
+            notes: currentSession.walkMetadata.notes,
+            scopeKind: plan.scope.kind,
+            scopeLabel: plan.scope.label,
+            sourceFolderPaths: plan.scope.sourceFolderPaths,
+            startDate: plan.scope.startDate,
+            endDate: plan.scope.endDate
+        )
+    }
+
+    func dismissPhotoLogEditor() {
+        activePhotoLogEditor = nil
+    }
+
+    func updateActivePhotoLogEditor(_ editor: PhotoLogEditorState) {
+        activePhotoLogEditor = editor
+    }
+
+    func presentPhotoLogEditor(_ sessionID: UUID) {
+        guard let record = persistedSessions.first(where: { $0.0.id == sessionID }) else {
+            statusMessage = "Photo log could not be found in the local library."
+            return
+        }
+        let scope = record.0.photoLogScope ?? defaultPhotoLogScope(for: record.0)
+        activePhotoLogEditor = PhotoLogEditorState(
+            id: UUID(),
+            mode: .edit(sessionID: sessionID),
+            creationMode: .decidedInScope,
+            title: record.0.walkMetadata.title,
+            location: record.0.walkMetadata.location,
+            notes: record.0.walkMetadata.notes,
+            scopeKind: scope.kind,
+            scopeLabel: scope.label,
+            sourceFolderPaths: scope.sourceFolderPaths,
+            startDate: scope.startDate,
+            endDate: scope.endDate
+        )
+    }
+
+    func showPhotoLogContents(_ sessionID: UUID) {
+        guard let record = persistedSessions.first(where: { $0.0.id == sessionID }) else {
+            statusMessage = "Photo log could not be found in the local library."
+            return
+        }
+        revealedPhotoLog = PhotoLogRevealState(
+            sessionID: sessionID,
+            title: record.0.walkMetadata.title.nonEmpty ?? "Untitled Photo Log",
+            relativePaths: record.0.mediaItems.map(\.relativePath).sorted()
+        )
+    }
+
+    func dismissRevealedPhotoLog() {
+        revealedPhotoLog = nil
+    }
+
+    func createPhotoLog(openAfterCreate: Bool) {
+        guard let currentSession else { return }
+        guard currentSession.sessionKind == .inbox else {
+            statusMessage = "Photo logs can only be created from a source inbox."
+            return
+        }
+        guard let editor = activePhotoLogEditor else { return }
+        guard case .create = editor.mode else { return }
+        guard let plan = proposedPhotoLogCreationPlan(mode: editor.creationMode) else { return }
+        guard plan.canCreate else {
+            statusMessage = plan.disabledReason ?? "This photo log cannot be created yet."
             return
         }
 
+        let selectedIDs = Set(plan.candidateMediaItemIDs)
         let selectedItems = currentSession.mediaItems.filter { selectedIDs.contains($0.id) }
-        let collisionPaths = ownedRelativePaths(
-            for: currentSession.workspaceSourceFolder,
-            excludingSessionIDs: [currentSession.id]
-        ).intersection(Set(selectedItems.map(\.relativePath)))
-        guard collisionPaths.isEmpty else {
-            statusMessage = "Some selected photos already belong to another saved walk."
-            return
-        }
-
         let remainingItems = currentSession.mediaItems.filter { !selectedIDs.contains($0.id) }
         let draftGrouped = groupingService.group(items: selectedItems, settings: settings)
         let inboxGrouped = groupingService.group(items: remainingItems, settings: settings)
-
-        let draftTitle = currentSession.walkMetadata.title.nonEmpty ?? "Untitled Walk"
+        let updatedMetadata = WalkMetadata(
+            title: editor.title,
+            location: editor.location,
+            notes: editor.notes,
+            backupConfirmedAt: nil
+        )
+        let draftTitle = editor.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled Photo Log" : editor.title
         let draftSession = ImportSession(
             sourceFolder: currentSession.sourceFolder,
             workspaceSourceFolder: currentSession.workspaceSourceFolder,
             startedAt: Date(),
             lastUpdatedAt: Date(),
-            walkMetadata: currentSession.walkMetadata,
+            walkMetadata: updatedMetadata,
+            photoLogScope: photoLogScope(from: editor, fallback: plan.scope),
             archiveRoot: currentSession.archiveRoot,
             sessionKind: .walkDraft,
             status: "draft",
@@ -829,7 +980,10 @@ final class AppState: ObservableObject {
         var updatedInbox = currentSession
         updatedInbox.mediaItems = inboxGrouped.items
         updatedInbox.lastUpdatedAt = Date()
+        updatedInbox.walkMetadata = .empty
+        updatedInbox.photoLogScope = nil
         updatedInbox.sessionKind = .inbox
+        updatedInbox.sessionKindWasExplicit = true
         updatedInbox.status = updatedInbox.mediaItems.isEmpty ? "inbox_empty" : "draft"
 
         do {
@@ -837,14 +991,92 @@ final class AppState: ObservableObject {
             try sessionManager.save(updatedInbox, bursts: inboxGrouped.burstGroups, clusters: inboxGrouped.timeClusters, to: sessionStore)
             storePersistedSession(draftSession, bursts: draftGrouped.burstGroups, clusters: draftGrouped.timeClusters)
             storePersistedSession(updatedInbox, bursts: inboxGrouped.burstGroups, clusters: inboxGrouped.timeClusters)
-            openPersistedSessionRecord(
-                (draftSession, draftGrouped.burstGroups, draftGrouped.timeClusters),
-                status: "Created saved walk draft \(draftTitle)."
-            )
-            requestVisibleThumbnails(prefetching: draftSession.mediaItems)
+            invalidateInFlightSourceLoad()
+            activePhotoLogEditor = nil
+            if openAfterCreate {
+                openPersistedSessionRecord(
+                    (draftSession, draftGrouped.burstGroups, draftGrouped.timeClusters),
+                    status: "Created photo log \(draftTitle)."
+                )
+                requestVisibleThumbnails(prefetching: draftSession.mediaItems)
+            } else {
+                openPersistedSessionRecord(
+                    (updatedInbox, inboxGrouped.burstGroups, inboxGrouped.timeClusters),
+                    status: "Created photo log \(draftTitle) with \(draftSession.mediaItems.count) decided photo(s)."
+                )
+                requestVisibleThumbnails(prefetching: updatedInbox.mediaItems)
+            }
         } catch {
-            logger.error("Failed to create walk draft: \(error.localizedDescription, privacy: .public)")
-            statusMessage = "Failed to create walk draft: \(error.localizedDescription)"
+            logger.error("Failed to create photo log: \(error.localizedDescription, privacy: .public)")
+            statusMessage = "Failed to create photo log: \(error.localizedDescription)"
+        }
+    }
+
+    func createWalkDraftFromCurrentSelection() {
+        presentPhotoLogCreation()
+        createPhotoLog(openAfterCreate: true)
+    }
+
+    func saveActivePhotoLogEdits() {
+        guard let editor = activePhotoLogEditor else { return }
+        guard case .edit(let sessionID) = editor.mode else { return }
+        guard let record = persistedSessions.first(where: { $0.0.id == sessionID }) else {
+            statusMessage = "Photo log could not be found in the local library."
+            activePhotoLogEditor = nil
+            return
+        }
+
+        var updatedSession = record.0
+        updatedSession.lastUpdatedAt = Date()
+        updatedSession.walkMetadata.title = editor.title
+        updatedSession.walkMetadata.location = editor.location
+        updatedSession.walkMetadata.notes = editor.notes
+        updatedSession.photoLogScope = photoLogScope(from: editor, fallback: defaultPhotoLogScope(for: updatedSession))
+
+        do {
+            try sessionManager.save(updatedSession, bursts: record.1, clusters: record.2, to: sessionStore)
+            storePersistedSession(updatedSession, bursts: record.1, clusters: record.2)
+            if currentSession?.id == sessionID {
+                setCurrentSession(updatedSession, updateKind: .sessionOnly)
+            }
+            activePhotoLogEditor = nil
+            statusMessage = "Updated photo log \(updatedSession.walkMetadata.title.nonEmpty ?? "Untitled Photo Log")."
+        } catch {
+            logger.error("Failed to update photo log: \(error.localizedDescription, privacy: .public)")
+            statusMessage = "Failed to update photo log: \(error.localizedDescription)"
+        }
+    }
+
+    func deletePhotoLog(_ sessionID: UUID) {
+        guard let logRecord = persistedSessions.first(where: { $0.0.id == sessionID && $0.0.sessionKind == .walkDraft }) else {
+            statusMessage = "Photo log could not be found in the local library."
+            return
+        }
+
+        let returnableItems = logRecord.0.mediaItems.filter { !$0.lifecycleState.isImportedOrBeyond }
+        let updatedInboxRecord = rebuildInboxAfterDeletingPhotoLog(logRecord.0, returning: returnableItems)
+        var updatedRecords = persistedSessions.filter { $0.0.id != sessionID && $0.0.id != updatedInboxRecord.0.id }
+        updatedRecords.append(updatedInboxRecord)
+        updatedRecords.sort { $0.0.lastUpdatedAt > $1.0.lastUpdatedAt }
+
+        do {
+            try sessionStore.replaceAllSessions(with: updatedRecords)
+            persistedSessions = updatedRecords
+            activePhotoLogEditor = nil
+
+            if currentSession?.id == sessionID || currentSession?.id == updatedInboxRecord.0.id {
+                openPersistedSessionRecord(
+                    updatedInboxRecord,
+                    status: "Deleted photo log \(logRecord.0.walkMetadata.title.nonEmpty ?? "Untitled Photo Log") and returned \(returnableItems.count) photo(s) to the inbox."
+                )
+                requestVisibleThumbnails(prefetching: updatedInboxRecord.0.mediaItems)
+            } else {
+                refreshSidebarState()
+                statusMessage = "Deleted photo log \(logRecord.0.walkMetadata.title.nonEmpty ?? "Untitled Photo Log")."
+            }
+        } catch {
+            logger.error("Failed to delete photo log: \(error.localizedDescription, privacy: .public)")
+            statusMessage = "Failed to delete photo log: \(error.localizedDescription)"
         }
     }
 
@@ -853,7 +1085,7 @@ final class AppState: ObservableObject {
         hasAttemptedInitialAutoLoad = true
 
         Task {
-            await attemptAutoLoadFromDefaultSource(reason: .launch)
+            await selectInitialWorkspace()
         }
     }
 
@@ -982,10 +1214,7 @@ final class AppState: ObservableObject {
     func setDefaultSourceRoot(_ sourceRoot: URL) {
         settings.defaultSourceRoot = sourceRoot
         persistSettings()
-        statusMessage = "Default SSD root set to \(sourceRoot.path). Loading source folder..."
-        Task {
-            await attemptAutoLoadFromDefaultSource(reason: .launch)
-        }
+        loadSourceWorkspace(folder: sourceRoot, origin: .settingsDefaultRoot)
     }
 
     func setReviewPresentationMode(_ mode: ReviewPresentationMode) {
@@ -1505,6 +1734,7 @@ final class AppState: ObservableObject {
         }
         reviewKeyboardTarget = .items
         reviewGridHasFocus = true
+        activePane = .media
         if let firstID = deduplicatedIDs.first {
             selectedMediaItemIDs = [firstID]
             focusedReviewItemID = firstID
@@ -1538,6 +1768,8 @@ final class AppState: ObservableObject {
     }
 
     func removeItemFromComparison(_ itemID: UUID) {
+        let originalIDs = comparingMediaItemIDs
+        let focusedID = focusedReviewItemID
         comparingMediaItemIDs.removeAll { $0 == itemID }
         if comparingMediaItemIDs.isEmpty {
             closeComparison()
@@ -1545,13 +1777,13 @@ final class AppState: ObservableObject {
             return
         }
 
-        let replacementID = comparingMediaItemIDs.first(where: { selectedMediaItemIDs.contains($0) }) ?? comparingMediaItemIDs.first
+        let replacementID = comparisonReplacementID(afterRemoving: [itemID], from: originalIDs, preferredCurrentID: focusedID)
+            ?? comparingMediaItemIDs.first(where: { selectedMediaItemIDs.contains($0) })
+            ?? comparingMediaItemIDs.first
         let selectionStillReferencesCompareItems = selectedMediaItemIDs.contains { comparingMediaItemIDs.contains($0) }
         if focusedReviewItemID == itemID || !selectionStillReferencesCompareItems {
             if let replacementID {
-                selectedMediaItemIDs = [replacementID]
-                focusedReviewItemID = replacementID
-                reviewSelectionAnchorID = replacementID
+                focusComparisonItem(replacementID)
             }
         } else if selectedMediaItemIDs.contains(itemID) {
             selectedMediaItemIDs.remove(itemID)
@@ -1584,6 +1816,28 @@ final class AppState: ObservableObject {
 
     func toggleSelectionForComparisonItem(_ itemID: UUID) {
         handleGridSelection(for: itemID, modifiers: [.command])
+    }
+
+    func performCompareShortcut(_ key: String) {
+        guard !comparingMediaItemIDs.isEmpty else { return }
+        let uppercased = key.uppercased()
+
+        switch uppercased {
+        case "S":
+            markCurrentComparisonSelectionForImport()
+        case "C":
+            markCurrentComparisonSelectionAsCandidate()
+        case "X":
+            excludeCurrentComparisonSelectionFromImport()
+        case "D":
+            unmarkCurrentComparisonSelectionForImport()
+        case "R":
+            toggleRawForCurrentMediaSelection()
+        case "Q":
+            removeFocusedComparisonItem()
+        default:
+            break
+        }
     }
 
     func openCurrentSelection() {
@@ -1655,6 +1909,26 @@ final class AppState: ObservableObject {
         save(sessionMutationCoordinator.sessionByTogglingRawCompanions(currentSession, selectedIDs: selectedMediaItemIDs))
     }
 
+    func markComparisonItemForImport(_ itemID: UUID) {
+        focusComparisonItem(itemID)
+        markCurrentComparisonSelectionForImport()
+    }
+
+    func markComparisonItemAsCandidate(_ itemID: UUID) {
+        focusComparisonItem(itemID)
+        markCurrentComparisonSelectionAsCandidate()
+    }
+
+    func excludeComparisonItemFromImport(_ itemID: UUID) {
+        focusComparisonItem(itemID)
+        excludeCurrentComparisonSelectionFromImport()
+    }
+
+    func clearComparisonItemTriageState(_ itemID: UUID) {
+        focusComparisonItem(itemID)
+        unmarkCurrentComparisonSelectionForImport()
+    }
+
     func exportBackup() {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.json]
@@ -1696,6 +1970,112 @@ final class AppState: ObservableObject {
     private func updateTriageState(for mediaIDs: Set<UUID>, selectionState: SelectionState) {
         guard let currentSession else { return }
         save(sessionMutationCoordinator.sessionByUpdatingTriageState(currentSession, mediaIDs: mediaIDs, selectionState: selectionState))
+    }
+
+    private func currentComparisonSelectionIDs() -> Set<UUID> {
+        let compareIDSet = Set(comparingMediaItemIDs)
+        let selectedCompareIDs = selectedMediaItemIDs.intersection(compareIDSet)
+        if !selectedCompareIDs.isEmpty {
+            return selectedCompareIDs
+        }
+        if let focusedReviewItemID, compareIDSet.contains(focusedReviewItemID) {
+            return [focusedReviewItemID]
+        }
+        return []
+    }
+
+    func proposedPhotoLogCreationPlan(mode: PhotoLogCreationMode) -> PhotoLogCreationPlan? {
+        photoLogCreationResolver.resolve(
+            currentSession: currentSession,
+            activePane: activePane,
+            selectedFolderNodeIDs: selectedFolderNodeIDs,
+            selectedBrowserNode: selectedBrowserNode,
+            browserNodeMap: browserNodeMap,
+            visibleItems: visibleMediaItems,
+            selectedMediaItemIDs: selectedMediaItemIDs,
+            existingPhotoLogs: activePhotoLogSessions(),
+            mode: mode
+        )
+    }
+
+    private func activePhotoLogSessions() -> [ImportSession] {
+        persistedSessions
+            .map(\.0)
+            .filter {
+                $0.sessionKind == .walkDraft &&
+                $0.sessionKindWasExplicit &&
+                $0.status != "imported" &&
+                $0.status != "source_cleaned"
+            }
+    }
+
+    private func defaultPhotoLogScope(for session: ImportSession) -> PhotoLogScopeDescriptor {
+        if let scope = session.photoLogScope {
+            return scope
+        }
+
+        let dates = session.mediaItems.map(\.capturedAt).compactMap { $0 }
+        return PhotoLogScopeDescriptor(
+            kind: .folder,
+            label: session.walkMetadata.title.nonEmpty ?? session.workspaceSourceFolder.lastPathComponent,
+            sourceFolderPaths: [session.workspaceSourceFolder.path],
+            startDate: dates.min(),
+            endDate: dates.max()
+        )
+    }
+
+    private func photoLogScope(from editor: PhotoLogEditorState, fallback: PhotoLogScopeDescriptor) -> PhotoLogScopeDescriptor {
+        let label = editor.scopeLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        return PhotoLogScopeDescriptor(
+            kind: editor.scopeKind,
+            label: label.isEmpty ? fallback.label : label,
+            sourceFolderPaths: editor.sourceFolderPaths.isEmpty ? fallback.sourceFolderPaths : editor.sourceFolderPaths,
+            startDate: editor.scopeKind == .dateRange ? editor.startDate : fallback.startDate,
+            endDate: editor.scopeKind == .dateRange ? editor.endDate : fallback.endDate
+        )
+    }
+
+    private func photoLogHiddenSummary() -> String? {
+        guard let currentSession, currentSession.sessionKind == .inbox else { return nil }
+        let logs = activePhotoLogSessions().filter {
+            $0.workspaceSourceFolder.standardizedFileURL.path == currentSession.workspaceSourceFolder.standardizedFileURL.path
+        }
+        guard !logs.isEmpty else { return nil }
+        let hiddenCount = logs.reduce(0) { $0 + $1.mediaItems.count }
+        return "\(hiddenCount) photo(s) in this source already belong to \(logs.count) photo log(s)."
+    }
+
+    private func rebuildInboxAfterDeletingPhotoLog(
+        _ deletedLog: ImportSession,
+        returning itemsToReturn: [MediaItem]
+    ) -> (ImportSession, [BurstGroup], [TimeCluster]) {
+        let existingInbox = persistedSessions.first {
+            $0.0.id != deletedLog.id &&
+            $0.0.sessionKind == .inbox &&
+            $0.0.workspaceSourceFolder.standardizedFileURL.path == deletedLog.workspaceSourceFolder.standardizedFileURL.path
+        }?.0
+
+        var mergedItems = existingInbox?.mediaItems ?? []
+        let existingPaths = Set(mergedItems.map(\.relativePath))
+        mergedItems.append(contentsOf: itemsToReturn.filter { !existingPaths.contains($0.relativePath) })
+        mergedItems.sort(by: Self.mediaSort)
+        let grouped = groupingService.group(items: mergedItems, settings: settings)
+
+        var inbox = existingInbox ?? ImportSession(
+            sourceFolder: deletedLog.sourceFolder,
+            workspaceSourceFolder: deletedLog.workspaceSourceFolder,
+            archiveRoot: deletedLog.archiveRoot,
+            sessionKind: .inbox,
+            status: "draft"
+        )
+        inbox.mediaItems = grouped.items
+        inbox.lastUpdatedAt = Date()
+        inbox.walkMetadata = .empty
+        inbox.photoLogScope = nil
+        inbox.sessionKind = .inbox
+        inbox.sessionKindWasExplicit = true
+        inbox.status = grouped.items.isEmpty ? "inbox_empty" : "draft"
+        return (inbox, grouped.burstGroups, grouped.timeClusters)
     }
 
     private func currentSelectionMediaIDs() -> Set<UUID> {
@@ -1875,15 +2255,31 @@ final class AppState: ObservableObject {
         return section.children.flatMap { resolvedMediaItemIDs(in: $0) }
     }
 
-    private func loadMostRecentSession() {
+    private func loadMostRecentSession(statusPrefix: String = "Recovered most recent session from local SQLite store.") {
         do {
             try reloadPersistedSessionsFromStore()
-            guard let latest = mostRecentRecoverableSession() ?? persistedSessions.first else { return }
-            openPersistedSessionRecord(latest, status: "Recovered most recent session from local SQLite store.")
+            guard let latest = mostRecentRecoverableSession() ?? persistedSessions.first else {
+                sourceWorkspaceState = .idle
+                return
+            }
+            invalidateInFlightSourceLoad()
+            sourceWorkspaceState = .idle
+            openPersistedSessionRecord(latest, status: sourceLoadStatusMessage(base: statusPrefix, sourcePath: latest.0.workspaceSourceFolder.path))
         } catch {
             logger.error("Failed to recover recent session: \(error.localizedDescription, privacy: .public)")
+            sourceWorkspaceState = .failed(sourcePath: settings.defaultSourceRoot.path, message: error.localizedDescription)
             statusMessage = "Failed to recover the most recent session: \(error.localizedDescription)"
             return
+        }
+    }
+
+    private func primePersistedSessionCache() {
+        do {
+            try reloadPersistedSessionsFromStore()
+        } catch {
+            logger.error("Failed to prime persisted session cache: \(error.localizedDescription, privacy: .public)")
+            sourceWorkspaceState = .failed(sourcePath: settings.defaultSourceRoot.path, message: error.localizedDescription)
+            statusMessage = "Failed to read saved sessions: \(error.localizedDescription)"
         }
     }
 
@@ -1924,7 +2320,17 @@ final class AppState: ObservableObject {
     }
 
     private func reloadPersistedSessionsFromStore() throws {
-        persistedSessions = try sessionStore.loadSessions().sorted { $0.0.lastUpdatedAt > $1.0.lastUpdatedAt }
+        let loadedSessions = try sessionStore.loadSessions()
+        let normalized = persistedSessionNormalizer.normalize(loadedSessions)
+        if normalized.deduplicatedInboxCount > 0 {
+            logger.log("Deduplicated \(normalized.deduplicatedInboxCount, privacy: .public) inbox session(s) while loading persisted sessions")
+            try sessionStore.replaceAllSessions(with: normalized.records)
+        }
+        if normalized.legacyRecoveredSessionCount > 0 {
+            logger.log("Reclassified \(normalized.legacyRecoveredSessionCount, privacy: .public) legacy session(s) as inbox recoveries")
+            pendingLegacyMigrationNoticeCount = normalized.legacyRecoveredSessionCount
+        }
+        persistedSessions = normalized.records
         refreshSidebarState()
     }
 
@@ -1949,6 +2355,32 @@ final class AppState: ObservableObject {
         statusMessage = status
     }
 
+    @discardableResult
+    private func invalidateInFlightSourceLoad() -> Int {
+        sourceLoadTask?.cancel()
+        sourceLoadTask = nil
+        sourceLoadGeneration &+= 1
+        return sourceLoadGeneration
+    }
+
+    private func sourceLoadStatusMessage(base: String, sourcePath: String) -> String {
+        let notice: String
+        if let migrationNotice = consumeLegacyMigrationNotice() {
+            notice = " \(migrationNotice)"
+        } else {
+            notice = ""
+        }
+        return "\(base)\(notice)"
+    }
+
+    private func consumeLegacyMigrationNotice() -> String? {
+        guard pendingLegacyMigrationNoticeCount > 0, hasShownLegacyMigrationNotice == false else { return nil }
+        hasShownLegacyMigrationNotice = true
+        let count = pendingLegacyMigrationNoticeCount
+        pendingLegacyMigrationNoticeCount = 0
+        return "Reclassified \(count) legacy session(s) as source inbox recoveries."
+    }
+
     private func mostRecentRecoverableSession() -> (ImportSession, [BurstGroup], [TimeCluster])? {
         persistedSessions.first {
             $0.0.status != "imported" && $0.0.status != "source_cleaned"
@@ -1964,6 +2396,7 @@ final class AppState: ObservableObject {
             persistedSessions
                 .filter {
                     $0.0.sessionKind == .walkDraft &&
+                    $0.0.sessionKindWasExplicit &&
                     !excludingSessionIDs.contains($0.0.id) &&
                     $0.0.workspaceSourceFolder.standardizedFileURL.path == standardizedFolderPath
                 }
@@ -2011,7 +2444,10 @@ final class AppState: ObservableObject {
     }
 
     private func scanSourceFolder(for folder: URL, settings: AppSettings) async throws -> SessionOpenResult {
-        try await Task.detached(priority: .userInitiated) {
+        if let testingSourceScanHandler {
+            return try await testingSourceScanHandler(folder, settings)
+        }
+        return try await Task.detached(priority: .userInitiated) {
             let sessionManager = SessionManager(scanner: FileScanner(), groupingService: GroupingService())
             return try sessionManager.openSession(for: folder, settings: settings)
         }.value
@@ -2137,7 +2573,8 @@ final class AppState: ObservableObject {
             currentSession: currentSession,
             bursts: burstGroups,
             clusters: timeClusters,
-            archiveRoot: settings.archiveRoot
+            archiveRoot: settings.archiveRoot,
+            sourceWorkspaceState: sourceWorkspaceState
         )
         cachedBrowserNodeMap = browserViewModel.nodeMap(for: cachedBrowserRoots)
         sessionVisibleMediaCacheByNodeID.removeAll()
@@ -2168,21 +2605,26 @@ final class AppState: ObservableObject {
                 excludedCount: counts.excluded,
                 sessionKind: currentSession.sessionKind,
                 status: currentSession.status,
-                walkMetadata: currentSession.walkMetadata
+                walkMetadata: currentSession.walkMetadata,
+                photoLogScope: currentSession.photoLogScope
             )
         } else {
             summary = nil
         }
 
-        let savedWalkGroups = Dictionary(grouping: persistedSessions.filter { $0.0.sessionKind == .walkDraft }) {
-            $0.0.workspaceSourceFolder.standardizedFileURL.path
+        let explicitPhotoLogGroups = Dictionary(grouping: persistedSessions.filter {
+            $0.0.sessionKind == .walkDraft && $0.0.sessionKindWasExplicit
+        }) {
+            ($0.0.photoLogScope?.label.nonEmpty ?? $0.0.walkMetadata.title.nonEmpty ?? $0.0.workspaceSourceFolder.lastPathComponent)
         }
+        let photoLogGroups = explicitPhotoLogGroups
             .map { key, records in
-                let drafts = records
-                    .map { record -> SavedWalkSummary in
+                let logs = records
+                    .map { record -> PhotoLogSummary in
                         let counts = triageCounts(for: record.0.mediaItems)
-                        let title = record.0.walkMetadata.title.nonEmpty ?? "Untitled Walk"
-                        return SavedWalkSummary(
+                        let title = record.0.walkMetadata.title.nonEmpty ?? "Untitled Photo Log"
+                        let scope = record.0.photoLogScope ?? defaultPhotoLogScope(for: record.0)
+                        return PhotoLogSummary(
                             sessionID: record.0.id,
                             title: title,
                             sourceFolderPath: record.0.sourceFolder.path,
@@ -2195,27 +2637,34 @@ final class AppState: ObservableObject {
                             status: record.0.status,
                             sourceIsAvailable: fileManager.fileExists(atPath: record.0.workspaceSourceFolder.path),
                             lastUpdatedAt: record.0.lastUpdatedAt,
-                            isCurrentSession: currentSession?.id == record.0.id
+                            isCurrentSession: currentSession?.id == record.0.id,
+                            scopeLabel: scope.label
                         )
                     }
                     .sorted { $0.lastUpdatedAt > $1.lastUpdatedAt }
 
-                return SavedWalkGroupSnapshot(
-                    workspaceSourceFolderPath: key,
-                    sourceIsAvailable: fileManager.fileExists(atPath: key),
-                    drafts: drafts
+                let isAvailable = records.contains { fileManager.fileExists(atPath: $0.0.workspaceSourceFolder.path) }
+                return PhotoLogGroupSnapshot(
+                    scopeLabel: key,
+                    sourceIsAvailable: isAvailable,
+                    logs: logs
                 )
             }
-            .sorted { (lhs: SavedWalkGroupSnapshot, rhs: SavedWalkGroupSnapshot) in
-                lhs.workspaceSourceFolderPath.localizedCaseInsensitiveCompare(rhs.workspaceSourceFolderPath) == .orderedAscending
+            .sorted { (lhs: PhotoLogGroupSnapshot, rhs: PhotoLogGroupSnapshot) in
+                lhs.scopeLabel.localizedCaseInsensitiveCompare(rhs.scopeLabel) == .orderedAscending
             }
+
+        let canReloadSourceWorkspace = sourceWorkspaceState.sourcePath != nil || currentSession != nil
 
         let snapshot = SidebarSnapshot(
             isVisible: isSidebarVisible,
+            sourceWorkspaceState: sourceWorkspaceState,
             sessionSummary: summary,
-            savedWalkGroups: savedWalkGroups,
+            photoLogGroups: photoLogGroups,
             canMutateImportSelection: canMutateImportSelection,
-            canCreateWalkDraftFromSelection: canCreateWalkDraftFromSelection,
+            canPresentPhotoLogCreation: canPresentPhotoLogCreation,
+            canOpenDefaultSourceWorkspace: true,
+            canReloadSourceWorkspace: canReloadSourceWorkspace,
             isWalkDetailsExpanded: isWalkDetailsExpanded,
             archiveRootDisplayPath: settings.archiveRootDisplayPath,
             archiveYearFolders: archiveYearFolders,
@@ -2223,6 +2672,7 @@ final class AppState: ObservableObject {
                 browserRoots: browserRoots,
                 selectedSidebarNodeID: selectedSidebarNodeID
             ),
+            hiddenPhotoLogSummary: photoLogHiddenSummary(),
             statusMessage: statusMessage,
             importProgress: importProgress
         )
@@ -2338,7 +2788,9 @@ final class AppState: ObservableObject {
         let snapshot = PresentationSnapshot(
             showKeyboardHelp: showKeyboardHelp,
             startupAlert: startupAlert,
-            previewingMediaItem: previewingMediaItem
+            previewingMediaItem: previewingMediaItem,
+            activePhotoLogEditor: activePhotoLogEditor,
+            revealedPhotoLog: revealedPhotoLog
         )
         presentationState.update(snapshot)
     }
@@ -2547,6 +2999,87 @@ final class AppState: ObservableObject {
         requestReviewScrollIfNeeded(to: targetID)
     }
 
+    private func markCurrentComparisonSelectionForImport() {
+        guard canMutateImportSelection else { return }
+        let selectedIDs = currentComparisonSelectionIDs()
+        guard !selectedIDs.isEmpty else { return }
+        updateTriageState(for: selectedIDs, selectionState: .included)
+        statusMessage = "Selected \(selectedIDs.count) compare item(s) for import."
+        advanceAfterCompareTriageAction(for: selectedIDs)
+    }
+
+    private func markCurrentComparisonSelectionAsCandidate() {
+        guard canMutateImportSelection else { return }
+        let selectedIDs = currentComparisonSelectionIDs()
+        guard !selectedIDs.isEmpty else { return }
+        updateTriageState(for: selectedIDs, selectionState: .candidate)
+        statusMessage = "Marked \(selectedIDs.count) compare item(s) as candidates."
+        advanceAfterCompareTriageAction(for: selectedIDs)
+    }
+
+    private func excludeCurrentComparisonSelectionFromImport() {
+        guard canMutateImportSelection else { return }
+        let selectedIDs = currentComparisonSelectionIDs()
+        guard !selectedIDs.isEmpty else { return }
+
+        let originalIDs = comparingMediaItemIDs
+        let focusedID = focusedReviewItemID
+        updateTriageState(for: selectedIDs, selectionState: .excluded)
+        comparingMediaItemIDs.removeAll { selectedIDs.contains($0) }
+
+        if comparingMediaItemIDs.isEmpty {
+            closeComparison()
+            statusMessage = "Excluded the last compare item and closed compare."
+            return
+        }
+
+        compareGridColumnCount = min(compareGridColumnCount, max(comparingMediaItemIDs.count, 1))
+        if let replacementID = comparisonReplacementID(afterRemoving: selectedIDs, from: originalIDs, preferredCurrentID: focusedID) {
+            focusComparisonItem(replacementID)
+        }
+        statusMessage = "Excluded \(selectedIDs.count) compare item(s) and removed them from compare."
+    }
+
+    private func unmarkCurrentComparisonSelectionForImport() {
+        guard canMutateImportSelection else { return }
+        let selectedIDs = currentComparisonSelectionIDs()
+        guard !selectedIDs.isEmpty else { return }
+        updateTriageState(for: selectedIDs, selectionState: .undecided)
+        statusMessage = "Cleared \(selectedIDs.count) compare item(s) back to undecided."
+        advanceAfterCompareTriageAction(for: selectedIDs)
+    }
+
+    private func removeFocusedComparisonItem() {
+        guard let focusedID = focusedReviewItemID, comparingMediaItemIDs.contains(focusedID) else { return }
+        removeItemFromComparison(focusedID)
+    }
+
+    private func advanceAfterCompareTriageAction(for selectedIDs: Set<UUID>) {
+        guard selectedIDs.count == 1,
+              let currentID = selectedIDs.first,
+              let currentIndex = comparingMediaItemIDs.firstIndex(of: currentID),
+              !comparingMediaItemIDs.isEmpty else {
+            return
+        }
+
+        let targetIndex = min(currentIndex + 1, comparingMediaItemIDs.count - 1)
+        focusComparisonItem(comparingMediaItemIDs[targetIndex])
+    }
+
+    private func comparisonReplacementID(
+        afterRemoving removedIDs: Set<UUID>,
+        from originalIDs: [UUID],
+        preferredCurrentID: UUID?
+    ) -> UUID? {
+        let remainingIDs = originalIDs.filter { !removedIDs.contains($0) }
+        guard !remainingIDs.isEmpty else { return nil }
+
+        let focusAnchorID = preferredCurrentID ?? removedIDs.first
+        let originalIndex = focusAnchorID.flatMap { originalIDs.firstIndex(of: $0) } ?? 0
+        let replacementIndex = min(originalIndex, remainingIDs.count - 1)
+        return remainingIDs[replacementIndex]
+    }
+
     private func focusSidebarFirstResponder() {
         guard let window = NSApp.keyWindow else { return }
         guard let contentView = window.contentViewController?.view
@@ -2742,30 +3275,25 @@ final class AppState: ObservableObject {
 
     private func handleVolumeMounted(_ mountedURL: URL?) async {
         guard sessionLifecycleCoordinator.matchesDefaultSourceMount(mountedURL, defaultSourceRoot: settings.defaultSourceRoot) else { return }
-
-        await attemptAutoLoadFromDefaultSource(reason: .mounted)
+        guard let folder = sessionLifecycleCoordinator.resolvedDefaultSourceFolder(settings: settings) else { return }
+        logger.log("Default source volume mounted; loading live source inbox from \(folder.path, privacy: .public)")
+        loadSourceWorkspace(folder: folder, origin: .mountedDefault)
     }
 
-    private func attemptAutoLoadFromDefaultSource(reason: AutoLoadReason) async {
-        switch sessionLifecycleCoordinator.autoLoadPlan(reason: reason, settings: settings, currentSession: currentSession) {
-        case .waitForDefaultSource(let statusMessage):
-            if let statusMessage {
-                self.statusMessage = statusMessage
-            }
-        case .keepCurrentSession(let statusMessage, let refreshCurrentSelection):
-            if refreshCurrentSelection {
-                selectedSidebarNodeID = browserViewModel.preferredInitialSidebarNodeID(for: currentSession, bursts: burstGroups, clusters: timeClusters)
-                clearDetailSelections()
-                archiveMediaCache.removeAll()
-                resetInlineExpansionState()
-            }
-            if let statusMessage {
-                self.statusMessage = statusMessage
-            }
-        case .openSession(let folder, let statusMessage):
-            await openSession(for: folder)
-            if let statusMessage {
-                self.statusMessage = statusMessage
+    private func selectInitialWorkspace() async {
+        logger.log("Selecting initial workspace using policy \(self.startupSelectionPolicy.rawValue, privacy: .public)")
+
+        switch self.startupSelectionPolicy {
+        case .sourceInboxFirst:
+            if let folder = sessionLifecycleCoordinator.resolvedDefaultSourceFolder(settings: settings) {
+                logger.log("Resolved default source folder to \(folder.path, privacy: .public)")
+                loadSourceWorkspace(folder: folder, origin: .launchDefault)
+            } else if persistedSessions.isEmpty == false {
+                logger.log("Default source unavailable; falling back to most recent recoverable session")
+                loadMostRecentSession(statusPrefix: "Default source SSD is unavailable; recovered the most recent saved session.")
+            } else {
+                sourceWorkspaceState = .idle
+                statusMessage = "Waiting for default SSD at \(settings.defaultSourceRoot.path)."
             }
         }
     }

@@ -54,6 +54,267 @@ struct SessionOpenResult: Sendable {
     let clusters: [TimeCluster]
 }
 
+struct PersistedSessionNormalizationResult {
+    let records: [(ImportSession, [BurstGroup], [TimeCluster])]
+    let legacyRecoveredSessionCount: Int
+    let deduplicatedInboxCount: Int
+}
+
+struct PhotoLogSelectionCounts: Equatable, Sendable {
+    let included: Int
+    let candidate: Int
+    let excluded: Int
+    let undecided: Int
+
+    var decidedCount: Int {
+        included + candidate + excluded
+    }
+}
+
+struct PhotoLogCollision: Equatable, Sendable {
+    let relativePath: String
+    let owningSessionID: UUID
+    let owningTitle: String
+}
+
+struct PhotoLogCreationPlan: Equatable, Sendable {
+    let scope: PhotoLogScopeDescriptor
+    let mode: PhotoLogCreationMode
+    let scopeMediaItemIDs: [UUID]
+    let candidateMediaItemIDs: [UUID]
+    let counts: PhotoLogSelectionCounts
+    let collisions: [PhotoLogCollision]
+    let disabledReason: String?
+
+    var candidateCount: Int {
+        candidateMediaItemIDs.count
+    }
+
+    var canCreate: Bool {
+        disabledReason == nil && candidateMediaItemIDs.isEmpty == false && collisions.isEmpty
+    }
+}
+
+struct PhotoLogCreationResolver {
+    func resolve(
+        currentSession: ImportSession?,
+        activePane: ActivePane,
+        selectedFolderNodeIDs: Set<String>,
+        selectedBrowserNode: BrowserNode?,
+        browserNodeMap: [String: BrowserNode],
+        visibleItems: [MediaItem],
+        selectedMediaItemIDs: Set<UUID>,
+        existingPhotoLogs: [ImportSession],
+        mode: PhotoLogCreationMode
+    ) -> PhotoLogCreationPlan? {
+        guard let currentSession else { return nil }
+        guard currentSession.sessionKind == .inbox else { return nil }
+
+        let scopeResolution = resolveScope(
+            currentSession: currentSession,
+            activePane: activePane,
+            selectedFolderNodeIDs: selectedFolderNodeIDs,
+            selectedBrowserNode: selectedBrowserNode,
+            browserNodeMap: browserNodeMap,
+            visibleItems: visibleItems
+        )
+
+        let counts = selectionCounts(for: scopeResolution.items)
+        let candidateItems: [MediaItem]
+        let disabledReason: String?
+
+        switch mode {
+        case .decidedInScope:
+            candidateItems = scopeResolution.items.filter { !$0.selectionState.isUndecided }
+            if let scopeReason = scopeResolution.disabledReason {
+                disabledReason = scopeReason
+            } else if candidateItems.isEmpty {
+                disabledReason = "Mark included, candidate, or excluded photos in this scope before creating a photo log."
+            } else {
+                disabledReason = nil
+            }
+        case .selectedOnly:
+            candidateItems = scopeResolution.items.filter { selectedMediaItemIDs.contains($0.id) }
+            if let scopeReason = scopeResolution.disabledReason {
+                disabledReason = scopeReason
+            } else if candidateItems.isEmpty {
+                disabledReason = "Select one or more photos in this scope before creating a photo log."
+            } else {
+                disabledReason = nil
+            }
+        }
+
+        let collisions = candidateItems.compactMap { item in
+            existingPhotoLogs.first(where: {
+                $0.workspaceSourceFolder.standardizedFileURL.path == currentSession.workspaceSourceFolder.standardizedFileURL.path &&
+                $0.mediaItems.contains(where: { $0.relativePath == item.relativePath })
+            }).map { owner in
+                PhotoLogCollision(
+                    relativePath: item.relativePath,
+                    owningSessionID: owner.id,
+                    owningTitle: owner.walkMetadata.title.nonEmpty ?? "Untitled Photo Log"
+                )
+            }
+        }
+
+        return PhotoLogCreationPlan(
+            scope: scopeResolution.scope,
+            mode: mode,
+            scopeMediaItemIDs: scopeResolution.items.map(\.id),
+            candidateMediaItemIDs: candidateItems.map(\.id),
+            counts: counts,
+            collisions: collisions,
+            disabledReason: collisions.isEmpty ? disabledReason : "Some photos in this plan already belong to another photo log."
+        )
+    }
+
+    private func resolveScope(
+        currentSession: ImportSession,
+        activePane: ActivePane,
+        selectedFolderNodeIDs: Set<String>,
+        selectedBrowserNode: BrowserNode?,
+        browserNodeMap: [String: BrowserNode],
+        visibleItems: [MediaItem]
+    ) -> (scope: PhotoLogScopeDescriptor, items: [MediaItem], disabledReason: String?) {
+        let defaultScope = PhotoLogScopeDescriptor(
+            kind: .folder,
+            label: currentSession.workspaceSourceFolder.lastPathComponent,
+            sourceFolderPaths: [currentSession.workspaceSourceFolder.path],
+            startDate: visibleItems.map(\.capturedAt).compactMap { $0 }.min(),
+            endDate: visibleItems.map(\.capturedAt).compactMap { $0 }.max()
+        )
+
+        let items: [MediaItem]
+        let scope: PhotoLogScopeDescriptor
+        let disabledReason: String?
+
+        if activePane == .folders,
+           selectedFolderNodeIDs.count == 1,
+           let folderNodeID = selectedFolderNodeIDs.first,
+           let folderNode = browserNodeMap[folderNodeID] {
+            let mediaByID = Dictionary(uniqueKeysWithValues: currentSession.mediaItems.map { ($0.id, $0) })
+            items = folderNode.mediaItemIDs.compactMap { mediaByID[$0] }
+            scope = PhotoLogScopeDescriptor(
+                kind: .folder,
+                label: folderNode.title,
+                sourceFolderPaths: [currentSession.workspaceSourceFolder.path],
+                startDate: items.map(\.capturedAt).compactMap { $0 }.min(),
+                endDate: items.map(\.capturedAt).compactMap { $0 }.max()
+            )
+            disabledReason = items.isEmpty ? "The selected folder does not contain any visible photos." : nil
+        } else if activePane == .media, visibleItems.isEmpty == false {
+            let label = selectedBrowserNode.map { node in
+                if let subtitle = node.subtitle?.nonEmpty {
+                    return "\(node.title) • \(subtitle)"
+                }
+                return node.title
+            } ?? currentSession.workspaceSourceFolder.lastPathComponent
+            items = visibleItems
+            scope = PhotoLogScopeDescriptor(
+                kind: .dateRange,
+                label: label,
+                sourceFolderPaths: [currentSession.workspaceSourceFolder.path],
+                startDate: items.map(\.capturedAt).compactMap { $0 }.min(),
+                endDate: items.map(\.capturedAt).compactMap { $0 }.max()
+            )
+            disabledReason = nil
+        } else {
+            items = []
+            scope = defaultScope
+            disabledReason = "Select one folder or focus the review grid before creating a photo log."
+        }
+
+        return (scope, items, disabledReason)
+    }
+
+    private func selectionCounts(for items: [MediaItem]) -> PhotoLogSelectionCounts {
+        items.reduce(into: PhotoLogSelectionCounts(included: 0, candidate: 0, excluded: 0, undecided: 0)) { counts, item in
+            switch item.selectionState {
+            case .included:
+                counts = PhotoLogSelectionCounts(
+                    included: counts.included + 1,
+                    candidate: counts.candidate,
+                    excluded: counts.excluded,
+                    undecided: counts.undecided
+                )
+            case .candidate:
+                counts = PhotoLogSelectionCounts(
+                    included: counts.included,
+                    candidate: counts.candidate + 1,
+                    excluded: counts.excluded,
+                    undecided: counts.undecided
+                )
+            case .excluded:
+                counts = PhotoLogSelectionCounts(
+                    included: counts.included,
+                    candidate: counts.candidate,
+                    excluded: counts.excluded + 1,
+                    undecided: counts.undecided
+                )
+            case .undecided:
+                counts = PhotoLogSelectionCounts(
+                    included: counts.included,
+                    candidate: counts.candidate,
+                    excluded: counts.excluded,
+                    undecided: counts.undecided + 1
+                )
+            }
+        }
+    }
+}
+
+struct PersistedSessionNormalizer {
+    func normalize(
+        _ records: [(ImportSession, [BurstGroup], [TimeCluster])]
+    ) -> PersistedSessionNormalizationResult {
+        let sortedRecords = records.sorted { $0.0.lastUpdatedAt > $1.0.lastUpdatedAt }
+        let legacyRecoveredSessionCount = sortedRecords.filter { !$0.0.sessionKindWasExplicit }.count
+        var seenInboxWorkspacePaths: Set<String> = []
+        var deduplicatedInboxCount = 0
+        var normalizedRecords: [(ImportSession, [BurstGroup], [TimeCluster])] = []
+
+        for record in sortedRecords {
+            if record.0.sessionKind == .inbox {
+                let workspacePath = record.0.workspaceSourceFolder.standardizedFileURL.path
+                guard seenInboxWorkspacePaths.insert(workspacePath).inserted else {
+                    deduplicatedInboxCount += 1
+                    continue
+                }
+            }
+
+            normalizedRecords.append(record)
+        }
+
+        return PersistedSessionNormalizationResult(
+            records: normalizedRecords,
+            legacyRecoveredSessionCount: legacyRecoveredSessionCount,
+            deduplicatedInboxCount: deduplicatedInboxCount
+        )
+    }
+}
+
+struct SourceWorkspaceFolderResolver {
+    let fileManager: FileManager
+
+    init(fileManager: FileManager = .default) {
+        self.fileManager = fileManager
+    }
+
+    func resolve(selectedFolder: URL) -> URL {
+        let standardizedFolder = selectedFolder.standardizedFileURL
+        guard standardizedFolder.lastPathComponent.localizedCaseInsensitiveCompare("DCIM") != .orderedSame else {
+            return standardizedFolder
+        }
+
+        let dcimFolder = standardizedFolder.appendingPathComponent("DCIM", isDirectory: true).standardizedFileURL
+        if fileManager.fileExists(atPath: dcimFolder.path) {
+            return dcimFolder
+        }
+
+        return standardizedFolder
+    }
+}
+
 final class InMemorySessionStore: SessionPersisting {
     private var sessions: [(ImportSession, [BurstGroup], [TimeCluster])] = []
 

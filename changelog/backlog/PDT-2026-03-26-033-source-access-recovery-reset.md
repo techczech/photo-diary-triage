@@ -1,0 +1,27 @@
+# PDT-2026-03-26-033 Source Access Recovery Reset
+
+- Item ID: `PDT-2026-03-26-033`
+- Title: `Source access recovery reset`
+- User request summary: `Reset the source-loading architecture so the app reliably opens the live SSD source first, keeps saved drafts separate, and stops falling back to a broken or misleading no-source state.`
+- Constraints:
+  - Preserve explicit saved-walk drafts and their ownership behavior.
+  - Default launch behavior must prefer the live source inbox when the SSD is present.
+  - Keep source loading responsive and keyboard-first triage intact.
+- Implementation intent:
+  - Split startup recovery from live source loading.
+  - Add explicit source workspace state and render it in the UI.
+  - Deduplicate persisted inboxes, treat legacy sessions as inbox recoveries, and exclude only explicit walk drafts from inbox ownership.
+  - Route all source-opening actions through one cancelable background load path with DCIM resolution.
+- Test conditions:
+  - Launch with `/Volumes/EOS_DIGITAL` mounted opens the live source inbox first.
+  - Missing default source falls back to the most recent recoverable session.
+  - Legacy sessions do not claim all files on the source card.
+  - Choosing `/Volumes/EOS_DIGITAL` resolves to `/Volumes/EOS_DIGITAL/DCIM`.
+  - Settings opens reliably and changing the default source root triggers a source load.
+- Success criteria:
+  - Source access works reliably again from launch, source picker, and saved-walk sidebar actions.
+  - The UI shows loading, empty, and failure states explicitly instead of only “No SSD loaded”.
+  - Saved drafts remain resumable but no longer control startup.
+- Current status: `awaiting_user_review`
+- Target release version: `0.1.71`
+- Target feature slug: `source-access-recovery-reset`

@@ -18,7 +18,7 @@ struct SidebarPaneView: View {
             if let session = snapshot.sessionSummary {
                 GroupBox("Current Session") {
                     VStack(alignment: .leading, spacing: 6) {
-                        utilityButtons
+                        utilityButtons(snapshot: snapshot)
 
                         Text(summary)
                             .font(.caption)
@@ -32,34 +32,35 @@ struct SidebarPaneView: View {
                         Text("\(session.sessionKind.title) • \(session.status)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                        if let scopeLabel = session.photoLogScope?.label.nonEmpty, session.sessionKind == .walkDraft {
+                            Text("Primary scope: \(scopeLabel)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                         Text("\(session.includedCount) selected • \(session.candidateCount) candidate • \(session.excludedCount) excluded")
                             .font(.caption)
-
-                        if snapshot.canCreateWalkDraftFromSelection {
-                            Button("Create Walk Draft") {
-                                appState.createWalkDraftFromCurrentSelection()
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                            .shortcutHint("Cmd-Shift-W", help: "Create a saved walk draft from the current selection (Cmd-Shift-W)")
+                        if let hiddenSummary = snapshot.hiddenPhotoLogSummary {
+                            Text(hiddenSummary)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             } else {
-                utilityButtons
+                utilityButtons(snapshot: snapshot)
             }
 
-            GroupBox("Saved Walks") {
-                SavedWalkLibraryPane(
+            GroupBox("Photo Logs") {
+                PhotoLogLibraryPane(
                     appState: appState,
-                    groups: snapshot.savedWalkGroups,
-                    canCreateWalkDraftFromSelection: snapshot.canCreateWalkDraftFromSelection
+                    groups: snapshot.photoLogGroups,
+                    canPresentPhotoLogCreation: snapshot.canPresentPhotoLogCreation
                 )
             }
 
-            if snapshot.canMutateImportSelection {
-                GroupBox("Walk Details") {
+            if snapshot.canMutateImportSelection, snapshot.sessionSummary?.sessionKind == .walkDraft {
+                GroupBox("Photo Log Details") {
                     WalkDetailsPaneView(
                         appState: appState,
                         isExpanded: Binding(
@@ -114,44 +115,99 @@ struct SidebarPaneView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private var utilityButtons: some View {
-        HStack(spacing: 6) {
-            Button("Source") {
-                appState.pickSourceFolder()
+    private func utilityButtons(snapshot: SidebarSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SourceWorkspaceStatusPane(
+                summary: snapshot.sourceWorkspaceState.summary,
+                canOpenDefaultSourceWorkspace: snapshot.canOpenDefaultSourceWorkspace,
+                canReloadSourceWorkspace: snapshot.canReloadSourceWorkspace,
+                appState: appState
+            )
+
+            if let hiddenSummary = snapshot.hiddenPhotoLogSummary {
+                HStack(spacing: 8) {
+                    Text(hiddenSummary)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    Button("View Photo Logs") {
+                        appState.isSidebarVisible = true
+                        appState.activePane = .sidebar
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+                }
             }
 
-            Button("Settings") {
-                openSettings()
-            }
+            HStack(spacing: 6) {
+                Button("Source") {
+                    appState.pickSourceFolder()
+                }
 
-            Button("Shortcuts") {
-                appState.showKeyboardHelp = true
+                Button("Settings") {
+                    openSettings()
+                }
+
+                Button("Shortcuts") {
+                    appState.showKeyboardHelp = true
+                }
+                .shortcutHint("Cmd-Shift-/", help: "Show keyboard shortcuts (Cmd-Shift-/)")
             }
-            .shortcutHint("Cmd-Shift-/", help: "Show keyboard shortcuts (Cmd-Shift-/)")
+            .buttonStyle(.bordered)
+            .controlSize(.small)
         }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
     }
 }
 
-private struct SavedWalkLibraryPane: View {
+private struct SourceWorkspaceStatusPane: View {
+    let summary: String
+    let canOpenDefaultSourceWorkspace: Bool
+    let canReloadSourceWorkspace: Bool
     let appState: AppState
-    let groups: [SavedWalkGroupSnapshot]
-    let canCreateWalkDraftFromSelection: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Source Workspace")
+                .font(.caption.weight(.semibold))
+            Text(summary)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 6) {
+                Button("Open Default Source") {
+                    appState.openDefaultSourceWorkspace()
+                }
+                .disabled(!canOpenDefaultSourceWorkspace)
+
+                Button("Reload Source") {
+                    appState.reloadCurrentSourceWorkspace()
+                }
+                .disabled(!canReloadSourceWorkspace)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct PhotoLogLibraryPane: View {
+    let appState: AppState
+    let groups: [PhotoLogGroupSnapshot]
+    let canPresentPhotoLogCreation: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if canCreateWalkDraftFromSelection {
-                Button("Create Walk Draft From Selection") {
-                    appState.createWalkDraftFromCurrentSelection()
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .shortcutHint("Cmd-Shift-W", help: "Create a saved walk draft from the current selection (Cmd-Shift-W)")
+            Button("Create Photo Log…") {
+                appState.presentPhotoLogCreation()
             }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .shortcutHint("Cmd-Shift-W", help: "Create a photo log from the current scope (Cmd-Shift-W)")
+            .disabled(!canPresentPhotoLogCreation)
 
             if groups.isEmpty {
-                Text("No saved walk drafts yet.")
+                Text("No photo logs yet.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
@@ -160,10 +216,9 @@ private struct SavedWalkLibraryPane: View {
                         ForEach(groups) { group in
                             VStack(alignment: .leading, spacing: 6) {
                                 HStack(spacing: 8) {
-                                    Text(group.workspaceSourceFolderPath)
+                                    Text(group.scopeLabel)
                                         .font(.caption.weight(.semibold))
                                         .lineLimit(1)
-                                        .textSelection(.enabled)
                                     if !group.sourceIsAvailable {
                                         Text("Missing Source")
                                             .font(.caption2.weight(.semibold))
@@ -171,36 +226,48 @@ private struct SavedWalkLibraryPane: View {
                                             .padding(.vertical, 3)
                                             .background(Color.orange.opacity(0.16), in: Capsule())
                                     }
-                                    Spacer()
-                                    Button("Open Inbox") {
-                                        appState.openSourceInbox(for: URL(fileURLWithPath: group.workspaceSourceFolderPath, isDirectory: true))
-                                    }
-                                    .buttonStyle(.bordered)
-                                    .controlSize(.mini)
-                                    .disabled(!group.sourceIsAvailable)
                                 }
 
-                                ForEach(group.drafts) { draft in
+                                ForEach(group.logs) { log in
                                     HStack(spacing: 8) {
                                         VStack(alignment: .leading, spacing: 2) {
-                                            Text(draft.title)
+                                            Text(log.title)
                                                 .font(.caption.weight(.semibold))
-                                            Text("\(draft.itemCount) items • \(draft.includedCount) S • \(draft.candidateCount) C • \(draft.excludedCount) X • \(draft.status)")
+                                            Text("\(log.itemCount) items • \(log.includedCount) S • \(log.candidateCount) C • \(log.excludedCount) X • \(log.status)")
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                            Text(log.workspaceSourceFolderPath)
                                                 .font(.caption2)
                                                 .foregroundStyle(.secondary)
                                         }
                                         Spacer()
-                                        if draft.isCurrentSession {
+                                        if log.isCurrentSession {
                                             Text("Open")
                                                 .font(.caption2.weight(.semibold))
                                                 .foregroundStyle(.secondary)
                                         } else {
-                                            Button("Resume") {
-                                                appState.openSavedWalk(draft.sessionID)
+                                            Button("Open") {
+                                                appState.openPhotoLog(log.sessionID)
                                             }
                                             .buttonStyle(.bordered)
                                             .controlSize(.mini)
                                         }
+                                        Button("Reveal") {
+                                            appState.showPhotoLogContents(log.sessionID)
+                                        }
+                                        .buttonStyle(.bordered)
+                                        .controlSize(.mini)
+                                        Button("Edit") {
+                                            appState.presentPhotoLogEditor(log.sessionID)
+                                        }
+                                        .buttonStyle(.bordered)
+                                        .controlSize(.mini)
+                                        Button("Delete") {
+                                            appState.deletePhotoLog(log.sessionID)
+                                        }
+                                        .buttonStyle(.bordered)
+                                        .controlSize(.mini)
+                                        .disabled(log.status == "imported" || log.status == "source_cleaned")
                                     }
                                     .padding(.vertical, 2)
                                 }
@@ -209,7 +276,7 @@ private struct SavedWalkLibraryPane: View {
                         }
                     }
                 }
-                .frame(maxHeight: 180)
+                .frame(maxHeight: 220)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -230,18 +297,18 @@ struct WalkDetailsPaneView: View {
         if isEnabled {
             DisclosureGroup(isExpanded: $isExpanded) {
                 VStack(alignment: .leading, spacing: 8) {
-                    TextField("Walk title", text: $walkTitle)
+                    TextField("Photo log title", text: $walkTitle)
                     TextField("Location", text: $walkLocation)
                     TextField("Notes", text: $walkNotes, axis: .vertical)
                         .lineLimit(4...8)
-                    Button("Save Walk Metadata") {
+                    Button("Save Photo Log Details") {
                         appState.updateWalkMetadata(title: walkTitle, location: walkLocation, notes: walkNotes)
                     }
                 }
                 .padding(.top, 8)
             } label: {
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text("Walk Details")
+                    Text("Photo Log Details")
                         .font(.headline)
                     Text(summary)
                         .font(.caption)

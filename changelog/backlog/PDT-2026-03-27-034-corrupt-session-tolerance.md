@@ -1,0 +1,22 @@
+# PDT-2026-03-27-034 Corrupt Session Tolerance
+
+- Item ID: `PDT-2026-03-27-034`
+- Title: `Corrupt session tolerance`
+- User request summary: `Fix the startup/source-load failure where the app reports the EOS source as missing even though /Volumes/EOS_DIGITAL/DCIM is present.`
+- Constraints:
+  - Preserve recoverable persisted sessions instead of forcing a full reset.
+  - Do not block live source loading because one saved session row is corrupt.
+  - Keep startup/source access responsive for large real-world libraries.
+- Implementation intent:
+  - Make persisted session loading tolerate and skip corrupt SQLite rows.
+  - Log skipped rows clearly and continue with valid sessions.
+  - Add regression coverage for mixed valid/corrupt persisted data.
+- Test conditions:
+  - A store containing one valid row and one corrupt row still loads the valid session.
+  - Startup/source loading can proceed when corrupt persisted rows exist.
+- Success criteria:
+  - The app no longer fails live source loading solely because persisted session data contains corrupt rows.
+  - Valid saved sessions remain available after startup.
+- Current status: `awaiting_user_review`
+- Target release version: `0.1.72`
+- Target feature slug: `corrupt-session-tolerance`
