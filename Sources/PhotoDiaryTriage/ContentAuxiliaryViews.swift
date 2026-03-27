@@ -98,6 +98,8 @@ struct KeyboardHelpSheet: View {
 
                     shortcutSection("View And Compare", rows: [
                         ("+ / - / 0", "Change review grid columns, or zoom compare images when compare is open. Reset returns compare to Fit."),
+                        ("Q", "When compare is open, remove the focused compare item."),
+                        ("H / J / K / L", "When compare is zoomed, pan the focused image. With Lock Pan on, all compare images pan together."),
                         ("Cmd-3 / Cmd-4", "Switch flat review or grouped review."),
                         ("Cmd-Control-A / I / C / X / U", "Filter review items to all, included, candidate, excluded, or undecided."),
                         ("Cmd-Option-G / Cmd-Option-L", "Switch grid or list layout."),
@@ -116,7 +118,7 @@ struct KeyboardHelpSheet: View {
                         ("Cmd-Shift-M", "Copy marked files into the archive."),
                         ("Cmd-Shift-B", "Confirm backup and enable cleanup."),
                         ("Cmd-Shift-K", "Clean imported files from the SSD."),
-                        ("Cmd-Shift-W", "Create a saved walk draft from the current selection."),
+                        ("Cmd-Shift-W", "Create a photo log from the current scope."),
                         ("Cmd-Shift-/", "Open this shortcuts panel.")
                     ])
                 }
@@ -160,12 +162,324 @@ struct KeyboardHelpSheet: View {
     }
 }
 
+struct PhotoLogEditorSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let appState: AppState
+    @State private var editor: PhotoLogEditorState
+
+    init(appState: AppState, editor: PhotoLogEditorState) {
+        self.appState = appState
+        _editor = State(initialValue: editor)
+    }
+
+    private var creationPlan: PhotoLogCreationPlan? {
+        guard case .create = editor.mode else { return nil }
+        return appState.proposedPhotoLogCreationPlan(mode: editor.creationMode)
+    }
+
+    private var sourceScopeSummary: String {
+        creationPlan.map { "\($0.scope.kind.title) • \($0.scope.label)" } ?? "No creation scope available."
+    }
+
+    private var createDisabled: Bool {
+        creationPlan?.canCreate != true
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(sheetTitle)
+                        .font(.title2.weight(.bold))
+                    Text(sheetSubtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Cancel") {
+                    appState.dismissPhotoLogEditor()
+                }
+                .keyboardShortcut(.cancelAction)
+            }
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    metadataSection
+
+                    if case .create = editor.mode {
+                        creationSection
+                    }
+
+                    scopeSection
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.trailing, 8)
+            }
+
+            HStack(spacing: 8) {
+                Spacer()
+                switch editor.mode {
+                case .create:
+                    Button("Create Log") {
+                        appState.updateActivePhotoLogEditor(editor)
+                        appState.createPhotoLog(openAfterCreate: false)
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(createDisabled)
+
+                    Button("Create And Open") {
+                        appState.updateActivePhotoLogEditor(editor)
+                        appState.createPhotoLog(openAfterCreate: true)
+                    }
+                    .disabled(createDisabled)
+                case .edit:
+                    Button("Save Changes") {
+                        appState.updateActivePhotoLogEditor(editor)
+                        appState.saveActivePhotoLogEdits()
+                    }
+                    .keyboardShortcut(.defaultAction)
+                }
+            }
+        }
+        .padding(24)
+        .frame(minWidth: 700, minHeight: 620)
+        .onDisappear {
+            if appState.presentationState.snapshot.activePhotoLogEditor != nil {
+                appState.updateActivePhotoLogEditor(editor)
+            }
+        }
+    }
+
+    private var metadataSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("Details")
+
+            TextField("Photo Log Title", text: $editor.title)
+            TextField("Location", text: $editor.location)
+            TextField("Notes", text: $editor.notes, axis: .vertical)
+                .lineLimit(4...8)
+        }
+        .sheetSectionStyle()
+    }
+
+    private var creationSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("Creation Plan")
+
+            Picker("Membership", selection: $editor.creationMode) {
+                ForEach(PhotoLogCreationMode.allCases, id: \.self) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            keyValueRow("Primary Scope", sourceScopeSummary)
+
+            if let plan = creationPlan {
+                keyValueRow("Included", "\(plan.counts.included)")
+                keyValueRow("Candidate", "\(plan.counts.candidate)")
+                keyValueRow("Excluded", "\(plan.counts.excluded)")
+                keyValueRow("Undecided", "\(plan.counts.undecided)")
+                keyValueRow("Final Member Count", "\(plan.candidateCount)")
+
+                if let disabledReason = plan.disabledReason {
+                    Text(disabledReason)
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+
+                if !plan.collisions.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Owned By Another Photo Log")
+                            .font(.caption.weight(.semibold))
+                        ForEach(plan.collisions, id: \.relativePath) { collision in
+                            HStack(alignment: .top, spacing: 8) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(collision.owningTitle)
+                                        .font(.caption.weight(.semibold))
+                                    Text(collision.relativePath)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Button("Open Existing Log") {
+                                    appState.dismissPhotoLogEditor()
+                                    appState.openPhotoLog(collision.owningSessionID)
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.mini)
+                            }
+                        }
+                    }
+                    .padding(12)
+                    .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                }
+            } else {
+                Text("Focus the review grid or select one folder before creating a photo log.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .sheetSectionStyle()
+    }
+
+    private var scopeSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("Primary Scope")
+
+            Picker("Scope Type", selection: $editor.scopeKind) {
+                ForEach(PhotoLogScopeKind.allCases, id: \.self) { kind in
+                    Text(kind.title).tag(kind)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            TextField(scopeLabelPrompt, text: $editor.scopeLabel)
+
+            if editor.scopeKind == .dateRange {
+                DatePicker(
+                    "Start",
+                    selection: Binding(
+                        get: { editor.startDate ?? Date() },
+                        set: { editor.startDate = $0 }
+                    ),
+                    displayedComponents: [.date]
+                )
+
+                DatePicker(
+                    "End",
+                    selection: Binding(
+                        get: { editor.endDate ?? editor.startDate ?? Date() },
+                        set: { editor.endDate = $0 }
+                    ),
+                    displayedComponents: [.date]
+                )
+            } else {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Source Folders")
+                        .font(.caption.weight(.semibold))
+                    if editor.sourceFolderPaths.isEmpty {
+                        Text("No source folders recorded.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(editor.sourceFolderPaths, id: \.self) { path in
+                            Text(path)
+                                .font(.caption)
+                                .textSelection(.enabled)
+                        }
+                    }
+                }
+            }
+        }
+        .sheetSectionStyle()
+    }
+
+    private var sheetTitle: String {
+        switch editor.mode {
+        case .create:
+            return "Create Photo Log"
+        case .edit:
+            return "Edit Photo Log"
+        }
+    }
+
+    private var sheetSubtitle: String {
+        switch editor.mode {
+        case .create:
+            return "Review the source scope, membership counts, and ownership collisions before moving photos."
+        case .edit:
+            return "Update the title, notes, and primary scope without changing membership."
+        }
+    }
+
+    private var scopeLabelPrompt: String {
+        switch editor.scopeKind {
+        case .folder:
+            return "Folder Label"
+        case .dateRange:
+            return "Date Range Label"
+        case .custom:
+            return "Custom Scope Label"
+        }
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.headline)
+    }
+
+    private func keyValueRow(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(label)
+                .font(.caption.weight(.semibold))
+                .frame(width: 130, alignment: .leading)
+            Text(value)
+                .font(.caption)
+            Spacer(minLength: 0)
+        }
+    }
+}
+
+struct PhotoLogContentsSheet: View {
+    let appState: AppState
+    let revealed: PhotoLogRevealState
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(revealed.title)
+                        .font(.title2.weight(.bold))
+                    Text("\(revealed.relativePaths.count) owned photo(s)")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Close") {
+                    appState.dismissRevealedPhotoLog()
+                }
+                .keyboardShortcut(.cancelAction)
+            }
+
+            if revealed.relativePaths.isEmpty {
+                Text("This photo log does not currently own any photos.")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+            } else {
+                List(revealed.relativePaths, id: \.self) { relativePath in
+                    Text(relativePath)
+                        .font(.system(.body, design: .monospaced))
+                        .textSelection(.enabled)
+                }
+                .listStyle(.inset)
+            }
+        }
+        .padding(24)
+        .frame(minWidth: 640, minHeight: 420)
+    }
+}
+
+private extension View {
+    func sheetSectionStyle() -> some View {
+        padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(nsColor: .controlBackgroundColor).opacity(0.45), in: RoundedRectangle(cornerRadius: 14))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(Color.secondary.opacity(0.16), lineWidth: 1)
+            }
+    }
+}
+
 struct ReviewKeyInputView: NSViewRepresentable {
     let isFocused: Bool
     let onArrow: (_ dx: Int, _ dy: Int, _ extending: Bool) -> Void
     let onSectionArrow: (_ dx: Int, _ dy: Int) -> Void
     let onSectionExpandCollapse: (_ expand: Bool) -> Void
     let onSingleKey: (_ key: String) -> Void
+    let onPan: ((_ dx: Int, _ dy: Int) -> Void)?
     let onSpace: () -> Void
     let onOpen: () -> Void
     let onCommandOpen: () -> Void
@@ -182,6 +496,7 @@ struct ReviewKeyInputView: NSViewRepresentable {
         view.onSectionArrow = onSectionArrow
         view.onSectionExpandCollapse = onSectionExpandCollapse
         view.onSingleKey = onSingleKey
+        view.onPan = onPan
         view.onSpace = onSpace
         view.onOpen = onOpen
         view.onCommandOpen = onCommandOpen
@@ -199,6 +514,7 @@ struct ReviewKeyInputView: NSViewRepresentable {
         nsView.onSectionArrow = onSectionArrow
         nsView.onSectionExpandCollapse = onSectionExpandCollapse
         nsView.onSingleKey = onSingleKey
+        nsView.onPan = onPan
         nsView.onSpace = onSpace
         nsView.onOpen = onOpen
         nsView.onCommandOpen = onCommandOpen
@@ -224,6 +540,7 @@ final class ReviewKeyResponderView: NSView {
     var onSectionArrow: ((_ dx: Int, _ dy: Int) -> Void)?
     var onSectionExpandCollapse: ((_ expand: Bool) -> Void)?
     var onSingleKey: ((_ key: String) -> Void)?
+    var onPan: ((_ dx: Int, _ dy: Int) -> Void)?
     var onSpace: (() -> Void)?
     var onOpen: (() -> Void)?
     var onCommandOpen: (() -> Void)?
@@ -308,13 +625,24 @@ final class ReviewKeyResponderView: NSView {
                 onZoomOut?()
             } else if rawText == "0" {
                 onZoomReset?()
-            } else if ["S", "X", "D", "R", "A", "C"].contains(text) {
+            } else if let direction = CompareKeyboardPanDirection(key: text), let onPan {
+                onPan(direction.dx, direction.dy)
+            } else if ["S", "X", "D", "R", "A", "C"].contains(text) || (text == "Q" && onPan != nil) {
                 onSingleKey?(text)
             } else {
                 super.keyDown(with: event)
             }
         }
     }
+}
+
+struct ComparePanCommand: Equatable {
+    let targetItemID: UUID?
+    let dx: Int
+    let dy: Int
+    let revision: Int
+
+    static let idle = ComparePanCommand(targetItemID: nil, dx: 0, dy: 0, revision: 0)
 }
 
 struct FullPhotoSheet: View {
@@ -370,9 +698,11 @@ struct CompareSheet: View {
     @State private var zoom: CGFloat = 1
     @State private var isPanLocked = true
     @State private var synchronizedViewport = CompareViewport.zero
+    @State private var panCommand = ComparePanCommand.idle
 
     var body: some View {
         let snapshot = state.snapshot
+        let scrollTargetID = snapshot.preferredScrollTargetID
 
         VStack(alignment: .leading, spacing: 18) {
             ReviewKeyInputView(
@@ -383,7 +713,19 @@ struct CompareSheet: View {
                 onSectionArrow: { _, _ in },
                 onSectionExpandCollapse: { _ in },
                 onSingleKey: { key in
-                    appState.performReviewShortcut(key)
+                    appState.performCompareShortcut(key)
+                },
+                onPan: { dx, dy in
+                    if isPanLocked {
+                        synchronizedViewport = synchronizedViewport.nudged(dx: dx, dy: dy)
+                    } else if let targetItemID = scrollTargetID {
+                        panCommand = ComparePanCommand(
+                            targetItemID: targetItemID,
+                            dx: dx,
+                            dy: dy,
+                            revision: panCommand.revision &+ 1
+                        )
+                    }
                 },
                 onSpace: {
                     appState.toggleFocusedReviewItemSelection()
@@ -452,23 +794,36 @@ struct CompareSheet: View {
                         count: max(metrics.columnCount, 1)
                     )
 
-                    ScrollView {
-                        LazyVGrid(columns: columns, alignment: .leading, spacing: CGFloat(CompareGridMetrics.gridSpacing)) {
-                            ForEach(snapshot.items) { itemSnapshot in
-                                CompareItemCard(
-                                    appState: appState,
-                                    snapshot: itemSnapshot,
-                                    zoom: zoom,
-                                    synchronizedViewport: $synchronizedViewport,
-                                    isPanLocked: isPanLocked,
-                                    imageWidth: CGFloat(metrics.imageWidth)
-                                )
-                                .frame(width: CGFloat(metrics.cardWidth), alignment: .topLeading)
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LazyVGrid(columns: columns, alignment: .leading, spacing: CGFloat(CompareGridMetrics.gridSpacing)) {
+                                ForEach(snapshot.items) { itemSnapshot in
+                                    CompareItemCard(
+                                        appState: appState,
+                                        snapshot: itemSnapshot,
+                                        zoom: zoom,
+                                        synchronizedViewport: $synchronizedViewport,
+                                        panCommand: panCommand,
+                                        isPanLocked: isPanLocked,
+                                        imageWidth: CGFloat(metrics.imageWidth)
+                                    )
+                                    .frame(width: CGFloat(metrics.cardWidth), alignment: .topLeading)
+                                    .id(itemSnapshot.id)
+                                }
+                            }
+                            .padding(CGFloat(CompareGridMetrics.gridPadding))
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .onAppear {
+                            if let targetID = scrollTargetID {
+                                proxy.scrollTo(targetID, anchor: .center)
                             }
                         }
-                        .padding(CGFloat(CompareGridMetrics.gridPadding))
+                        .onChange(of: scrollTargetID) { _, targetID in
+                            guard let targetID else { return }
+                            proxy.scrollTo(targetID, anchor: .center)
+                        }
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
             }
         }
@@ -519,6 +874,7 @@ struct CompareItemCard: View {
     let snapshot: ReviewItemSnapshot
     let zoom: CGFloat
     @Binding var synchronizedViewport: CompareViewport
+    let panCommand: ComparePanCommand
     let isPanLocked: Bool
     let imageWidth: CGFloat
 
@@ -558,8 +914,7 @@ struct CompareItemCard: View {
 
                 if appState.canMutateImportSelection {
                     Button("S") {
-                        appState.selectMediaItems([item.id])
-                        appState.markCurrentSelectionForImport()
+                        appState.markComparisonItemForImport(item.id)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.mini)
@@ -567,8 +922,7 @@ struct CompareItemCard: View {
                     .shortcutHint("S / Cmd-I", help: "Select this item for import")
 
                     Button("C") {
-                        appState.selectMediaItems([item.id])
-                        appState.markCurrentSelectionAsCandidate()
+                        appState.markComparisonItemAsCandidate(item.id)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.mini)
@@ -576,8 +930,7 @@ struct CompareItemCard: View {
                     .shortcutHint("C", help: "Mark this item as candidate")
 
                     Button("X") {
-                        appState.selectMediaItems([item.id])
-                        appState.excludeCurrentSelectionFromImport()
+                        appState.excludeComparisonItemFromImport(item.id)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.mini)
@@ -586,8 +939,7 @@ struct CompareItemCard: View {
 
                     if !item.selectionState.isUndecided {
                         Button("D") {
-                            appState.selectMediaItems([item.id])
-                            appState.unmarkCurrentSelectionForImport()
+                            appState.clearComparisonItemTriageState(item.id)
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.mini)
@@ -621,12 +973,15 @@ struct CompareItemCard: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .help("Remove this item from compare")
+                .shortcutHint("Q", help: "Remove this item from compare (Q)", alignment: .topLeading)
             }
 
             LoadedLockedCompareImageCanvas(
+                itemID: item.id,
                 imageURL: item.sourceURL,
                 zoom: zoom,
                 synchronizedViewport: $synchronizedViewport,
+                panCommand: panCommand,
                 isPanLocked: isPanLocked
             )
                 .frame(width: imageWidth, height: imageHeight)
@@ -636,28 +991,6 @@ struct CompareItemCard: View {
                         appState.handleGridSelection(for: item.id, click: click)
                     }
                 }
-
-            HStack(spacing: 6) {
-                Button("Only") {
-                    appState.selectMediaItems([item.id])
-                }
-                .help("Select only this item")
-
-                Button("Tgl") {
-                    appState.toggleSelectionForComparisonItem(item.id)
-                }
-                .help("Toggle this item in the current selection")
-
-                Button("Open") {
-                    appState.selectMediaItems([item.id])
-                    appState.openFocusedReviewItem()
-                }
-                .help("Open this item in preview")
-
-                Spacer(minLength: 0)
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
         }
         .padding(12)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 16))
@@ -757,9 +1090,11 @@ struct ZoomableImageCanvas: View {
 }
 
 struct LoadedLockedCompareImageCanvas: View {
+    let itemID: UUID
     let imageURL: URL
     let zoom: CGFloat
     @Binding var synchronizedViewport: CompareViewport
+    let panCommand: ComparePanCommand
     let isPanLocked: Bool
     @StateObject private var imageModel = DecodedImageModel()
 
@@ -767,9 +1102,11 @@ struct LoadedLockedCompareImageCanvas: View {
         Group {
             if let image = imageModel.image {
                 LockedCompareImageCanvas(
+                    itemID: itemID,
                     image: image,
                     zoom: zoom,
                     synchronizedViewport: $synchronizedViewport,
+                    panCommand: panCommand,
                     isPanLocked: isPanLocked
                 )
             } else {
@@ -785,9 +1122,11 @@ struct LoadedLockedCompareImageCanvas: View {
 }
 
 struct LockedCompareImageCanvas: NSViewRepresentable {
+    let itemID: UUID
     let image: NSImage
     let zoom: CGFloat
     @Binding var synchronizedViewport: CompareViewport
+    let panCommand: ComparePanCommand
     let isPanLocked: Bool
 
     func makeCoordinator() -> Coordinator {
@@ -804,6 +1143,7 @@ struct LockedCompareImageCanvas: NSViewRepresentable {
         context.coordinator.parent = self
         nsView.updateImage(image: image, zoom: zoom)
         context.coordinator.applySynchronizedViewportIfNeeded()
+        context.coordinator.applyPanCommandIfNeeded()
     }
 
     final class Coordinator: NSObject {
@@ -813,6 +1153,7 @@ struct LockedCompareImageCanvas: NSViewRepresentable {
         private var isApplyingSynchronizedViewport = false
         private var lastAppliedViewport = CompareViewport.zero
         private var lastAppliedDocumentSize: CGSize = .zero
+        private var lastAppliedPanRevision: Int = 0
 
         init(_ parent: LockedCompareImageCanvas) {
             self.parent = parent
@@ -848,6 +1189,18 @@ struct LockedCompareImageCanvas: NSViewRepresentable {
             isApplyingSynchronizedViewport = false
         }
 
+        func applyPanCommandIfNeeded() {
+            guard let scrollView else { return }
+            guard parent.isPanLocked == false else {
+                lastAppliedPanRevision = parent.panCommand.revision
+                return
+            }
+            guard parent.panCommand.revision != lastAppliedPanRevision else { return }
+            lastAppliedPanRevision = parent.panCommand.revision
+            guard parent.panCommand.targetItemID == parent.itemID else { return }
+            scrollView.panBy(dx: parent.panCommand.dx, dy: parent.panCommand.dy)
+        }
+
         private func boundsDidChange() {
             guard let scrollView else { return }
             guard parent.isPanLocked else { return }
@@ -873,7 +1226,7 @@ final class LockedCompareCanvasView: NSScrollView {
         drawsBackground = false
         hasVerticalScroller = true
         hasHorizontalScroller = true
-        autohidesScrollers = true
+        autohidesScrollers = false
         borderType = .noBorder
         imageView.imageAlignment = .alignCenter
         imageView.imageScaling = .scaleAxesIndependently
@@ -917,6 +1270,11 @@ final class LockedCompareCanvasView: NSScrollView {
         )
         contentView.scroll(to: origin)
         reflectScrolledClipView(contentView)
+    }
+
+    func panBy(dx: Int, dy: Int, step: Double = 0.12) {
+        let viewport = currentSynchronizedViewport().nudged(dx: dx, dy: dy, step: step)
+        applySynchronizedViewport(viewport)
     }
 
     private func updateImageLayout() {

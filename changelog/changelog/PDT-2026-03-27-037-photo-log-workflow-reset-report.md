@@ -1,0 +1,35 @@
+# PDT-2026-03-27-037 Photo Log Workflow Reset Report
+
+- Item ID: `PDT-2026-03-27-037`
+- Summary of what changed:
+  - Replaced user-facing saved-walk language with `Photo Log` across commands, sidebar surfaces, details panes, and sheet flows while keeping `walkDraft` and `walkMetadata` persistence compatibility in place.
+  - Added a dedicated photo-log creation resolver and plan model so creation now depends on an explicit folder or review scope, defaults to `Decided In Scope`, reports counts and ownership collisions, and supports `Create Log` or `Create And Open`.
+  - Added first-class photo-log management UI for open, edit, reveal, and delete, plus scope metadata display and hidden-owned-photo summaries in inbox and source views.
+  - Hardened source-workspace loading and persisted-session normalization so resumed photo logs are not overwritten by stale source scans and corrupted rows can be skipped safely.
+- Files changed:
+  - `APP_RELEASE.env`
+  - `Sources/PhotoDiaryTriage/AppCommands.swift`
+  - `Sources/PhotoDiaryTriage/AppState.swift`
+  - `Sources/PhotoDiaryTriage/BrowserViewModel.swift`
+  - `Sources/PhotoDiaryTriage/ContentAuxiliaryViews.swift`
+  - `Sources/PhotoDiaryTriage/ContentView.swift`
+  - `Sources/PhotoDiaryTriage/ContentViewBrowserSections.swift`
+  - `Sources/PhotoDiaryTriage/ContentViewSections.swift`
+  - `Sources/PhotoDiaryTriage/Models.swift`
+  - `Sources/PhotoDiaryTriage/ReviewInteractionSupport.swift`
+  - `Sources/PhotoDiaryTriage/SessionLifecycleCoordinator.swift`
+  - `Sources/PhotoDiaryTriage/SessionStore.swift`
+  - `Sources/PhotoDiaryTriage/StateSupport.swift`
+  - `Sources/PhotoDiaryTriage/UIState.swift`
+  - `Tests/PhotoDiaryTriageTests/PhotoDiaryTriageTests.swift`
+  - `Tests/PhotoDiaryTriageTests/ReviewInteractionTests.swift`
+  - `Tests/PhotoDiaryTriageTests/SessionStoreTests.swift`
+  - `Tests/PhotoDiaryTriageTests/StateSupportTests.swift`
+- Verification performed:
+  - `swift test`
+- Known gaps or follow-up items:
+  - Persistence still uses the legacy `walkDraft` session kind and `walkMetadata` payload for compatibility; storage cleanup is deferred.
+  - The create/edit sheets are implemented and covered by state/workflow tests, but no manual UI pass was recorded in this report.
+  - A dedicated membership editor for existing photo logs is still out of scope for this slice.
+- Shipped release version: `0.1.75`
+- Shipped feature slug: `photo-log-workflow-reset`

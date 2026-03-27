@@ -35,7 +35,7 @@ struct ContentView: View {
                     walkTitle: $walkTitle,
                     walkLocation: $walkLocation,
                     walkNotes: $walkNotes,
-                    summary: walkDetailsSummary,
+                    summary: photoLogDetailsSummary,
                     appRelease: appRelease
                 )
                 .frame(width: 320, alignment: .leading)
@@ -123,6 +123,18 @@ struct ContentView: View {
         )) { item in
             FullPhotoSheet(appState: appState, item: item)
         }
+        .sheet(item: Binding(
+            get: { presentationState.snapshot.activePhotoLogEditor },
+            set: { _ in appState.dismissPhotoLogEditor() }
+        )) { editor in
+            PhotoLogEditorSheet(appState: appState, editor: editor)
+        }
+        .sheet(item: Binding(
+            get: { presentationState.snapshot.revealedPhotoLog },
+            set: { _ in appState.dismissRevealedPhotoLog() }
+        )) { revealed in
+            PhotoLogContentsSheet(appState: appState, revealed: revealed)
+        }
         .onAppear(perform: hydrateForm)
         .onChange(of: sidebarState.snapshot.sessionSummary?.sessionID) { _, _ in
             hydrateForm()
@@ -151,12 +163,12 @@ struct ContentView: View {
         appState.updateWalkDetailsExpansion(for: appState.currentSession)
     }
 
-    private var walkDetailsSummary: String {
+    private var photoLogDetailsSummary: String {
         let title = walkTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         let location = walkLocation.trimmingCharacters(in: .whitespacesAndNewlines)
         let notes = walkNotes.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        let titlePart = title.isEmpty ? "Untitled walk" : title
+        let titlePart = title.isEmpty ? "Untitled photo log" : title
         let locationPart = location.isEmpty ? "No location" : location
         let notesPart = notes.isEmpty ? "No notes" : "Notes saved"
         return "\(titlePart) • \(locationPart) • \(notesPart)"

@@ -1,0 +1,25 @@
+# PDT-2026-03-27-038 Public v0.2 Milestone Release
+
+- Item ID: `PDT-2026-03-27-038`
+- Title: `Public v0.2 milestone release`
+- User request summary: `Commit the current app state as v0.2, publish it to a public GitHub repository, add a detailed README and MIT license, create a public release, and record this as a key milestone that makes it possible to create one record quickly before adding more features.`
+- Constraints:
+  - Preserve the current working app state and its changelog/backlog tracking.
+  - Publish the repository publicly with documentation that explains purpose, workflow, and current functionality honestly.
+  - Use an MIT license and create a public tagged release.
+  - Mark the milestone explicitly as a baseline release rather than an endpoint.
+- Implementation intent:
+  - Prepare the repo for public sharing with `README.md`, `LICENSE`, release metadata, and an updated app version.
+  - Commit the current state as `v0.2.0`, create a public GitHub repo, push the default branch, and publish a release tag.
+  - Record the release as a milestone that establishes a fast single-record workflow and a base for follow-on features.
+- Test conditions:
+  - The repository has a public remote and the current `main` branch is pushed.
+  - `README.md` explains the app’s purpose, workflow, current functionality, development status, and release usage.
+  - The repo includes an MIT license and a `v0.2.0` release entry.
+- Success criteria:
+  - The codebase is committed and available in a public repo.
+  - The public repo description and release clearly communicate what the app already does and what comes next.
+  - Tracking files identify this as a key milestone that unlocked quick creation of a first useful record.
+- Current status: `awaiting_user_review`
+- Target release version: `0.2.0`
+- Target feature slug: `public-v0-2-milestone`

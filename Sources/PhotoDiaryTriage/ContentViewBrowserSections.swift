@@ -161,6 +161,7 @@ struct ReviewPaneView: View {
                         onSingleKey: { key in
                             appState.performReviewShortcut(key)
                         },
+                        onPan: nil,
                         onSpace: {
                             appState.toggleFocusedReviewItemSelection()
                         },

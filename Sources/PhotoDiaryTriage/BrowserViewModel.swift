@@ -26,7 +26,8 @@ final class BrowserViewModel {
         currentSession: ImportSession?,
         bursts: [BurstGroup],
         clusters: [TimeCluster],
-        archiveRoot: URL
+        archiveRoot: URL,
+        sourceWorkspaceState: SourceWorkspaceState
     ) -> [BrowserNode] {
         var roots: [BrowserNode] = []
         if let session = currentSession {
@@ -47,7 +48,7 @@ final class BrowserViewModel {
                 BrowserNode(
                     id: "section-current-session",
                     title: "Current Session",
-                    subtitle: "No SSD folder loaded",
+                    subtitle: subtitleForEmptyCurrentSession(sourceWorkspaceState),
                     kind: .sessionSection,
                     parentID: nil,
                     mediaItemIDs: [],
@@ -59,6 +60,21 @@ final class BrowserViewModel {
 
         roots.append(buildArchiveSection(rootURL: archiveRoot))
         return roots
+    }
+
+    private func subtitleForEmptyCurrentSession(_ state: SourceWorkspaceState) -> String {
+        switch state {
+        case .idle:
+            return "No live source inbox loaded"
+        case .loading(let sourcePath):
+            return "Loading \(URL(fileURLWithPath: sourcePath).lastPathComponent)"
+        case .loaded(let itemCount, let sourcePath):
+            return "\(itemCount) item(s) loaded from \(URL(fileURLWithPath: sourcePath).lastPathComponent)"
+        case .empty(let sourcePath):
+            return "No supported media in \(URL(fileURLWithPath: sourcePath).lastPathComponent)"
+        case .failed(_, let message):
+            return message
+        }
     }
 
     func nodeMap(for roots: [BrowserNode]) -> [String: BrowserNode] {

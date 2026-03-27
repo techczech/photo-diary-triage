@@ -71,8 +71,8 @@ struct CompareGridMetrics: Equatable, Sendable {
     }
 
     static func defaultColumnCount(for itemCount: Int) -> Int {
-        guard itemCount > 0 else { return 1 }
-        return min(itemCount, defaultMaxColumns)
+        guard itemCount > 1 else { return 1 }
+        return 2
     }
 
     private var usableWidth: Double {
@@ -122,6 +122,57 @@ struct CompareViewport: Equatable, Sendable {
         let maxX = max(contentSize.width - viewportSize.width, 0)
         let maxY = max(contentSize.height - viewportSize.height, 0)
         return CGPoint(x: maxX * x, y: maxY * y)
+    }
+
+    func nudged(dx: Int, dy: Int, step: Double = 0.12) -> CompareViewport {
+        CompareViewport(
+            x: x + (Double(dx) * step),
+            y: y + (Double(dy) * step)
+        )
+    }
+}
+
+enum CompareKeyboardPanDirection: Equatable, Sendable {
+    case left
+    case down
+    case up
+    case right
+
+    init?(key: String) {
+        switch key.uppercased() {
+        case "H":
+            self = .left
+        case "J":
+            self = .down
+        case "K":
+            self = .up
+        case "L":
+            self = .right
+        default:
+            return nil
+        }
+    }
+
+    var dx: Int {
+        switch self {
+        case .left:
+            return -1
+        case .right:
+            return 1
+        case .down, .up:
+            return 0
+        }
+    }
+
+    var dy: Int {
+        switch self {
+        case .down:
+            return 1
+        case .up:
+            return -1
+        case .left, .right:
+            return 0
+        }
     }
 }
 

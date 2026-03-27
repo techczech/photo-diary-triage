@@ -165,7 +165,7 @@ final class SessionLifecycleCoordinator {
         }
     }
 
-    private func resolvedDefaultSourceFolder(settings: AppSettings) -> URL? {
+    func resolvedDefaultSourceFolder(settings: AppSettings) -> URL? {
         let root = settings.defaultSourceRoot.standardizedFileURL
         guard fileManager.fileExists(atPath: root.path) else { return nil }
 

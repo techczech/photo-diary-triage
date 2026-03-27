@@ -1,0 +1,26 @@
+# PDT-2026-03-27-035 Compare Workflow Tightening
+
+- Item ID: `PDT-2026-03-27-035`
+- Title: `Compare workflow tightening`
+- User request summary: `Tighten compare so it always opens at two columns, removes extra per-card chrome, supports a compare-only Q remove shortcut, auto-removes excluded items from compare, and keeps focus plus scroll continuity after compare triage actions.`
+- Constraints:
+  - Keep compare keyboard-first.
+  - Preserve manual compare column controls.
+  - Do not change grid-review shortcut semantics outside compare.
+- Implementation intent:
+  - Default compare to two columns for all compare sessions with two or more items.
+  - Remove the bottom compare card control row and keep actions compact at the top.
+  - Add compare-only shortcut handling for `Q`.
+  - Add compare-specific triage actions so exclude also prunes compare and all compare moves update compare scroll focus.
+- Test conditions:
+  - Compare with 2+ items always opens at two columns by default.
+  - `Q` removes the focused compare item.
+  - Excluding in compare excludes and removes that item from compare.
+  - Compare focus changes update a compare scroll target after arrow navigation and compare triage actions.
+- Success criteria:
+  - Compare opens in a denser two-column review layout with more image space.
+  - Exclude and remove operations feel immediate and keyboard driven inside compare.
+  - The newly active compare item is automatically focused and scrolled into view after compare actions.
+- Current status: `awaiting_user_review`
+- Target release version: `0.1.73`
+- Target feature slug: `compare-workflow-tightening`

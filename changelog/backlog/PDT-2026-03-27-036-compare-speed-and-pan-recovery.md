@@ -1,0 +1,25 @@
+# PDT-2026-03-27-036 Compare Speed And Pan Recovery
+
+- Item ID: `PDT-2026-03-27-036`
+- Title: `Compare speed and pan recovery`
+- User request summary: `Undo the compare slowdown introduced by the last change, restore smooth zoom/pan behavior in compare, and add H/J/K/L keyboard panning while zoomed.`
+- Constraints:
+  - Compare must stay fast enough for real triage on large sessions.
+  - Compare-only shortcut behavior must not leak into grid review.
+  - Keep locked-pan behavior working for synchronized detail inspection.
+- Implementation intent:
+  - Remove the extra compare scroll state invalidation that is rebuilding compare more often than needed.
+  - Drive compare auto-scroll from focused or selected compare items without a separate published scroll target.
+  - Add compare-only `H`, `J`, `K`, and `L` keyboard handling for panning zoomed images.
+  - Restore predictable compare pan/zoom interaction, including visible internal scrollers for zoomed compare images.
+- Test conditions:
+  - Compare focus changes still produce the correct auto-scroll target after navigation and compare triage actions.
+  - Compare keyboard routing forwards `Q` and compare pan keys without changing grid shortcut behavior.
+  - Compare viewport keyboard panning nudges the viewport and clamps within bounds.
+- Success criteria:
+  - Compare no longer feels slower after the focus/scroll changes.
+  - Zoomed compare images can be panned quickly with `H/J/K/L`.
+  - Locked pan continues to synchronize the visible detail area across compare items.
+- Current status: `awaiting_user_review`
+- Target release version: `0.1.74`
+- Target feature slug: `compare-speed-and-pan-recovery`

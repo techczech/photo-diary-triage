@@ -14,9 +14,10 @@ struct SessionSummary: Equatable, Sendable {
     let sessionKind: SessionKind
     let status: String
     let walkMetadata: WalkMetadata
+    let photoLogScope: PhotoLogScopeDescriptor?
 }
 
-struct SavedWalkSummary: Identifiable, Equatable, Sendable {
+struct PhotoLogSummary: Identifiable, Equatable, Sendable {
     let sessionID: UUID
     let title: String
     let sourceFolderPath: String
@@ -30,16 +31,44 @@ struct SavedWalkSummary: Identifiable, Equatable, Sendable {
     let sourceIsAvailable: Bool
     let lastUpdatedAt: Date
     let isCurrentSession: Bool
+    let scopeLabel: String
 
     var id: UUID { sessionID }
 }
 
-struct SavedWalkGroupSnapshot: Identifiable, Equatable, Sendable {
-    let workspaceSourceFolderPath: String
+struct PhotoLogGroupSnapshot: Identifiable, Equatable, Sendable {
+    let scopeLabel: String
     let sourceIsAvailable: Bool
-    let drafts: [SavedWalkSummary]
+    let logs: [PhotoLogSummary]
 
-    var id: String { workspaceSourceFolderPath }
+    var id: String { scopeLabel }
+}
+
+struct PhotoLogEditorState: Identifiable, Equatable {
+    enum Mode: Equatable {
+        case create
+        case edit(sessionID: UUID)
+    }
+
+    let id: UUID
+    let mode: Mode
+    var creationMode: PhotoLogCreationMode
+    var title: String
+    var location: String
+    var notes: String
+    var scopeKind: PhotoLogScopeKind
+    var scopeLabel: String
+    var sourceFolderPaths: [String]
+    var startDate: Date?
+    var endDate: Date?
+}
+
+struct PhotoLogRevealState: Identifiable, Equatable {
+    let sessionID: UUID
+    let title: String
+    let relativePaths: [String]
+
+    var id: UUID { sessionID }
 }
 
 struct SidebarTreeSnapshot: Equatable, Sendable {
@@ -61,27 +90,35 @@ struct ReviewItemSnapshot: Identifiable, Equatable, Sendable {
 
 struct SidebarSnapshot: Equatable, Sendable {
     let isVisible: Bool
+    let sourceWorkspaceState: SourceWorkspaceState
     let sessionSummary: SessionSummary?
-    let savedWalkGroups: [SavedWalkGroupSnapshot]
+    let photoLogGroups: [PhotoLogGroupSnapshot]
     let canMutateImportSelection: Bool
-    let canCreateWalkDraftFromSelection: Bool
+    let canPresentPhotoLogCreation: Bool
+    let canOpenDefaultSourceWorkspace: Bool
+    let canReloadSourceWorkspace: Bool
     let isWalkDetailsExpanded: Bool
     let archiveRootDisplayPath: String
     let archiveYearFolders: [String]
     let tree: SidebarTreeSnapshot
+    let hiddenPhotoLogSummary: String?
     let statusMessage: String
     let importProgress: ImportProgress?
 
     static let empty = SidebarSnapshot(
         isVisible: true,
+        sourceWorkspaceState: .idle,
         sessionSummary: nil,
-        savedWalkGroups: [],
+        photoLogGroups: [],
         canMutateImportSelection: false,
-        canCreateWalkDraftFromSelection: false,
+        canPresentPhotoLogCreation: false,
+        canOpenDefaultSourceWorkspace: true,
+        canReloadSourceWorkspace: false,
         isWalkDetailsExpanded: true,
         archiveRootDisplayPath: "",
         archiveYearFolders: [],
         tree: .empty,
+        hiddenPhotoLogSummary: nil,
         statusMessage: "Choose a source folder on the SSD to begin.",
         importProgress: nil
     )
@@ -200,14 +237,28 @@ struct CompareSnapshot: Equatable, Sendable {
     let gridColumnCount: Int
 
     static let empty = CompareSnapshot(title: "Compare Selection", itemIDs: [], items: [], gridColumnCount: 1)
+
+    var preferredScrollTargetID: UUID? {
+        items.first(where: \.isFocused)?.id
+            ?? items.first(where: \.isSelected)?.id
+            ?? itemIDs.first
+    }
 }
 
 struct PresentationSnapshot: Equatable {
     let showKeyboardHelp: Bool
     let startupAlert: AppStartupAlert?
     let previewingMediaItem: MediaItem?
+    let activePhotoLogEditor: PhotoLogEditorState?
+    let revealedPhotoLog: PhotoLogRevealState?
 
-    static let empty = PresentationSnapshot(showKeyboardHelp: false, startupAlert: nil, previewingMediaItem: nil)
+    static let empty = PresentationSnapshot(
+        showKeyboardHelp: false,
+        startupAlert: nil,
+        previewingMediaItem: nil,
+        activePhotoLogEditor: nil,
+        revealedPhotoLog: nil
+    )
 }
 
 @MainActor

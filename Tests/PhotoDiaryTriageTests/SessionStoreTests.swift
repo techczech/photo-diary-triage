@@ -144,7 +144,7 @@ import Testing
     #expect(loaded[0].0.id == session.id)
 }
 
-@Test func sessionStoreThrowsWhenStoredSessionBlobIsCorrupted() throws {
+@Test func sessionStoreSkipsStoredSessionBlobWhenCorrupted() throws {
     let root = try makeTemporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
 
@@ -166,24 +166,62 @@ import Testing
     try corruptSessionBlob(in: databaseURL)
 
     let reopenedStore = try SessionStore(databaseURL: databaseURL)
-    var didThrow = false
-    do {
-        _ = try reopenedStore.loadSessions()
-    } catch {
-        didThrow = true
-    }
+    let loaded = try reopenedStore.loadSessions()
 
-    #expect(didThrow)
+    #expect(loaded.isEmpty)
 }
 
-private func corruptSessionBlob(in databaseURL: URL) throws {
+@Test func sessionStoreLoadsValidRowsWhenAnotherRowIsCorrupted() throws {
+    let root = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let databaseURL = root.appendingPathComponent("sessions.sqlite")
+    let sourceRoot = root.appendingPathComponent("source", isDirectory: true)
+    let archiveRoot = root.appendingPathComponent("archive", isDirectory: true)
+    let capturedAt = Date(timeIntervalSince1970: 7_000)
+
+    var validSession = makeTestSession(
+        sourceRoot: sourceRoot.appendingPathComponent("valid", isDirectory: true),
+        archiveRoot: archiveRoot,
+        items: [makeTestMediaItem(sourceRoot: sourceRoot, fileName: "valid.jpg", capturedAt: capturedAt)]
+    )
+    validSession.lastUpdatedAt = capturedAt.addingTimeInterval(10)
+
+    var corruptedSession = makeTestSession(
+        sourceRoot: sourceRoot.appendingPathComponent("corrupt", isDirectory: true),
+        archiveRoot: archiveRoot,
+        items: [makeTestMediaItem(sourceRoot: sourceRoot, fileName: "corrupt.jpg", capturedAt: capturedAt.addingTimeInterval(1))]
+    )
+    corruptedSession.lastUpdatedAt = capturedAt
+
+    let store = try SessionStore(databaseURL: databaseURL)
+    try store.save(session: validSession, bursts: [], clusters: [])
+    try store.save(session: corruptedSession, bursts: [], clusters: [])
+
+    try corruptSessionBlob(in: databaseURL, sessionID: corruptedSession.id)
+
+    let reopenedStore = try SessionStore(databaseURL: databaseURL)
+    let loaded = try reopenedStore.loadSessions()
+
+    #expect(loaded.count == 1)
+    #expect(loaded[0].0.id == validSession.id)
+}
+
+private func corruptSessionBlob(in databaseURL: URL, sessionID: UUID? = nil) throws {
     var db: OpaquePointer?
     guard sqlite3_open(databaseURL.path, &db) == SQLITE_OK else {
         throw NSError(domain: "SessionStoreTests", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to open database for corruption test."])
     }
     defer { sqlite3_close(db) }
 
-    guard sqlite3_exec(db, "UPDATE import_sessions SET session_json = X'00';", nil, nil, nil) == SQLITE_OK else {
+    let sql: String
+    if let sessionID {
+        sql = "UPDATE import_sessions SET session_json = X'00' WHERE id = '\(sessionID.uuidString)';"
+    } else {
+        sql = "UPDATE import_sessions SET session_json = X'00';"
+    }
+
+    guard sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK else {
         throw NSError(domain: "SessionStoreTests", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to corrupt stored session blob."])
     }
 }

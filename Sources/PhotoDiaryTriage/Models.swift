@@ -32,6 +32,15 @@ enum LifecycleState: String, Codable, CaseIterable, Sendable {
         }
         return newState
     }
+
+    var isImportedOrBeyond: Bool {
+        switch self {
+        case .imported, .verified, .sourceCleanupPending, .sourceCleaned:
+            return true
+        case .discovered, .selectedForImport:
+            return false
+        }
+    }
 }
 
 enum LifecycleTransitionError: LocalizedError, Sendable {
@@ -156,6 +165,53 @@ struct WalkMetadata: Codable, Hashable, Sendable {
     static let empty = WalkMetadata(title: "", location: "", notes: "", backupConfirmedAt: nil)
 }
 
+enum PhotoLogScopeKind: String, Codable, CaseIterable, Hashable, Sendable {
+    case folder
+    case dateRange
+    case custom
+
+    var title: String {
+        switch self {
+        case .folder:
+            return "Folder"
+        case .dateRange:
+            return "Date Range"
+        case .custom:
+            return "Custom Label"
+        }
+    }
+}
+
+struct PhotoLogScopeDescriptor: Codable, Hashable, Sendable {
+    var kind: PhotoLogScopeKind
+    var label: String
+    var sourceFolderPaths: [String]
+    var startDate: Date?
+    var endDate: Date?
+
+    static let empty = PhotoLogScopeDescriptor(
+        kind: .folder,
+        label: "",
+        sourceFolderPaths: [],
+        startDate: nil,
+        endDate: nil
+    )
+}
+
+enum PhotoLogCreationMode: String, CaseIterable, Hashable, Sendable {
+    case decidedInScope
+    case selectedOnly
+
+    var title: String {
+        switch self {
+        case .decidedInScope:
+            return "Decided In Scope"
+        case .selectedOnly:
+            return "Selected Only"
+        }
+    }
+}
+
 enum SessionKind: String, Codable, Hashable, Sendable {
     case inbox
     case walkDraft
@@ -165,7 +221,56 @@ enum SessionKind: String, Codable, Hashable, Sendable {
         case .inbox:
             return "Inbox"
         case .walkDraft:
-            return "Walk Draft"
+            return "Photo Log"
+        }
+    }
+}
+
+enum StartupSelectionPolicy: String, Equatable, Sendable {
+    case sourceInboxFirst
+}
+
+enum SourceLoadOrigin: String, Equatable, Sendable {
+    case launchDefault
+    case mountedDefault
+    case manualPicker
+    case savedWalkInbox
+    case openDefaultSource
+    case settingsDefaultRoot
+    case reloadCurrentSource
+}
+
+enum SourceWorkspaceState: Equatable, Sendable {
+    case idle
+    case loading(sourcePath: String)
+    case loaded(itemCount: Int, sourcePath: String)
+    case empty(sourcePath: String)
+    case failed(sourcePath: String, message: String)
+
+    var sourcePath: String? {
+        switch self {
+        case .idle:
+            return nil
+        case .loading(let sourcePath),
+             .loaded(_, let sourcePath),
+             .empty(let sourcePath),
+             .failed(let sourcePath, _):
+            return sourcePath
+        }
+    }
+
+    var summary: String {
+        switch self {
+        case .idle:
+            return "No live source inbox is open."
+        case .loading(let sourcePath):
+            return "Loading source inbox from \(sourcePath)."
+        case .loaded(let itemCount, let sourcePath):
+            return "Loaded \(itemCount) visible item(s) from \(sourcePath)."
+        case .empty(let sourcePath):
+            return "No supported media were found in \(sourcePath)."
+        case .failed(let sourcePath, let message):
+            return "Failed to load \(sourcePath): \(message)"
         }
     }
 }
@@ -290,8 +395,10 @@ struct ImportSession: Identifiable, Codable, Hashable, Sendable {
     var startedAt: Date
     var lastUpdatedAt: Date
     var walkMetadata: WalkMetadata
+    var photoLogScope: PhotoLogScopeDescriptor?
     var archiveRoot: URL
     var sessionKind: SessionKind
+    var sessionKindWasExplicit: Bool
     var status: String
     var mediaItems: [MediaItem]
 
@@ -302,8 +409,10 @@ struct ImportSession: Identifiable, Codable, Hashable, Sendable {
         startedAt: Date = Date(),
         lastUpdatedAt: Date = Date(),
         walkMetadata: WalkMetadata = .empty,
+        photoLogScope: PhotoLogScopeDescriptor? = nil,
         archiveRoot: URL,
         sessionKind: SessionKind = .walkDraft,
+        sessionKindWasExplicit: Bool = true,
         status: String = "draft",
         mediaItems: [MediaItem] = []
     ) {
@@ -313,8 +422,10 @@ struct ImportSession: Identifiable, Codable, Hashable, Sendable {
         self.startedAt = startedAt
         self.lastUpdatedAt = lastUpdatedAt
         self.walkMetadata = walkMetadata
+        self.photoLogScope = photoLogScope
         self.archiveRoot = archiveRoot
         self.sessionKind = sessionKind
+        self.sessionKindWasExplicit = sessionKindWasExplicit
         self.status = status
         self.mediaItems = mediaItems
     }
@@ -326,6 +437,7 @@ struct ImportSession: Identifiable, Codable, Hashable, Sendable {
         case startedAt
         case lastUpdatedAt
         case walkMetadata
+        case photoLogScope
         case archiveRoot
         case sessionKind
         case status
@@ -340,7 +452,9 @@ struct ImportSession: Identifiable, Codable, Hashable, Sendable {
         startedAt = try container.decodeIfPresent(Date.self, forKey: .startedAt) ?? Date()
         lastUpdatedAt = try container.decodeIfPresent(Date.self, forKey: .lastUpdatedAt) ?? startedAt
         walkMetadata = try container.decodeIfPresent(WalkMetadata.self, forKey: .walkMetadata) ?? .empty
+        photoLogScope = try container.decodeIfPresent(PhotoLogScopeDescriptor.self, forKey: .photoLogScope)
         archiveRoot = try container.decode(URL.self, forKey: .archiveRoot)
+        sessionKindWasExplicit = container.contains(.sessionKind)
         sessionKind = try container.decodeIfPresent(SessionKind.self, forKey: .sessionKind) ?? .inbox
         status = try container.decodeIfPresent(String.self, forKey: .status) ?? "draft"
         mediaItems = try container.decodeIfPresent([MediaItem].self, forKey: .mediaItems) ?? []
@@ -354,6 +468,7 @@ struct ImportSession: Identifiable, Codable, Hashable, Sendable {
         try container.encode(startedAt, forKey: .startedAt)
         try container.encode(lastUpdatedAt, forKey: .lastUpdatedAt)
         try container.encode(walkMetadata, forKey: .walkMetadata)
+        try container.encodeIfPresent(photoLogScope, forKey: .photoLogScope)
         try container.encode(archiveRoot, forKey: .archiveRoot)
         try container.encode(sessionKind, forKey: .sessionKind)
         try container.encode(status, forKey: .status)
