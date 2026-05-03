@@ -1,0 +1,25 @@
+# PDT-2026-05-03-040 Review Controls and Keyboard Focus Recovery
+
+- Item ID: `PDT-2026-05-03-040`
+- Title: `review controls and keyboard focus recovery`
+- User request summary: `Fix the macOS design follow-up where grouped review filters are hidden in the toolbar and keyboard shortcuts in the library/review surface appear not to work.`
+- Constraints:
+  - Keep grid-first review and grouped review controls visible at normal window widths.
+  - Preserve native macOS shell improvements from `PDT-2026-05-03-039`.
+  - Keep frequent actions available through both visible UI and keyboard shortcuts.
+  - Do not let toolbar focus strand the review grid shortcuts.
+- Implementation intent:
+  - Move wide grouped review, filter, view, and column controls out of the titlebar toolbar into a visible in-window review control strip.
+  - Keep only compact global actions in the window toolbar.
+  - Restore keyboard shortcut affordances on review controls and ensure review actions return focus to the review surface where appropriate.
+  - Increment the app release metadata for the fix.
+- Test conditions:
+  - Grouped review filters are visible in the review content area.
+  - Review keyboard shortcuts still work after using review controls.
+  - Existing review, selection, and compare tests pass.
+- Success criteria:
+  - The screenshot regression is no longer present.
+  - The app ships as a new reviewable build with changelog and backlog records aligned.
+- Current status: `awaiting_user_review`
+- Target release version: `0.2.2`
+- Target feature slug: `review-controls-and-keyboard-focus-recovery`

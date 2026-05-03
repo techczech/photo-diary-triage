@@ -144,6 +144,7 @@ struct ReviewPaneView: View {
 
         VStack(alignment: .leading, spacing: 10) {
             reviewContextHeader
+            reviewControlStrip
 
             GeometryReader { proxy in
                 ZStack(alignment: .topLeading) {
@@ -274,19 +275,210 @@ struct ReviewPaneView: View {
         .controlSize(.small)
     }
 
+    @ViewBuilder
+    private var reviewControlStrip: some View {
+        if state.snapshot.contextMediaItemCount > 0 {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    detailDisplayPicker
+
+                    if state.snapshot.canUseGroupedReviewMode && state.snapshot.dayDetailDisplayMode == .sections {
+                        groupedOrganizationPicker
+                    }
+
+                    Spacer(minLength: 0)
+                }
+
+                HStack(spacing: 8) {
+                    reviewFilterPicker
+                    reviewPresentationPicker
+                    sizeControls
+                    reviewActionsMenu
+                    Spacer(minLength: 0)
+                }
+            }
+            .controlSize(.small)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+        }
+    }
+
+    private var detailDisplayPicker: some View {
+        Picker("Display", selection: Binding(
+            get: { state.snapshot.dayDetailDisplayMode },
+            set: { mode in
+                appState.setDayDetailDisplayMode(mode)
+                returnToReviewFocus()
+            }
+        )) {
+            ForEach(state.snapshot.availableDayDetailDisplayModes, id: \.self) { mode in
+                Text(mode.title).tag(mode)
+            }
+        }
+        .pickerStyle(.segmented)
+        .frame(width: state.snapshot.canUseGroupedReviewMode ? 230 : 122)
+        .shortcutHint("Cmd-3 / Cmd-4", help: "Switch between flat review and grouped review (Cmd-3 / Cmd-4)")
+    }
+
+    private var groupedOrganizationPicker: some View {
+        Picker("Show By", selection: Binding(
+            get: { state.snapshot.dayOrganizationMode },
+            set: { mode in
+                appState.setDayOrganizationMode(mode)
+                returnToReviewFocus()
+            }
+        )) {
+            ForEach(DayOrganizationMode.allCases, id: \.self) { mode in
+                Text(mode.title).tag(mode)
+            }
+        }
+        .pickerStyle(.segmented)
+        .frame(width: 360)
+        .shortcutHint("Cmd-Ctrl-1..4", help: "Change grouped review organization (Cmd-Control-1 through Cmd-Control-4)")
+    }
+
+    private var reviewFilterPicker: some View {
+        Picker("Filter", selection: Binding(
+            get: { state.snapshot.reviewFilter },
+            set: { filter in
+                appState.setReviewFilter(filter)
+                returnToReviewFocus()
+            }
+        )) {
+            ForEach(ReviewFilter.allCases, id: \.self) { filter in
+                Text(filter.title).tag(filter)
+            }
+        }
+        .pickerStyle(.segmented)
+        .frame(width: 360)
+        .shortcutHint("Cmd-Ctrl-A / I / C / X / U", help: "Filter review items to all, included, candidate, excluded, or undecided photos.")
+    }
+
+    private var reviewPresentationPicker: some View {
+        Picker("View", selection: Binding(
+            get: { state.snapshot.reviewPresentationMode },
+            set: { mode in
+                appState.setReviewPresentationMode(mode)
+                returnToReviewFocus()
+            }
+        )) {
+            Text("Grid").tag(ReviewPresentationMode.grid)
+            Text("List").tag(ReviewPresentationMode.list)
+        }
+        .pickerStyle(.segmented)
+        .frame(width: 136)
+        .shortcutHint("Cmd-Option-G / L", help: "Switch between grid and list layout (Cmd-Option-G / Cmd-Option-L)")
+    }
+
+    private var sizeControls: some View {
+        HStack(spacing: 6) {
+            Button {
+                appState.decreaseReviewGridColumnCount()
+                returnToReviewFocus()
+            } label: {
+                Image(systemName: "minus")
+            }
+            .shortcutHint("-", help: "Show fewer review columns (-)")
+            .disabled(state.snapshot.reviewGridPreferredColumnCount <= 1)
+
+            Text("\(state.snapshot.reviewGridPreferredColumnCount)")
+                .font(.caption.monospacedDigit())
+                .frame(width: 28)
+
+            Button {
+                appState.increaseReviewGridColumnCount()
+                returnToReviewFocus()
+            } label: {
+                Image(systemName: "plus")
+            }
+            .shortcutHint("+", help: "Show more review columns (+)")
+            .disabled(state.snapshot.reviewGridPreferredColumnCount >= ReviewGridMetrics.maxSuggestedColumns)
+
+            Button {
+                appState.resetReviewGridColumnCount()
+                returnToReviewFocus()
+            } label: {
+                Image(systemName: "arrow.counterclockwise")
+            }
+            .shortcutHint("0", help: "Reset review columns (0)")
+            .disabled(state.snapshot.reviewGridPreferredColumnCount == ReviewGridMetrics.defaultRequestedColumnCount())
+        }
+        .buttonStyle(.bordered)
+    }
+
+    private var reviewActionsMenu: some View {
+        Menu("Actions") {
+            Button("Select All") {
+                appState.selectAllVisibleMedia()
+                returnToReviewFocus()
+            }
+
+            Button("Deselect") {
+                appState.deselectAllVisibleMedia()
+                returnToReviewFocus()
+            }
+            .disabled(state.snapshot.selectedMediaItemIDs.isEmpty)
+
+            if state.snapshot.canMutateImportSelection {
+                Divider()
+
+                Button("Select For Import") {
+                    appState.markCurrentSelectionForImport()
+                    returnToReviewFocus()
+                }
+                .disabled(!state.snapshot.canMarkSelectionForImport)
+
+                Button("Mark As Candidate") {
+                    appState.markCurrentSelectionAsCandidate()
+                    returnToReviewFocus()
+                }
+                .disabled(!state.snapshot.canMarkSelectionAsCandidate)
+
+                Button("Exclude From Import") {
+                    appState.excludeCurrentSelectionFromImport()
+                    returnToReviewFocus()
+                }
+                .disabled(!state.snapshot.canExcludeSelectionFromImport)
+
+                Button("Clear To Undecided") {
+                    appState.unmarkCurrentSelectionForImport()
+                    returnToReviewFocus()
+                }
+                .disabled(!state.snapshot.canUnmarkSelectionForImport)
+
+                Button("Toggle RAW") {
+                    appState.toggleRawForCurrentMediaSelection()
+                    returnToReviewFocus()
+                }
+                .disabled(!state.snapshot.canToggleRawForSelection)
+            }
+        }
+        .help("Selection and import actions")
+    }
+
     private var groupedSectionButtons: some View {
         HStack(spacing: 6) {
             Button("Expand") {
                 appState.expandAllInlineSections()
+                returnToReviewFocus()
             }
             .shortcutHint("Cmd-Option-]", help: "Expand all grouped sections (Cmd-Option-])")
 
             Button("Collapse") {
                 appState.collapseAllInlineSections()
+                returnToReviewFocus()
             }
             .shortcutHint("Cmd-Option-[", help: "Collapse all grouped sections (Cmd-Option-[)")
         }
         .buttonStyle(.bordered)
+    }
+
+    private func returnToReviewFocus() {
+        guard state.snapshot.canFocusReviewSurface else { return }
+        DispatchQueue.main.async {
+            appState.activateReviewGridFocus()
+        }
     }
 
     private func reviewGrid(availableWidth: CGFloat) -> some View {
