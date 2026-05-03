@@ -2,105 +2,14 @@ import AppKit
 import SwiftUI
 
 struct SidebarPaneView: View {
-    @Environment(\.openSettings) private var openSettings
     let appState: AppState
     @ObservedObject var state: SidebarState
-    @Binding var walkTitle: String
-    @Binding var walkLocation: String
-    @Binding var walkNotes: String
-    let summary: String
     let appRelease: AppRelease
 
     var body: some View {
         let snapshot = state.snapshot
 
-        VStack(alignment: .leading, spacing: 10) {
-            if let session = snapshot.sessionSummary {
-                GroupBox("Current Session") {
-                    VStack(alignment: .leading, spacing: 6) {
-                        utilityButtons(snapshot: snapshot)
-
-                        Text(summary)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        Text(session.sourceFolderPath)
-                            .font(.caption)
-                            .textSelection(.enabled)
-                        Text("\(session.itemCount) visible items")
-                            .font(.caption)
-                        Text("\(session.sessionKind.title) • \(session.status)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        if let scopeLabel = session.photoLogScope?.label.nonEmpty, session.sessionKind == .walkDraft {
-                            Text("Primary scope: \(scopeLabel)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Text("\(session.includedCount) selected • \(session.candidateCount) candidate • \(session.excludedCount) excluded")
-                            .font(.caption)
-                        if let hiddenSummary = snapshot.hiddenPhotoLogSummary {
-                            Text(hiddenSummary)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            } else {
-                utilityButtons(snapshot: snapshot)
-            }
-
-            GroupBox("Photo Logs") {
-                PhotoLogLibraryPane(
-                    appState: appState,
-                    groups: snapshot.photoLogGroups,
-                    canPresentPhotoLogCreation: snapshot.canPresentPhotoLogCreation
-                )
-            }
-
-            if snapshot.canMutateImportSelection, snapshot.sessionSummary?.sessionKind == .walkDraft {
-                GroupBox("Photo Log Details") {
-                    WalkDetailsPaneView(
-                        appState: appState,
-                        isExpanded: Binding(
-                            get: { state.snapshot.isWalkDetailsExpanded },
-                            set: { appState.isWalkDetailsExpanded = $0 }
-                        ),
-                        isEnabled: snapshot.canMutateImportSelection,
-                        walkTitle: $walkTitle,
-                        walkLocation: $walkLocation,
-                        walkNotes: $walkNotes,
-                        summary: summary,
-                        compact: true
-                    )
-                }
-            }
-
-            if snapshot.canMutateImportSelection {
-                GroupBox("Import Actions") {
-                    ActionButtonsPaneView(appState: appState, compact: true)
-                }
-            }
-
-            GroupBox("Archive Root") {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(snapshot.archiveRootDisplayPath)
-                        .font(.caption)
-                        .textSelection(.enabled)
-                    if snapshot.archiveYearFolders.isEmpty {
-                        Text("No `202x` folders detected yet")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text("Years: \(snapshot.archiveYearFolders.joined(separator: ", "))")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
+        VStack(alignment: .leading, spacing: 8) {
             List(snapshot.tree.browserRoots, children: \.children, selection: Binding(
                 get: { state.snapshot.tree.selectedSidebarNodeID },
                 set: { appState.selectSidebarNode($0) }
@@ -110,56 +19,14 @@ struct SidebarPaneView: View {
             .listStyle(.sidebar)
 
             SidebarStatusView(state: state, appRelease: appRelease)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 10)
         }
-        .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-
-    private func utilityButtons(snapshot: SidebarSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            SourceWorkspaceStatusPane(
-                summary: snapshot.sourceWorkspaceState.summary,
-                canOpenDefaultSourceWorkspace: snapshot.canOpenDefaultSourceWorkspace,
-                canReloadSourceWorkspace: snapshot.canReloadSourceWorkspace,
-                appState: appState
-            )
-
-            if let hiddenSummary = snapshot.hiddenPhotoLogSummary {
-                HStack(spacing: 8) {
-                    Text(hiddenSummary)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    Spacer(minLength: 0)
-                    Button("View Photo Logs") {
-                        appState.isSidebarVisible = true
-                        appState.activePane = .sidebar
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.mini)
-                }
-            }
-
-            HStack(spacing: 6) {
-                Button("Source") {
-                    appState.pickSourceFolder()
-                }
-
-                Button("Settings") {
-                    openSettings()
-                }
-
-                Button("Shortcuts") {
-                    appState.showKeyboardHelp = true
-                }
-                .shortcutHint("Cmd-Shift-/", help: "Show keyboard shortcuts (Cmd-Shift-/)")
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-        }
     }
 }
 
-private struct SourceWorkspaceStatusPane: View {
+struct SourceWorkspaceStatusPane: View {
     let summary: String
     let canOpenDefaultSourceWorkspace: Bool
     let canReloadSourceWorkspace: Bool
@@ -191,7 +58,7 @@ private struct SourceWorkspaceStatusPane: View {
     }
 }
 
-private struct PhotoLogLibraryPane: View {
+struct PhotoLogLibraryPane: View {
     let appState: AppState
     let groups: [PhotoLogGroupSnapshot]
     let canPresentPhotoLogCreation: Bool

@@ -125,3 +125,4 @@
 {"ts":"2026-03-27T02:10:00Z","item_id":"PDT-2026-03-27-036","event":"report_created","status":"implemented","title":"Compare speed and pan recovery","file":"changelog/changelog/PDT-2026-03-27-036-compare-speed-and-pan-recovery-report.md"}
 {"ts":"2026-03-27T03:29:50Z","item_id":"PDT-2026-03-27-037","event":"report_created","status":"implemented","title":"Photo log workflow reset","file":"changelog/changelog/PDT-2026-03-27-037-photo-log-workflow-reset-report.md"}
 {"ts":"2026-03-27T04:04:30Z","item_id":"PDT-2026-03-27-038","event":"report_created","status":"implemented","title":"Public v0.2 milestone release","file":"changelog/changelog/PDT-2026-03-27-038-public-v0-2-milestone-release-report.md"}
+{"ts":"2026-05-03T11:24:23Z","item_id":"PDT-2026-05-03-039","event":"report_created","status":"implemented","title":"macOS design review and visual direction","file":"changelog/changelog/PDT-2026-05-03-039-macos-design-review-and-visual-direction-report.md"}

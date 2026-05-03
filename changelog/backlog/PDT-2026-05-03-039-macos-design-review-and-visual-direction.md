@@ -20,6 +20,6 @@
   - The app has a clear, prioritized macOS design improvement plan before visual implementation begins.
   - The plan distinguishes native SwiftUI/macOS structure changes from custom visual polish.
   - Follow-on implementation can update `APP_RELEASE.env` and changelog records without ambiguity.
-- Current status: `draft`
+- Current status: `awaiting_user_review`
 - Target release version: `0.2.1`
 - Target feature slug: `macos-design-review-and-visual-direction`

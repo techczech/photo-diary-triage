@@ -37,6 +37,11 @@ struct InspectorCollapsedRail: View {
 struct DetailsInspectorView: View {
     let appState: AppState
     @ObservedObject var state: InspectorState
+    @ObservedObject var sidebarState: SidebarState
+    @Binding var walkTitle: String
+    @Binding var walkLocation: String
+    @Binding var walkNotes: String
+    let summary: String
 
     var body: some View {
         Group {
@@ -47,11 +52,22 @@ struct DetailsInspectorView: View {
                             Text("Inspector")
                                 .font(.title3.weight(.semibold))
                             Spacer()
-                            Button("Close") {
+                            Button {
                                 appState.toggleDetailsInspector()
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
                             }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.secondary)
+                            .help("Hide inspector")
                         }
 
+                        sourceSection
+                        sessionSection
+                        photoLogsSection
+                        walkDetailsSection
+                        importActionsSection
+                        archiveSection
                         folderSection
                         photoSection
                     }
@@ -59,14 +75,104 @@ struct DetailsInspectorView: View {
                     .padding(16)
                 }
                 .frame(maxHeight: .infinity, alignment: .top)
-                .background(Color(nsColor: .controlBackgroundColor).opacity(0.55), in: RoundedRectangle(cornerRadius: 16))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
-                }
             } else {
                 Color.clear
             }
+        }
+    }
+
+    private var sourceSection: some View {
+        GroupBox("Source Workspace") {
+            SourceWorkspaceStatusPane(
+                summary: sidebarState.snapshot.sourceWorkspaceState.summary,
+                canOpenDefaultSourceWorkspace: sidebarState.snapshot.canOpenDefaultSourceWorkspace,
+                canReloadSourceWorkspace: sidebarState.snapshot.canReloadSourceWorkspace,
+                appState: appState
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var sessionSection: some View {
+        if let session = sidebarState.snapshot.sessionSummary {
+            GroupBox("Current Session") {
+                VStack(alignment: .leading, spacing: 8) {
+                    inspectorRow("Summary", summary)
+                    inspectorRow("Source", session.sourceFolderPath)
+                    inspectorRow("Visible Items", "\(session.itemCount)")
+                    inspectorRow("State", "\(session.sessionKind.title) • \(session.status)")
+                    inspectorRow("Triage", "\(session.includedCount) selected • \(session.candidateCount) candidate • \(session.excludedCount) excluded")
+
+                    if let scopeLabel = session.photoLogScope?.label.nonEmpty, session.sessionKind == .walkDraft {
+                        inspectorRow("Primary Scope", scopeLabel)
+                    }
+
+                    if let hiddenSummary = sidebarState.snapshot.hiddenPhotoLogSummary {
+                        Text(hiddenSummary)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private var photoLogsSection: some View {
+        GroupBox("Photo Logs") {
+            PhotoLogLibraryPane(
+                appState: appState,
+                groups: sidebarState.snapshot.photoLogGroups,
+                canPresentPhotoLogCreation: sidebarState.snapshot.canPresentPhotoLogCreation
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var walkDetailsSection: some View {
+        if sidebarState.snapshot.canMutateImportSelection,
+           sidebarState.snapshot.sessionSummary?.sessionKind == .walkDraft {
+            GroupBox("Photo Log Details") {
+                WalkDetailsPaneView(
+                    appState: appState,
+                    isExpanded: Binding(
+                        get: { sidebarState.snapshot.isWalkDetailsExpanded },
+                        set: { appState.isWalkDetailsExpanded = $0 }
+                    ),
+                    isEnabled: sidebarState.snapshot.canMutateImportSelection,
+                    walkTitle: $walkTitle,
+                    walkLocation: $walkLocation,
+                    walkNotes: $walkNotes,
+                    summary: summary,
+                    compact: true
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var importActionsSection: some View {
+        if sidebarState.snapshot.canMutateImportSelection {
+            GroupBox("Import Actions") {
+                ActionButtonsPaneView(appState: appState, compact: true)
+            }
+        }
+    }
+
+    private var archiveSection: some View {
+        GroupBox("Archive Root") {
+            VStack(alignment: .leading, spacing: 8) {
+                inspectorRow("Path", sidebarState.snapshot.archiveRootDisplayPath)
+
+                if sidebarState.snapshot.archiveYearFolders.isEmpty {
+                    Text("No `202x` folders detected yet")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    inspectorRow("Years", sidebarState.snapshot.archiveYearFolders.joined(separator: ", "))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
