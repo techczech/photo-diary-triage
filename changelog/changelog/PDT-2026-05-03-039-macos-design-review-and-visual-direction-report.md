@@ -1,0 +1,29 @@
+# PDT-2026-05-03-039 macOS Design Review and Visual Direction Report
+
+- Item ID: `PDT-2026-05-03-039`
+- Summary of what changed:
+  - Replaced the custom root `HStack` shell with a native `NavigationSplitView`.
+  - Moved the right-side details panel into SwiftUI's `.inspector(isPresented:)` API.
+  - Moved high-frequency review controls from an in-content horizontal scroller into the window toolbar.
+  - Slimmed the sidebar back to native source-list navigation plus compact status.
+  - Moved session, source workspace, photo logs, archive root, import actions, and selected-photo metadata into the inspector.
+  - Converted Settings from a plain scrolling stack into tabbed macOS `Form` sections.
+  - Updated the release metadata to `0.2.1` build `78`.
+- Files changed:
+  - `APP_RELEASE.env`
+  - `Sources/PhotoDiaryTriage/ContentView.swift`
+  - `Sources/PhotoDiaryTriage/ContentViewSections.swift`
+  - `Sources/PhotoDiaryTriage/ContentViewBrowserSections.swift`
+  - `Sources/PhotoDiaryTriage/ContentInspectorViews.swift`
+  - `Sources/PhotoDiaryTriage/SettingsView.swift`
+  - `changelog/backlog/PDT-2026-05-03-039-macos-design-review-and-visual-direction.md`
+  - `changelog/backlog.jsonl`
+- Verification performed:
+  - `swift build`
+  - `swift test`
+- Known gaps or follow-up items:
+  - Runtime visual inspection in the app window is still recommended because this change adjusts native layout placement and toolbar density.
+  - Compare still presents as a full-window overlay; it is less entangled with the root shell now, but a future pass could promote it to a dedicated mode or auxiliary window.
+  - Design-image generation was deferred; the approved implementation focused on native macOS structure first.
+- Shipped release version: `0.2.1`
+- Shipped feature slug: `macos-design-review-and-visual-direction`
