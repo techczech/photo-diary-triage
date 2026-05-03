@@ -1,0 +1,25 @@
+# PDT-2026-05-03-039 macOS Design Review and Visual Direction
+
+- Item ID: `PDT-2026-05-03-039`
+- Title: `macOS design review and visual direction`
+- User request summary: `Review the app through the Build macOS Apps guidance, identify opportunities to improve the layout and design with native macOS affordances, and prepare for image-generation-led visual concepts before implementation.`
+- Constraints:
+  - Keep backlog, changelog, and code aligned before implementation.
+  - Preserve speed, keyboard-driven triage, preview/compare usefulness, and the SSD-first selective-import workflow.
+  - Use native macOS SwiftUI structures, commands, toolbars, inspectors, settings, and adaptive materials where they fit the product.
+  - Treat generated design images as visual direction only; implementation must remain practical, responsive, and accessible.
+- Implementation intent:
+  - First perform a read-only app design review against the macOS SwiftUI and modern design-system guidance.
+  - Identify concrete design/image concepts worth generating.
+  - After review approval, create design images and implement the selected layout improvements in focused changes.
+- Test conditions:
+  - Review names the current app version and the key user-visible workflow being evaluated.
+  - Findings are grounded in specific source files or screens.
+  - Proposed design directions preserve keyboard and mouse triage, grid browsing, preview, compare, and settings workflows.
+- Success criteria:
+  - The app has a clear, prioritized macOS design improvement plan before visual implementation begins.
+  - The plan distinguishes native SwiftUI/macOS structure changes from custom visual polish.
+  - Follow-on implementation can update `APP_RELEASE.env` and changelog records without ambiguity.
+- Current status: `draft`
+- Target release version: `0.2.1`
+- Target feature slug: `macos-design-review-and-visual-direction`
