@@ -185,14 +185,6 @@ struct ContentView: View {
         }
 
         ToolbarItemGroup {
-            reviewModePicker
-            reviewGroupingPicker
-            reviewFilterPicker
-            reviewPresentationPicker
-            reviewColumnControls
-        }
-
-        ToolbarItemGroup {
             Button {
                 appState.openFocusedReviewItem()
             } label: {
@@ -224,111 +216,6 @@ struct ContentView: View {
             .help("Show keyboard shortcuts")
 
             reviewActionsMenu
-        }
-    }
-
-    @ViewBuilder
-    private var reviewModePicker: some View {
-        if reviewState.snapshot.contextMediaItemCount > 0 {
-            Picker("Display", selection: Binding(
-                get: { reviewState.snapshot.dayDetailDisplayMode },
-                set: { appState.setDayDetailDisplayMode($0) }
-            )) {
-                ForEach(reviewState.snapshot.availableDayDetailDisplayModes, id: \.self) { mode in
-                    Text(mode.title).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-            .frame(width: reviewState.snapshot.canUseGroupedReviewMode ? 230 : 122)
-            .help("Switch between flat review and grouped review")
-        }
-    }
-
-    @ViewBuilder
-    private var reviewFilterPicker: some View {
-        if reviewState.snapshot.contextMediaItemCount > 0 {
-            Picker("Filter", selection: Binding(
-                get: { reviewState.snapshot.reviewFilter },
-                set: { appState.setReviewFilter($0) }
-            )) {
-                ForEach(ReviewFilter.allCases, id: \.self) { filter in
-                    Text(filter.title).tag(filter)
-                }
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 360)
-            .help("Filter review items")
-        }
-    }
-
-    @ViewBuilder
-    private var reviewGroupingPicker: some View {
-        if reviewState.snapshot.canUseGroupedReviewMode,
-           reviewState.snapshot.dayDetailDisplayMode == .sections {
-            Picker("Show By", selection: Binding(
-                get: { reviewState.snapshot.dayOrganizationMode },
-                set: { appState.setDayOrganizationMode($0) }
-            )) {
-                ForEach(DayOrganizationMode.allCases, id: \.self) { mode in
-                    Text(mode.title).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 360)
-            .help("Change grouped review organization")
-        }
-    }
-
-    @ViewBuilder
-    private var reviewPresentationPicker: some View {
-        if reviewState.snapshot.contextMediaItemCount > 0 {
-            Picker("View", selection: Binding(
-                get: { reviewState.snapshot.reviewPresentationMode },
-                set: { appState.setReviewPresentationMode($0) }
-            )) {
-                Text("Grid").tag(ReviewPresentationMode.grid)
-                Text("List").tag(ReviewPresentationMode.list)
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 136)
-            .help("Switch between grid and list layout")
-        }
-    }
-
-    @ViewBuilder
-    private var reviewColumnControls: some View {
-        if reviewState.snapshot.contextMediaItemCount > 0 {
-            HStack(spacing: 6) {
-                Button {
-                    appState.decreaseReviewGridColumnCount()
-                } label: {
-                    Image(systemName: "minus")
-                }
-                .disabled(reviewState.snapshot.reviewGridPreferredColumnCount <= 1)
-                .help("Show fewer review columns")
-
-                Text("\(reviewState.snapshot.reviewGridPreferredColumnCount)")
-                    .font(.caption.monospacedDigit())
-                    .frame(width: 24)
-
-                Button {
-                    appState.increaseReviewGridColumnCount()
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .disabled(reviewState.snapshot.reviewGridPreferredColumnCount >= ReviewGridMetrics.maxSuggestedColumns)
-                .help("Show more review columns")
-
-                Button {
-                    appState.resetReviewGridColumnCount()
-                } label: {
-                    Image(systemName: "arrow.counterclockwise")
-                }
-                .disabled(reviewState.snapshot.reviewGridPreferredColumnCount == ReviewGridMetrics.defaultRequestedColumnCount())
-                .help("Reset review columns")
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
         }
     }
 

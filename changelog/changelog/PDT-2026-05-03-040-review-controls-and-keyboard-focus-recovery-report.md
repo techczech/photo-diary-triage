@@ -1,0 +1,24 @@
+# PDT-2026-05-03-040 Review Controls and Keyboard Focus Recovery Report
+
+- Item ID: `PDT-2026-05-03-040`
+- Summary of what changed:
+  - Moved grouped review, grouping, filter, view, column, and review action controls out of the crowded titlebar toolbar.
+  - Added a visible in-window review control strip above the grid so grouped filters remain readable.
+  - Kept compact global actions in the native toolbar.
+  - Restored shortcut hints on the review controls.
+  - Returned focus to the review surface after changing grouped review controls, filters, view mode, column count, expand/collapse, or review actions.
+  - Updated the release metadata to `0.2.2` build `79`.
+- Files changed:
+  - `APP_RELEASE.env`
+  - `Sources/PhotoDiaryTriage/ContentView.swift`
+  - `Sources/PhotoDiaryTriage/ContentViewBrowserSections.swift`
+  - `changelog/backlog/PDT-2026-05-03-040-review-controls-and-keyboard-focus-recovery.md`
+  - `changelog/backlog.jsonl`
+- Verification performed:
+  - `swift build`
+  - `swift test`
+- Known gaps or follow-up items:
+  - User visual confirmation is needed on the previously clipped grouped-review screen.
+  - If shortcuts still fail after clicking into the review grid, the next pass should inspect first-responder behavior in the running app with telemetry.
+- Shipped release version: `0.2.2`
+- Shipped feature slug: `review-controls-and-keyboard-focus-recovery`
