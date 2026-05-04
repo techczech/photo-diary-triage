@@ -1,0 +1,22 @@
+# PDT-2026-05-04-041 Compact Review Control Bar Report
+
+- Item ID: `PDT-2026-05-04-041`
+- Summary of what changed:
+  - Replaced the two-row material review control panel with a single compact top strip.
+  - Converted display, grouping, filter, and view selectors from wide segmented controls into compact menu controls.
+  - Kept column controls and grouped expand/collapse actions visible in the same strip.
+  - Removed the large vertical gap above grouped review content.
+  - Updated release metadata to `0.2.3` build `80`.
+- Files changed:
+  - `APP_RELEASE.env`
+  - `Sources/PhotoDiaryTriage/ContentViewBrowserSections.swift`
+  - `changelog/backlog/PDT-2026-05-04-041-compact-review-control-bar.md`
+  - `changelog/backlog.jsonl`
+- Verification performed:
+  - `swift build`
+  - `swift test`
+- Known gaps or follow-up items:
+  - Visual confirmation is still needed in the running grouped review screen.
+  - If the compact menus feel too indirect, a future pass can move only the display/grouping controls into the native toolbar while keeping the filter row compact.
+- Shipped release version: `0.2.3`
+- Shipped feature slug: `compact-review-control-bar`
