@@ -142,9 +142,8 @@ struct ReviewPaneView: View {
         let snapshot = state.snapshot
         let navigation = navigationState.snapshot
 
-        VStack(alignment: .leading, spacing: 10) {
-            reviewContextHeader
-            reviewControlStrip
+        VStack(alignment: .leading, spacing: 6) {
+            compactReviewTopBar
 
             GeometryReader { proxy in
                 ZStack(alignment: .topLeading) {
@@ -244,130 +243,107 @@ struct ReviewPaneView: View {
         )
     }
 
-    private var reviewContextHeader: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text(state.snapshot.breadcrumbTitles.joined(separator: " / "))
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-
-            if navigationState.snapshot.reviewGridHasFocus {
-                Text("Review Focus")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color.accentColor.opacity(0.14), in: Capsule())
-            }
-
-            Spacer(minLength: 0)
-
-            if !state.snapshot.selectedMediaItemIDs.isEmpty {
-                Text("\(state.snapshot.selectedMediaItemIDs.count) selected")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-            }
-
-            if state.snapshot.canUseGroupedReviewMode && state.snapshot.dayDetailDisplayMode == .sections {
-                groupedSectionButtons
-            }
-        }
-        .controlSize(.small)
-    }
-
     @ViewBuilder
-    private var reviewControlStrip: some View {
+    private var compactReviewTopBar: some View {
         if state.snapshot.contextMediaItemCount > 0 {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
-                    detailDisplayPicker
+            HStack(alignment: .center, spacing: 8) {
+                Text(state.snapshot.breadcrumbTitles.joined(separator: " / "))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(minWidth: 140, maxWidth: 240, alignment: .leading)
 
-                    if state.snapshot.canUseGroupedReviewMode && state.snapshot.dayDetailDisplayMode == .sections {
-                        groupedOrganizationPicker
-                    }
-
-                    Spacer(minLength: 0)
+                if navigationState.snapshot.reviewGridHasFocus {
+                    Text("Review Focus")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(Color.accentColor.opacity(0.14), in: Capsule())
                 }
 
-                HStack(spacing: 8) {
-                    reviewFilterPicker
-                    reviewPresentationPicker
-                    sizeControls
-                    reviewActionsMenu
-                    Spacer(minLength: 0)
+                Spacer(minLength: 6)
+
+                detailDisplayMenu
+
+                if state.snapshot.canUseGroupedReviewMode && state.snapshot.dayDetailDisplayMode == .sections {
+                    groupedOrganizationMenu
+                }
+
+                reviewFilterMenu
+                reviewPresentationMenu
+                sizeControls
+                reviewActionsMenu
+
+                if state.snapshot.canUseGroupedReviewMode && state.snapshot.dayDetailDisplayMode == .sections {
+                    groupedSectionButtons
+                }
+
+                if !state.snapshot.selectedMediaItemIDs.isEmpty {
+                    Text("\(state.snapshot.selectedMediaItemIDs.count) selected")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
                 }
             }
             .controlSize(.small)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
-    private var detailDisplayPicker: some View {
-        Picker("Display", selection: Binding(
-            get: { state.snapshot.dayDetailDisplayMode },
-            set: { mode in
-                appState.setDayDetailDisplayMode(mode)
-                returnToReviewFocus()
-            }
-        )) {
+    private var detailDisplayMenu: some View {
+        Menu {
             ForEach(state.snapshot.availableDayDetailDisplayModes, id: \.self) { mode in
-                Text(mode.title).tag(mode)
+                Button(mode.title) {
+                    appState.setDayDetailDisplayMode(mode)
+                    returnToReviewFocus()
+                }
             }
+        } label: {
+            Label(state.snapshot.dayDetailDisplayMode == .sections ? "Grouped" : "Flat", systemImage: "rectangle.grid.2x2")
         }
-        .pickerStyle(.segmented)
-        .frame(width: state.snapshot.canUseGroupedReviewMode ? 230 : 122)
         .shortcutHint("Cmd-3 / Cmd-4", help: "Switch between flat review and grouped review (Cmd-3 / Cmd-4)")
     }
 
-    private var groupedOrganizationPicker: some View {
-        Picker("Show By", selection: Binding(
-            get: { state.snapshot.dayOrganizationMode },
-            set: { mode in
-                appState.setDayOrganizationMode(mode)
-                returnToReviewFocus()
-            }
-        )) {
+    private var groupedOrganizationMenu: some View {
+        Menu {
             ForEach(DayOrganizationMode.allCases, id: \.self) { mode in
-                Text(mode.title).tag(mode)
+                Button(mode.title) {
+                    appState.setDayOrganizationMode(mode)
+                    returnToReviewFocus()
+                }
             }
+        } label: {
+            Label(compactOrganizationTitle(state.snapshot.dayOrganizationMode), systemImage: "calendar")
         }
-        .pickerStyle(.segmented)
-        .frame(width: 360)
         .shortcutHint("Cmd-Ctrl-1..4", help: "Change grouped review organization (Cmd-Control-1 through Cmd-Control-4)")
     }
 
-    private var reviewFilterPicker: some View {
-        Picker("Filter", selection: Binding(
-            get: { state.snapshot.reviewFilter },
-            set: { filter in
-                appState.setReviewFilter(filter)
-                returnToReviewFocus()
-            }
-        )) {
+    private var reviewFilterMenu: some View {
+        Menu {
             ForEach(ReviewFilter.allCases, id: \.self) { filter in
-                Text(filter.title).tag(filter)
+                Button(filter.title) {
+                    appState.setReviewFilter(filter)
+                    returnToReviewFocus()
+                }
             }
+        } label: {
+            Label("Filter: \(state.snapshot.reviewFilter.title)", systemImage: "line.3.horizontal.decrease.circle")
         }
-        .pickerStyle(.segmented)
-        .frame(width: 360)
         .shortcutHint("Cmd-Ctrl-A / I / C / X / U", help: "Filter review items to all, included, candidate, excluded, or undecided photos.")
     }
 
-    private var reviewPresentationPicker: some View {
-        Picker("View", selection: Binding(
-            get: { state.snapshot.reviewPresentationMode },
-            set: { mode in
-                appState.setReviewPresentationMode(mode)
-                returnToReviewFocus()
+    private var reviewPresentationMenu: some View {
+        Menu {
+            ForEach(ReviewPresentationMode.allCases, id: \.self) { mode in
+                Button(mode.rawValue.capitalized) {
+                    appState.setReviewPresentationMode(mode)
+                    returnToReviewFocus()
+                }
             }
-        )) {
-            Text("Grid").tag(ReviewPresentationMode.grid)
-            Text("List").tag(ReviewPresentationMode.list)
+        } label: {
+            Label(state.snapshot.reviewPresentationMode.rawValue.capitalized, systemImage: state.snapshot.reviewPresentationMode == .grid ? "square.grid.3x3" : "list.bullet")
         }
-        .pickerStyle(.segmented)
-        .frame(width: 136)
         .shortcutHint("Cmd-Option-G / L", help: "Switch between grid and list layout (Cmd-Option-G / Cmd-Option-L)")
     }
 
@@ -459,16 +435,22 @@ struct ReviewPaneView: View {
 
     private var groupedSectionButtons: some View {
         HStack(spacing: 6) {
-            Button("Expand") {
+            Button {
                 appState.expandAllInlineSections()
                 returnToReviewFocus()
+            } label: {
+                Image(systemName: "arrow.down.right.and.arrow.up.left")
             }
+            .help("Expand all groups")
             .shortcutHint("Cmd-Option-]", help: "Expand all grouped sections (Cmd-Option-])")
 
-            Button("Collapse") {
+            Button {
                 appState.collapseAllInlineSections()
                 returnToReviewFocus()
+            } label: {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
             }
+            .help("Collapse all groups")
             .shortcutHint("Cmd-Option-[", help: "Collapse all grouped sections (Cmd-Option-[)")
         }
         .buttonStyle(.bordered)
@@ -478,6 +460,19 @@ struct ReviewPaneView: View {
         guard state.snapshot.canFocusReviewSurface else { return }
         DispatchQueue.main.async {
             appState.activateReviewGridFocus()
+        }
+    }
+
+    private func compactOrganizationTitle(_ mode: DayOrganizationMode) -> String {
+        switch mode {
+        case .days:
+            return "Days"
+        case .daysAndBursts:
+            return "Days/Bursts"
+        case .daysAndClusters:
+            return "Days/Clusters"
+        case .daysClustersAndBursts:
+            return "Days/Clusters/Bursts"
         }
     }
 
