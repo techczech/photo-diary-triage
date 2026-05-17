@@ -1,0 +1,24 @@
+# PDT-2026-05-18-043 Photo Log Membership Editing Report
+
+- Item ID: `PDT-2026-05-18-043`
+- Summary of what changed:
+  - Changed the photo log library `Edit` action so it opens a reviewable membership-editing session instead of only metadata fields.
+  - Added `Details` for the metadata-only title/location/notes editor.
+  - While editing membership, decided items stay in the photo log and undecided, non-imported items return to the matching source inbox.
+  - Membership edits persist the updated photo log and inbox together so subsequent source reloads see the same ownership immediately.
+- Files changed:
+  - `Sources/PhotoDiaryTriage/AppState.swift`
+  - `Sources/PhotoDiaryTriage/ContentViewSections.swift`
+  - `Sources/PhotoDiaryTriage/ContentAuxiliaryViews.swift`
+  - `Tests/PhotoDiaryTriageTests/ReviewInteractionTests.swift`
+  - `APP_RELEASE.env`
+  - `changelog/backlog/PDT-2026-05-18-043-photo-log-membership-editing.md`
+- Verification performed:
+  - `swift test --filter editPhotoLogMembershipMovesItemsBetweenLogAndInbox`
+  - `swift test`
+  - `./scripts/build_app_bundle.sh`
+  - Launched `dist/PhotoDiaryTriage.app`
+- Known gaps or follow-up items:
+  - None known for this change.
+- Shipped release version: `0.2.5`
+- Shipped feature slug: `photo-log-membership-editing`

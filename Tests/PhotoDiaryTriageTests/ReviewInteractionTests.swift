@@ -916,6 +916,57 @@ import Testing
 }
 
 @MainActor
+@Test func editPhotoLogMembershipMovesItemsBetweenLogAndInbox() async throws {
+    let state = AppState(testing: true)
+    let root = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let base = Date(timeIntervalSince1970: 35_000)
+    let fileNames = ["0.jpg", "1.jpg", "2.jpg"]
+    for fileName in fileNames {
+        try writeTestFile(root.appendingPathComponent(fileName), contents: fileName)
+    }
+    let items = fileNames.enumerated().map { index, fileName in
+        makeTestMediaItem(
+            sourceRoot: root,
+            fileName: fileName,
+            capturedAt: base.addingTimeInterval(Double(index)),
+            selectionState: index == 0 ? .included : .undecided
+        )
+    }
+    state.currentSession = makeTestSession(
+        sourceRoot: root,
+        archiveRoot: root.appendingPathComponent("archive", isDirectory: true),
+        items: items,
+        title: "Editable Log",
+        workspaceSourceFolder: root,
+        sessionKind: .inbox
+    )
+    if let leafID = state.browserNodeMap.values.first(where: { ($0.children?.isEmpty ?? true) && $0.mediaItemIDs.count == items.count })?.id {
+        state.selectedSidebarNodeID = leafID
+    }
+    state.activePane = .media
+
+    state.presentPhotoLogCreation()
+    state.createPhotoLog(openAfterCreate: true)
+    let logID = try #require(state.currentSession?.id)
+
+    state.editPhotoLogMembership(logID)
+    #expect(state.currentSession?.mediaItems.map(\.relativePath) == ["0.jpg", "1.jpg", "2.jpg"])
+
+    state.selectMediaItems([items[2].id])
+    state.markCurrentSelectionForImport()
+    state.selectMediaItems([items[0].id])
+    state.unmarkCurrentSelectionForImport()
+
+    state.openSavedWalk(logID)
+    #expect(state.currentSession?.mediaItems.map(\.relativePath) == ["2.jpg"])
+
+    await state.openSession(for: root)
+    #expect(state.currentSession?.sessionKind == .inbox)
+    #expect(state.currentSession?.mediaItems.map(\.relativePath) == ["0.jpg", "1.jpg"])
+}
+
+@MainActor
 @Test func filterChangeReconcilesSelectionWhenHiddenItemsDropOut() {
     let sourceRoot = URL(fileURLWithPath: "/tmp/review-filter-reconcile", isDirectory: true)
     let base = Date(timeIntervalSince1970: 20_000)

@@ -326,6 +326,7 @@ final class AppState: ObservableObject {
     private var cachedReviewInteractionGeneration: Int = -1
     private var cachedReviewInteractionItems: [MediaItem] = []
     private var persistedSessions: [(ImportSession, [BurstGroup], [TimeCluster])] = []
+    private var activePhotoLogMembershipEditID: UUID?
 
     init(testing: Bool = false) {
         self.fileManager = .default
@@ -800,6 +801,7 @@ final class AppState: ObservableObject {
         let standardizedFolder = folder.standardizedFileURL
         let resolvedFolder = sourceWorkspaceFolderResolver.resolve(selectedFolder: standardizedFolder)
         do {
+            flushPendingSessionPersistence()
             let resolvedFolderPath = resolvedFolder.path
             try reloadPersistedSessionsFromStore()
             logger.log("Starting source workspace load from \(standardizedFolder.path, privacy: .public) resolved to \(resolvedFolder.path, privacy: .public) via \(origin.rawValue, privacy: .public)")
@@ -865,6 +867,40 @@ final class AppState: ObservableObject {
 
     func openPhotoLog(_ sessionID: UUID) {
         openSavedWalk(sessionID)
+    }
+
+    func editPhotoLogMembership(_ sessionID: UUID) {
+        guard let logRecord = persistedSessions.first(where: { $0.0.id == sessionID && $0.0.sessionKind == .walkDraft }) else {
+            statusMessage = "Photo log could not be found in the local library."
+            return
+        }
+
+        let workspacePath = logRecord.0.workspaceSourceFolder.standardizedFileURL.path
+        let inboxRecord = persistedSessions.first {
+            $0.0.id != sessionID &&
+            $0.0.sessionKind == .inbox &&
+            $0.0.workspaceSourceFolder.standardizedFileURL.path == workspacePath
+        }
+
+        let logPaths = Set(logRecord.0.mediaItems.map(\.relativePath))
+        let editableItems = (logRecord.0.mediaItems + (inboxRecord?.0.mediaItems ?? []).filter { !logPaths.contains($0.relativePath) })
+            .sorted(by: Self.mediaSort)
+        let grouped = groupingService.group(items: editableItems, settings: settings)
+
+        var editableSession = logRecord.0
+        editableSession.mediaItems = grouped.items
+        editableSession.lastUpdatedAt = Date()
+        editableSession.status = "draft"
+
+        activePhotoLogMembershipEditID = sessionID
+        invalidateInFlightSourceLoad()
+        sourceWorkspaceState = .idle
+        openPersistedSessionRecord(
+            (editableSession, grouped.burstGroups, grouped.timeClusters),
+            status: "Editing membership for \(editableSession.walkMetadata.title.nonEmpty ?? "Untitled Photo Log"). Mark S/C/X to keep photos in this log; clear to undecided to leave them in the source inbox."
+        )
+        activePhotoLogMembershipEditID = sessionID
+        requestVisibleThumbnails(prefetching: editableSession.mediaItems)
     }
 
     func presentPhotoLogCreation() {
@@ -2279,6 +2315,10 @@ final class AppState: ObservableObject {
 
     private func persistCurrentSession(immediately: Bool = false) {
         guard let currentSession else { return }
+        if activePhotoLogMembershipEditID == currentSession.id {
+            persistPhotoLogMembershipEdit(currentSession, immediately: immediately)
+            return
+        }
         let session = currentSession
         let bursts = burstGroups
         let clusters = timeClusters
@@ -2302,6 +2342,85 @@ final class AppState: ObservableObject {
 
         let deadline: DispatchTime = immediately ? .now() : .now() + .milliseconds(160)
         sessionPersistenceQueue.asyncAfter(deadline: deadline, execute: workItem)
+    }
+
+    private func persistPhotoLogMembershipEdit(_ editingSession: ImportSession, immediately: Bool = false) {
+        let sessionID = editingSession.id
+        let memberItems = editingSession.mediaItems.filter {
+            !$0.selectionState.isUndecided || $0.lifecycleState.isImportedOrBeyond
+        }
+        let returnedItems = editingSession.mediaItems.filter {
+            $0.selectionState.isUndecided && !$0.lifecycleState.isImportedOrBeyond
+        }
+        let memberPaths = Set(memberItems.map(\.relativePath))
+        let workspacePath = editingSession.workspaceSourceFolder.standardizedFileURL.path
+        let existingInbox = persistedSessions.first {
+            $0.0.id != sessionID &&
+            $0.0.sessionKind == .inbox &&
+            $0.0.workspaceSourceFolder.standardizedFileURL.path == workspacePath
+        }?.0
+
+        let returnedPaths = Set(returnedItems.map(\.relativePath))
+        var inboxItems = (existingInbox?.mediaItems ?? []).filter {
+            !memberPaths.contains($0.relativePath) && !returnedPaths.contains($0.relativePath)
+        }
+        inboxItems.append(contentsOf: returnedItems)
+        inboxItems.sort(by: Self.mediaSort)
+
+        let memberGrouped = groupingService.group(items: memberItems.sorted(by: Self.mediaSort), settings: settings)
+        let inboxGrouped = groupingService.group(items: inboxItems, settings: settings)
+
+        var updatedLog = editingSession
+        updatedLog.mediaItems = memberGrouped.items
+        updatedLog.lastUpdatedAt = Date()
+        updatedLog.status = memberGrouped.items.isEmpty ? "draft_empty" : "draft"
+
+        var updatedInbox = existingInbox ?? ImportSession(
+            sourceFolder: editingSession.sourceFolder,
+            workspaceSourceFolder: editingSession.workspaceSourceFolder,
+            archiveRoot: editingSession.archiveRoot,
+            sessionKind: .inbox,
+            status: "draft"
+        )
+        updatedInbox.mediaItems = inboxGrouped.items
+        updatedInbox.lastUpdatedAt = Date()
+        updatedInbox.walkMetadata = .empty
+        updatedInbox.photoLogScope = nil
+        updatedInbox.sessionKind = .inbox
+        updatedInbox.sessionKindWasExplicit = true
+        updatedInbox.status = inboxGrouped.items.isEmpty ? "inbox_empty" : "draft"
+
+        storePersistedSession(updatedLog, bursts: memberGrouped.burstGroups, clusters: memberGrouped.timeClusters)
+        storePersistedSession(updatedInbox, bursts: inboxGrouped.burstGroups, clusters: inboxGrouped.timeClusters)
+
+        pendingSessionPersistenceWorkItem?.cancel()
+        let sessionManager = self.sessionManager
+        let sessionStore = self.sessionStore
+        let logger = self.logger
+        let workItem = DispatchWorkItem { [weak self] in
+            do {
+                try sessionManager.save(updatedLog, bursts: memberGrouped.burstGroups, clusters: memberGrouped.timeClusters, to: sessionStore)
+                try sessionManager.save(updatedInbox, bursts: inboxGrouped.burstGroups, clusters: inboxGrouped.timeClusters, to: sessionStore)
+            } catch {
+                logger.error("Failed to persist photo log membership edit: \(error.localizedDescription, privacy: .public)")
+                DispatchQueue.main.async {
+                    self?.statusMessage = "Photo log membership save failed: \(error.localizedDescription)"
+                }
+            }
+        }
+        pendingSessionPersistenceWorkItem = workItem
+
+        let deadline: DispatchTime = immediately ? .now() : .now() + .milliseconds(160)
+        sessionPersistenceQueue.asyncAfter(deadline: deadline, execute: workItem)
+    }
+
+    private func flushPendingSessionPersistence() {
+        guard let workItem = pendingSessionPersistenceWorkItem else { return }
+        pendingSessionPersistenceWorkItem = nil
+        sessionPersistenceQueue.sync {
+            workItem.perform()
+        }
+        workItem.cancel()
     }
 
     private func persistSettings() {
@@ -2339,6 +2458,7 @@ final class AppState: ObservableObject {
         _ record: (ImportSession, [BurstGroup], [TimeCluster]),
         status: String
     ) {
+        activePhotoLogMembershipEditID = nil
         setCurrentSession(record.0, updateKind: .full)
         burstGroups = record.1
         timeClusters = record.2
