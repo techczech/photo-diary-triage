@@ -155,6 +155,13 @@ import Testing
     #expect(CompareKeyboardPanDirection(key: "q") == nil)
 }
 
+@Test func appChromeKeyboardShortcutsRequireCommandOption() {
+    #expect(AppChromeKeyboardShortcut(key: "s", modifiers: [.command, .option]) == .toggleSidebar)
+    #expect(AppChromeKeyboardShortcut(key: "I", modifiers: [.command, .option]) == .toggleInspector)
+    #expect(AppChromeKeyboardShortcut(key: "s", modifiers: [.command]) == nil)
+    #expect(AppChromeKeyboardShortcut(key: "i", modifiers: [.command, .option, .shift]) == nil)
+}
+
 @Test func reviewGridClickContextTracksModifiersAndDoubleClick() {
     let shiftDoubleClick = ReviewGridClickContext(modifiers: [.shift], clickCount: 2)
     let commandClick = ReviewGridClickContext(modifiers: [.command], clickCount: 1)
@@ -672,6 +679,24 @@ import Testing
     state.focusSidebarNavigation()
     #expect(state.sidebarState.snapshot.isVisible)
     #expect(state.activePane == .sidebar)
+}
+
+@MainActor
+@Test func nativeSidebarVisibilityChangePreservesReviewFocusAndSidebarContent() {
+    let items = makeSelectionItems(count: 4)
+    let state = makeReviewAppState(items: items)
+    state.focusReviewSurface()
+
+    let browserRootIDs = state.sidebarState.snapshot.tree.browserRoots.map(\.id)
+    let reviewGeneration = state.reviewSnapshotGeneration
+
+    state.isSidebarVisible = false
+
+    #expect(!state.sidebarState.snapshot.isVisible)
+    #expect(state.activePane == .media)
+    #expect(state.reviewNavigationState.snapshot.reviewGridHasFocus)
+    #expect(state.sidebarState.snapshot.tree.browserRoots.map(\.id) == browserRootIDs)
+    #expect(state.reviewSnapshotGeneration == reviewGeneration)
 }
 
 @MainActor

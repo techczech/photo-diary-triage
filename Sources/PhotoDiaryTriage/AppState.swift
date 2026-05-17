@@ -118,7 +118,8 @@ final class AppState: ObservableObject {
     }
     @Published var isSidebarVisible = true {
         didSet {
-            refreshSidebarState()
+            guard isSidebarVisible != oldValue else { return }
+            handleSidebarVisibilityChanged()
         }
     }
     @Published var reviewFilter: ReviewFilter = .all {
@@ -1338,13 +1339,6 @@ final class AppState: ObservableObject {
     func toggleSidebarVisibility() {
         latencyRecorder.begin("sidebar.toggle")
         isSidebarVisible.toggle()
-        if !isSidebarVisible, activePane == .sidebar {
-            if canFocusReviewSurface {
-                focusReviewSurface()
-            } else if !selectedFolderNodeIDs.isEmpty || !detailFolderNodes.isEmpty {
-                activePane = .folders
-            }
-        }
         DispatchQueue.main.async { [weak self] in
             self?.latencyRecorder.end("sidebar.toggle")
         }
@@ -2677,6 +2671,23 @@ final class AppState: ObservableObject {
             importProgress: importProgress
         )
         sidebarState.update(snapshot)
+    }
+
+    private func refreshSidebarVisibilityState() {
+        var snapshot = sidebarState.snapshot
+        snapshot.isVisible = isSidebarVisible
+        sidebarState.update(snapshot)
+    }
+
+    private func handleSidebarVisibilityChanged() {
+        refreshSidebarVisibilityState()
+
+        guard !isSidebarVisible, activePane == .sidebar else { return }
+        if canFocusReviewSurface {
+            focusReviewSurface()
+        } else if !selectedFolderNodeIDs.isEmpty || !detailFolderNodes.isEmpty {
+            activePane = .folders
+        }
     }
 
     private func triageCounts(for items: [MediaItem]) -> (included: Int, candidate: Int, excluded: Int) {

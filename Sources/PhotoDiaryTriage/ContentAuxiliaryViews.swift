@@ -489,6 +489,8 @@ struct ReviewKeyInputView: NSViewRepresentable {
     let onZoomIn: () -> Void
     let onZoomOut: () -> Void
     let onZoomReset: () -> Void
+    let onToggleSidebar: () -> Void
+    let onToggleInspector: () -> Void
 
     func makeNSView(context: Context) -> ReviewKeyResponderView {
         let view = ReviewKeyResponderView()
@@ -506,6 +508,8 @@ struct ReviewKeyInputView: NSViewRepresentable {
         view.onZoomIn = onZoomIn
         view.onZoomOut = onZoomOut
         view.onZoomReset = onZoomReset
+        view.onToggleSidebar = onToggleSidebar
+        view.onToggleInspector = onToggleInspector
         return view
     }
 
@@ -524,6 +528,8 @@ struct ReviewKeyInputView: NSViewRepresentable {
         nsView.onZoomIn = onZoomIn
         nsView.onZoomOut = onZoomOut
         nsView.onZoomReset = onZoomReset
+        nsView.onToggleSidebar = onToggleSidebar
+        nsView.onToggleInspector = onToggleInspector
 
         nsView.isHandlingKeys = isFocused
         if isFocused, nsView.window?.firstResponder !== nsView {
@@ -550,6 +556,8 @@ final class ReviewKeyResponderView: NSView {
     var onZoomIn: (() -> Void)?
     var onZoomOut: (() -> Void)?
     var onZoomReset: (() -> Void)?
+    var onToggleSidebar: (() -> Void)?
+    var onToggleInspector: (() -> Void)?
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -563,6 +571,19 @@ final class ReviewKeyResponderView: NSView {
         let hasOptionModifier = event.modifierFlags.contains(.option)
         let hasCommandModifier = event.modifierFlags.contains(.command)
         let hasControlModifier = event.modifierFlags.contains(.control)
+        if let chromeShortcut = AppChromeKeyboardShortcut(
+            key: event.charactersIgnoringModifiers,
+            modifiers: event.modifierFlags
+        ) {
+            switch chromeShortcut {
+            case .toggleSidebar:
+                onToggleSidebar?()
+            case .toggleInspector:
+                onToggleInspector?()
+            }
+            return
+        }
+
         if hasCommandModifier,
            let chars = event.charactersIgnoringModifiers?.uppercased() {
             if chars == "A" {
@@ -749,6 +770,12 @@ struct CompareSheet: View {
                 },
                 onZoomReset: {
                     zoom = 1
+                },
+                onToggleSidebar: {
+                    appState.toggleSidebarVisibility()
+                },
+                onToggleInspector: {
+                    appState.toggleDetailsInspector()
                 }
             )
             .frame(width: 1, height: 1)
