@@ -187,6 +187,40 @@ import Testing
 }
 
 @MainActor
+@Test func importWorkflowInitialProgressCountsRawCompanions() async throws {
+    let root = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let sourceRoot = root.appendingPathComponent("source", isDirectory: true)
+    let archiveRoot = root.appendingPathComponent("archive", isDirectory: true)
+    try writeTestFile(sourceRoot.appendingPathComponent("IMG_0001.jpg"), contents: "jpg")
+    try writeTestFile(sourceRoot.appendingPathComponent("IMG_0001.cr3"), contents: "raw")
+    let companion = makeTestCompanionFile(sourceRoot: sourceRoot, fileName: "IMG_0001.cr3")
+    let item = makeTestMediaItem(
+        sourceRoot: sourceRoot,
+        fileName: "IMG_0001.jpg",
+        capturedAt: Date(timeIntervalSince1970: 60_000),
+        selectionState: .included,
+        importRawCompanions: true,
+        companionFiles: [companion],
+        lifecycleState: .selectedForImport
+    )
+    let session = makeTestSession(sourceRoot: sourceRoot, archiveRoot: archiveRoot, items: [item])
+    let coordinator = StubImportCoordinator(
+        result: makeStubImportResult(session: session),
+        progressSteps: [ImportProgress(current: 2, total: 2)]
+    )
+    let workflow = ImportWorkflow(coordinator: coordinator)
+    var snapshots: [ImportProgress?] = []
+
+    _ = try await workflow.commit(session: session) { progress in
+        snapshots.append(progress)
+    }
+
+    #expect(snapshots.first == ImportProgress(current: 0, total: 2))
+    #expect(snapshots.contains(ImportProgress(current: 2, total: 2)))
+}
+
+@MainActor
 @Test func importWorkflowResetsProgressOnFailure() async {
     let session = makeWorkflowSession(selectedCount: 1)
     let coordinator = StubImportCoordinator(

@@ -71,6 +71,48 @@ struct PhotoLogRevealState: Identifiable, Equatable {
     var id: UUID { sessionID }
 }
 
+struct ImportReadinessSnapshot: Equatable, Sendable {
+    let includedItems: Int
+    let rawCompanionFiles: Int
+    let totalFiles: Int
+    let destinationPath: String?
+    let verifiedAwaitingBackupItems: Int
+    let cleanupPendingItems: Int
+    let backupConfirmed: Bool
+    let cleanupRequiresBackupConfirmation: Bool
+
+    var hasFilesToCopy: Bool {
+        totalFiles > 0
+    }
+}
+
+enum ImportOperationPhase: Equatable, Sendable {
+    case idle
+    case copying
+    case completed
+    case failed
+}
+
+struct ImportOperationSnapshot: Equatable, Sendable {
+    let phase: ImportOperationPhase
+    let title: String
+    let detail: String
+    let progress: ImportProgress?
+    let destinationPath: String?
+
+    static let idle = ImportOperationSnapshot(
+        phase: .idle,
+        title: "Copy ready",
+        detail: "",
+        progress: nil,
+        destinationPath: nil
+    )
+
+    var isRunning: Bool {
+        phase == .copying
+    }
+}
+
 struct SidebarTreeSnapshot: Equatable, Sendable {
     let browserRoots: [BrowserNode]
     let selectedSidebarNodeID: String?
@@ -104,6 +146,8 @@ struct SidebarSnapshot: Equatable, Sendable {
     let hiddenPhotoLogSummary: String?
     let statusMessage: String
     let importProgress: ImportProgress?
+    let importReadiness: ImportReadinessSnapshot?
+    let importOperation: ImportOperationSnapshot
 
     static let empty = SidebarSnapshot(
         isVisible: true,
@@ -120,7 +164,9 @@ struct SidebarSnapshot: Equatable, Sendable {
         tree: .empty,
         hiddenPhotoLogSummary: nil,
         statusMessage: "Choose a source folder on the SSD to begin.",
-        importProgress: nil
+        importProgress: nil,
+        importReadiness: nil,
+        importOperation: .idle
     )
 }
 

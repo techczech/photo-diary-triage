@@ -206,15 +206,28 @@ struct ActionButtonsPaneView: View {
 
     var body: some View {
         Group {
-            if appState.canMutateImportSelection {
+            if let readiness = appState.sidebarState.snapshot.importReadiness {
                 Group {
                     if compact {
                         VStack(alignment: .leading, spacing: 6) {
+                            CopyToArchiveStatusView(
+                                readiness: readiness,
+                                operation: appState.sidebarState.snapshot.importOperation,
+                                compact: true
+                            )
                             actionButtons
                         }
                     } else {
-                        HStack {
-                            actionButtons
+                        VStack(alignment: .leading, spacing: 10) {
+                            CopyToArchiveStatusView(
+                                readiness: readiness,
+                                operation: appState.sidebarState.snapshot.importOperation,
+                                compact: false
+                            )
+                            HStack {
+                                actionButtons
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
                 }
@@ -225,21 +238,147 @@ struct ActionButtonsPaneView: View {
 
     private var actionButtons: some View {
         Group {
-            Button("Copy Included Files Into Archive") {
+            Button("Copy To Archive") {
                 appState.commitImport()
             }
             .disabled(!appState.canCommitImport)
 
-            Button("Confirm Backup And Enable Cleanup") {
+            Button("Confirm Backup") {
                 appState.markBackupConfirmed()
             }
             .disabled(!appState.canConfirmBackup)
 
-            Button("Clean Imported Files From Source SSD") {
+            Button("Clean Source SSD") {
                 appState.cleanupImportedSources()
             }
             .disabled(!appState.canCleanupImportedSources)
         }
+    }
+}
+
+struct CopyToArchiveStatusView: View {
+    let readiness: ImportReadinessSnapshot
+    let operation: ImportOperationSnapshot
+    var compact: Bool = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: compact ? 6 : 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Label(title, systemImage: systemImage)
+                    .font(compact ? .caption.weight(.semibold) : .subheadline.weight(.semibold))
+                    .foregroundStyle(titleStyle)
+
+                Spacer(minLength: 8)
+
+                if readiness.totalFiles > 0 || operation.isRunning {
+                    Text(fileCountLabel)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if let progress = operation.progress {
+                ProgressView(value: progress.fractionCompleted)
+                    .progressViewStyle(.linear)
+            }
+
+            Text(detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(compact ? 3 : 4)
+
+            if let destinationPath = operation.destinationPath ?? readiness.destinationPath {
+                LabeledContent("Destination") {
+                    Text(destinationPath)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .help(destinationPath)
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+
+            if cleanupDetail.isEmpty == false {
+                Text(cleanupDetail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var title: String {
+        switch operation.phase {
+        case .idle:
+            readiness.hasFilesToCopy ? "Copy Ready" : "Copy Waiting"
+        case .copying, .completed, .failed:
+            operation.title
+        }
+    }
+
+    private var systemImage: String {
+        switch operation.phase {
+        case .idle:
+            readiness.hasFilesToCopy ? "externaldrive.badge.plus" : "externaldrive"
+        case .copying:
+            "arrow.down.doc"
+        case .completed:
+            "checkmark.seal"
+        case .failed:
+            "exclamationmark.triangle"
+        }
+    }
+
+    private var titleStyle: AnyShapeStyle {
+        switch operation.phase {
+        case .failed:
+            return AnyShapeStyle(.red)
+        case .completed:
+            return AnyShapeStyle(.green)
+        case .copying:
+            return AnyShapeStyle(.primary)
+        case .idle:
+            return AnyShapeStyle(readiness.hasFilesToCopy ? .primary : .secondary)
+        }
+    }
+
+    private var fileCountLabel: String {
+        if let progress = operation.progress {
+            return "\(progress.current)/\(progress.total) files"
+        }
+        return "\(readiness.totalFiles) files"
+    }
+
+    private var detail: String {
+        switch operation.phase {
+        case .idle:
+            if readiness.hasFilesToCopy {
+                let rawDetail = readiness.rawCompanionFiles == 0 ? "" : " plus \(readiness.rawCompanionFiles) RAW companion file(s)"
+                return "\(readiness.includedItems) selected photo(s)\(rawDetail) will be copied and verified before cleanup is offered."
+            }
+            if readiness.verifiedAwaitingBackupItems > 0 {
+                return "\(readiness.verifiedAwaitingBackupItems) copied photo(s) are verified. Confirm the backup before source cleanup."
+            }
+            if readiness.cleanupPendingItems > 0 {
+                return "\(readiness.cleanupPendingItems) copied photo(s) are ready for source cleanup."
+            }
+            return "Select photos with S to make a copy plan visible here before writing to the archive."
+        case .copying, .completed, .failed:
+            return operation.detail
+        }
+    }
+
+    private var cleanupDetail: String {
+        if readiness.cleanupPendingItems > 0 {
+            return readiness.backupConfirmed
+                ? "\(readiness.cleanupPendingItems) source photo(s) can be cleaned from the SSD."
+                : "\(readiness.cleanupPendingItems) source photo(s) are waiting for backup confirmation."
+        }
+        if readiness.verifiedAwaitingBackupItems > 0 && readiness.cleanupRequiresBackupConfirmation {
+            return "Cleanup is locked until backup confirmation."
+        }
+        return ""
     }
 }
 
@@ -260,10 +399,17 @@ struct SidebarStatusView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(3)
 
-            if let progress = snapshot.importProgress {
-                Text("\(progress.current)/\(progress.total)")
-                    .font(.caption2.monospaced())
+            if let progress = snapshot.importOperation.progress {
+                ProgressView(value: progress.fractionCompleted)
+                    .progressViewStyle(.linear)
+                Text("\(progress.current)/\(progress.total) files")
+                    .font(.caption2.monospacedDigit())
                     .foregroundStyle(.secondary)
+            } else if snapshot.importOperation.phase == .completed || snapshot.importOperation.phase == .failed {
+                Text(snapshot.importOperation.detail)
+                    .font(.caption2)
+                    .foregroundStyle(snapshot.importOperation.phase == .failed ? .red : .secondary)
+                    .lineLimit(2)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -292,9 +438,12 @@ struct FooterStatusBarView: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
 
-            if let progress = state.snapshot.importProgress {
-                Text("\(progress.current)/\(progress.total)")
-                    .font(.caption.monospaced())
+            if let progress = state.snapshot.importOperation.progress {
+                ProgressView(value: progress.fractionCompleted)
+                    .progressViewStyle(.linear)
+                    .frame(width: 120)
+                Text("\(progress.current)/\(progress.total) files")
+                    .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
 

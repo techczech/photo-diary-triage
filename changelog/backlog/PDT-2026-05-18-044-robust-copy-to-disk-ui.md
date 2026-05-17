@@ -1,0 +1,29 @@
+# PDT-2026-05-18-044 Robust Copy To Disk UI
+
+- Item ID: `PDT-2026-05-18-044`
+- Title: `robust copy to disk UI`
+- User request summary: `The copy-to-disk/import flow appears to have no UI, and needs a robust visible system so triage can be done with confidence.`
+- Constraints:
+  - Preserve the SSD-first selective-import workflow.
+  - Make copy/import readiness, progress, success, and failure visible from the main triage surface.
+  - Keep keyboard-driven triage and review browsing responsive while copy state is reported.
+  - Avoid hidden or ambiguous background work when photos are being copied or source cleanup is pending.
+  - Maintain backlog, changelog, and release metadata alignment.
+- Implementation intent:
+  - Inspect the current import/copy flow and progress state.
+  - Add a user-visible copy status surface with clear action availability and operation details.
+  - Ensure success and failure states name what happened and what still needs attention.
+  - Add focused regression coverage for the import progress/reporting state where possible.
+- Test conditions:
+  - A user can see whether copy/import is ready before starting.
+  - A running copy/import exposes progress and disables conflicting actions.
+  - A completed copy/import reports the outcome.
+  - A failed copy/import reports the failure without silently losing selection state.
+  - `swift build`
+  - `swift test`
+- Success criteria:
+  - Build `0.2.6` gives copy-to-disk/import a visible, confidence-building UI path.
+  - The app no longer feels like copy-to-disk happens invisibly or unreliably.
+- Current status: `awaiting_user_review`
+- Target release version: `0.2.6`
+- Target feature slug: `robust-copy-to-disk-ui`
