@@ -1,0 +1,28 @@
+# PDT-2026-05-18-043 Photo Log Membership Editing
+
+- Item ID: `PDT-2026-05-18-043`
+- Title: `photo log membership editing`
+- User request summary: `The UX for triage log save is incomprehensible. When editing a log, the user should still be able to choose which items belong to it.`
+- Constraints:
+  - Preserve the existing photo log creation and metadata editing flows unless they directly block membership editing.
+  - Editing an existing photo log must make membership revision obvious from the review surface.
+  - Keep keyboard-first triage and visible review controls intact.
+  - Do not corrupt persisted photo log sessions or source inbox ownership.
+  - Maintain backlog, changelog, and release metadata alignment.
+- Implementation intent:
+  - Inspect the current create/edit photo log flow and persisted membership model.
+  - Add a clear path from `Edit` to a review surface where the user can include/exclude photos from that log.
+  - Ensure selected/included items in the edited log remain persisted with the log.
+  - Add focused regression coverage for editing membership if it can be tested in state/workflow logic.
+- Test conditions:
+  - Clicking edit/open on an existing photo log makes its items reviewable and mutable.
+  - The user can add or remove photo membership from the edited log without needing to understand saved session internals.
+  - Existing selection, photo log, and persistence tests still pass.
+  - `swift build`
+  - `swift test`
+- Success criteria:
+  - Build `0.2.5` makes photo log membership editing understandable from the app UI.
+  - Editing a log is no longer metadata-only when the user needs to decide which photos belong to it.
+- Current status: `awaiting_user_review`
+- Target release version: `0.2.5`
+- Target feature slug: `photo-log-membership-editing`

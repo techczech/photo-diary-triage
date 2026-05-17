@@ -390,7 +390,7 @@ struct PhotoLogEditorSheet: View {
         case .create:
             return "Review the source scope, membership counts, and ownership collisions before moving photos."
         case .edit:
-            return "Update the title, notes, and primary scope without changing membership."
+            return "Update the title, notes, and primary scope."
         }
     }
 

@@ -125,6 +125,12 @@ struct PhotoLogLibraryPane: View {
                                         .buttonStyle(.bordered)
                                         .controlSize(.mini)
                                         Button("Edit") {
+                                            appState.editPhotoLogMembership(log.sessionID)
+                                        }
+                                        .buttonStyle(.bordered)
+                                        .controlSize(.mini)
+                                        .disabled(log.status == "imported" || log.status == "source_cleaned")
+                                        Button("Details") {
                                             appState.presentPhotoLogEditor(log.sessionID)
                                         }
                                         .buttonStyle(.bordered)

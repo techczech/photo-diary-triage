@@ -130,3 +130,4 @@
 {"ts":"2026-05-04T13:41:00Z","item_id":"PDT-2026-05-04-041","event":"report_created","status":"implemented","title":"compact review control bar","file":"changelog/changelog/PDT-2026-05-04-041-compact-review-control-bar-report.md"}
 {"ts":"2026-05-17T23:26:56Z","item_id":"PDT-2026-05-04-041","event":"user_approved","status":"approved_done","title":"compact review control bar","file":"changelog/changelog/PDT-2026-05-04-041-compact-review-control-bar-report.md"}
 {"ts":"2026-05-17T23:33:29Z","item_id":"PDT-2026-05-18-042","event":"report_created","status":"implemented","title":"sidebar speed and shortcut recovery","file":"changelog/changelog/PDT-2026-05-18-042-sidebar-speed-and-shortcut-recovery-report.md"}
+{"ts":"2026-05-17T23:43:02Z","item_id":"PDT-2026-05-18-043","event":"report_created","status":"implemented","title":"photo log membership editing","file":"changelog/changelog/PDT-2026-05-18-043-photo-log-membership-editing-report.md"}
