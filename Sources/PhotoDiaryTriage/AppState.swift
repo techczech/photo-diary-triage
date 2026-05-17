@@ -256,6 +256,15 @@ final class AppState: ObservableObject {
             refreshSidebarState()
         }
     }
+    @Published var importOperation: ImportOperationSnapshot = .idle {
+        didSet {
+            if oldValue.phase == importOperation.phase {
+                refreshSidebarState()
+            } else {
+                refreshAllUIState()
+            }
+        }
+    }
 
     let sidebarState = SidebarState()
     let reviewState = ReviewState()
@@ -670,15 +679,28 @@ final class AppState: ObservableObject {
     }
 
     var canCommitImport: Bool {
-        currentSession?.mediaItems.contains { $0.selectionState.isIncluded } ?? false
+        guard importOperation.isRunning == false else { return false }
+        return currentSession?.mediaItems.contains {
+            $0.selectionState.isIncluded && !$0.lifecycleState.isImportedOrBeyond
+        } ?? false
     }
 
     var canConfirmBackup: Bool {
-        currentSession?.walkMetadata.backupConfirmedAt == nil
+        guard importOperation.isRunning == false else { return false }
+        guard let currentSession else { return false }
+        guard currentSession.walkMetadata.backupConfirmedAt == nil else { return false }
+        return currentSession.mediaItems.contains {
+            $0.selectionState.isIncluded && ($0.lifecycleState == .verified || $0.lifecycleState == .imported)
+        }
     }
 
     var canCleanupImportedSources: Bool {
-        currentSession?.mediaItems.contains { $0.lifecycleState == .sourceCleanupPending } ?? false
+        guard importOperation.isRunning == false else { return false }
+        guard let currentSession else { return false }
+        if settings.cleanupRequiresBackupConfirmation && currentSession.walkMetadata.backupConfirmedAt == nil {
+            return false
+        }
+        return currentSession.mediaItems.contains { $0.lifecycleState == .sourceCleanupPending }
     }
 
     var canNavigatePreviewBackward: Bool {
@@ -701,7 +723,7 @@ final class AppState: ObservableObject {
     }
 
     var canMutateImportSelection: Bool {
-        !isBrowsingArchive
+        !isBrowsingArchive && !importOperation.isRunning
     }
 
     var sidebarSnapshotGeneration: Int {
@@ -1147,23 +1169,56 @@ final class AppState: ObservableObject {
 
     func commitImport() {
         guard let session = currentSession else { return }
+        guard canCommitImport else { return }
+        let readiness = importReadinessSnapshot(for: session)
+        let destinationPath = readiness?.destinationPath
 
         Task {
             do {
+                let initialProgress = ImportProgress(current: 0, total: readiness?.totalFiles ?? ImportProgress.expectedTotalEntries(for: session))
+                importProgress = initialProgress
+                importOperation = ImportOperationSnapshot(
+                    phase: .copying,
+                    title: "Copying to archive",
+                    detail: "Copied 0 of \(initialProgress.total) file(s).",
+                    progress: initialProgress,
+                    destinationPath: destinationPath
+                )
                 statusMessage = "Copying marked files into archive..."
                 let result = try await importWorkflow.commit(session: session) { [weak self] progress in
                     guard let self else { return }
                     self.importProgress = progress
                     if let progress {
+                        self.importOperation = ImportOperationSnapshot(
+                            phase: .copying,
+                            title: "Copying to archive",
+                            detail: "Copied \(progress.current) of \(progress.total) file(s).",
+                            progress: progress,
+                            destinationPath: destinationPath
+                        )
                         self.statusMessage = "Importing \(progress.current)/\(progress.total)..."
                     }
                 }
                 setCurrentSession(result.session, updateKind: .sessionOnly)
                 persistCurrentSession(immediately: true)
                 importProgress = nil
+                importOperation = ImportOperationSnapshot(
+                    phase: .completed,
+                    title: "Copy complete",
+                    detail: "Copied and verified \(result.fileManifests.count) photo(s). Manifests were written.",
+                    progress: nil,
+                    destinationPath: result.walkManifest.archiveFolder.path
+                )
                 statusMessage = "Imported \(result.fileManifests.count) marked items and wrote manifests."
             } catch {
                 importProgress = nil
+                importOperation = ImportOperationSnapshot(
+                    phase: .failed,
+                    title: "Copy failed",
+                    detail: error.localizedDescription,
+                    progress: nil,
+                    destinationPath: destinationPath
+                )
                 statusMessage = error.localizedDescription
             }
         }
@@ -2769,6 +2824,7 @@ final class AppState: ObservableObject {
             }
 
         let canReloadSourceWorkspace = sourceWorkspaceState.sourcePath != nil || currentSession != nil
+        let importReadiness = importReadinessSnapshot(for: currentSession)
 
         let snapshot = SidebarSnapshot(
             isVisible: isSidebarVisible,
@@ -2788,9 +2844,40 @@ final class AppState: ObservableObject {
             ),
             hiddenPhotoLogSummary: photoLogHiddenSummary(),
             statusMessage: statusMessage,
-            importProgress: importProgress
+            importProgress: importProgress,
+            importReadiness: importReadiness,
+            importOperation: importOperation
         )
         sidebarState.update(snapshot)
+    }
+
+    private func importReadinessSnapshot(for session: ImportSession?) -> ImportReadinessSnapshot? {
+        guard let session else { return nil }
+        guard !isBrowsingArchive else { return nil }
+
+        let copyableItems = session.mediaItems.filter {
+            $0.selectionState.isIncluded && !$0.lifecycleState.isImportedOrBeyond
+        }
+        let rawCompanionFiles = copyableItems.reduce(0) { count, item in
+            count + (item.importRawCompanions ? item.companionFiles.count : 0)
+        }
+        let totalFiles = copyableItems.count + rawCompanionFiles
+        let destinationPath = totalFiles > 0 ? ArchivePlanner(fileManager: fileManager).plan(for: session).archiveFolder.path : nil
+        let verifiedAwaitingBackupItems = session.mediaItems.filter {
+            $0.selectionState.isIncluded && ($0.lifecycleState == .verified || $0.lifecycleState == .imported)
+        }.count
+        let cleanupPendingItems = session.mediaItems.filter { $0.lifecycleState == .sourceCleanupPending }.count
+
+        return ImportReadinessSnapshot(
+            includedItems: copyableItems.count,
+            rawCompanionFiles: rawCompanionFiles,
+            totalFiles: totalFiles,
+            destinationPath: destinationPath,
+            verifiedAwaitingBackupItems: verifiedAwaitingBackupItems,
+            cleanupPendingItems: cleanupPendingItems,
+            backupConfirmed: session.walkMetadata.backupConfirmedAt != nil,
+            cleanupRequiresBackupConfirmation: settings.cleanupRequiresBackupConfirmation
+        )
     }
 
     private func refreshSidebarVisibilityState() {

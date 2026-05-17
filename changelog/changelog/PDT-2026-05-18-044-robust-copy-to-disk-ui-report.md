@@ -1,0 +1,28 @@
+# PDT-2026-05-18-044 Robust Copy To Disk UI Report
+
+- Item ID: `PDT-2026-05-18-044`
+- Summary of what changed:
+  - Added a visible copy-to-archive status surface to the main action area and inspector action area.
+  - The copy surface now shows readiness, selected photo count, RAW companion count, total files, planned destination, running progress, completion, failure, and cleanup/backup state.
+  - Copy progress totals now count RAW companions as real files.
+  - Copy actions are disabled while copying and after selected files are already imported or verified.
+  - Backup confirmation and source cleanup actions are gated to the post-copy states where they make sense.
+- Files changed:
+  - `Sources/PhotoDiaryTriage/AppState.swift`
+  - `Sources/PhotoDiaryTriage/ContentViewSections.swift`
+  - `Sources/PhotoDiaryTriage/StateSupport.swift`
+  - `Sources/PhotoDiaryTriage/UIState.swift`
+  - `Tests/PhotoDiaryTriageTests/ImportWorkflowTests.swift`
+  - `Tests/PhotoDiaryTriageTests/ReviewInteractionTests.swift`
+  - `APP_RELEASE.env`
+  - `changelog/backlog/PDT-2026-05-18-044-robust-copy-to-disk-ui.md`
+- Verification performed:
+  - `swift test --filter importWorkflowInitialProgressCountsRawCompanions`
+  - `swift test --filter copyReadinessReportsDestinationAndImportedState`
+  - `swift test`
+  - `./scripts/build_app_bundle.sh`
+  - Launched `dist/PhotoDiaryTriage.app`
+- Known gaps or follow-up items:
+  - None known for this change.
+- Shipped release version: `0.2.6`
+- Shipped feature slug: `robust-copy-to-disk-ui`

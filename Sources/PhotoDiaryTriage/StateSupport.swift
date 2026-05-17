@@ -29,6 +29,20 @@ protocol ImportCoordinating {
 struct ImportProgress: Equatable, Sendable {
     let current: Int
     let total: Int
+
+    var fractionCompleted: Double {
+        guard total > 0 else { return 0 }
+        return min(1, max(0, Double(current) / Double(total)))
+    }
+
+    static func expectedTotalEntries(for session: ImportSession) -> Int {
+        let total = session.mediaItems
+            .filter { $0.selectionState.isIncluded && !$0.lifecycleState.isImportedOrBeyond }
+            .reduce(0) { count, item in
+                count + 1 + (item.importRawCompanions ? item.companionFiles.count : 0)
+            }
+        return max(total, 0)
+    }
 }
 
 struct AppStartupAlert: Identifiable, Equatable {
@@ -426,7 +440,7 @@ final class ImportWorkflow: ObservableObject {
         session: ImportSession,
         progressHandler: (@MainActor (ImportProgress?) -> Void)? = nil
     ) async throws -> ImportResult {
-        importProgress = ImportProgress(current: 0, total: session.mediaItems.filter { $0.selectionState.isIncluded }.count)
+        importProgress = ImportProgress(current: 0, total: ImportProgress.expectedTotalEntries(for: session))
         progressHandler?(importProgress)
         defer {
             importProgress = nil

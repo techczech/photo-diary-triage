@@ -967,6 +967,48 @@ import Testing
 }
 
 @MainActor
+@Test func copyReadinessReportsDestinationAndImportedState() throws {
+    let state = AppState(testing: true)
+    let root = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let sourceRoot = root.appendingPathComponent("source", isDirectory: true)
+    let archiveRoot = root.appendingPathComponent("archive", isDirectory: true)
+    try writeTestFile(sourceRoot.appendingPathComponent("IMG_0001.jpg"), contents: "jpg")
+    try writeTestFile(sourceRoot.appendingPathComponent("IMG_0001.cr3"), contents: "raw")
+    let companion = makeTestCompanionFile(sourceRoot: sourceRoot, fileName: "IMG_0001.cr3")
+    let item = makeTestMediaItem(
+        sourceRoot: sourceRoot,
+        fileName: "IMG_0001.jpg",
+        capturedAt: Date(timeIntervalSince1970: 70_000),
+        selectionState: .included,
+        importRawCompanions: true,
+        companionFiles: [companion],
+        lifecycleState: .selectedForImport
+    )
+
+    state.currentSession = makeTestSession(sourceRoot: sourceRoot, archiveRoot: archiveRoot, items: [item], title: "Copy Confidence")
+
+    let ready = try #require(state.sidebarState.snapshot.importReadiness)
+    #expect(ready.includedItems == 1)
+    #expect(ready.rawCompanionFiles == 1)
+    #expect(ready.totalFiles == 2)
+    #expect(ready.destinationPath?.contains("copy-confidence") == true)
+    #expect(state.canCommitImport)
+    #expect(!state.canConfirmBackup)
+
+    var verifiedItem = item
+    verifiedItem.lifecycleState = .verified
+    verifiedItem.destinationURL = archiveRoot.appendingPathComponent("IMG_0001.jpg")
+    state.currentSession = makeTestSession(sourceRoot: sourceRoot, archiveRoot: archiveRoot, items: [verifiedItem], title: "Copy Confidence")
+
+    let verified = try #require(state.sidebarState.snapshot.importReadiness)
+    #expect(verified.totalFiles == 0)
+    #expect(verified.verifiedAwaitingBackupItems == 1)
+    #expect(!state.canCommitImport)
+    #expect(state.canConfirmBackup)
+}
+
+@MainActor
 @Test func filterChangeReconcilesSelectionWhenHiddenItemsDropOut() {
     let sourceRoot = URL(fileURLWithPath: "/tmp/review-filter-reconcile", isDirectory: true)
     let base = Date(timeIntervalSince1970: 20_000)
