@@ -1,6 +1,26 @@
 import AppKit
 import Foundation
 
+enum AppChromeKeyboardShortcut: Equatable, Sendable {
+    case toggleSidebar
+    case toggleInspector
+
+    init?(key: String?, modifiers: NSEvent.ModifierFlags) {
+        let relevantModifiers = modifiers.intersection([.command, .option, .control, .shift])
+        guard relevantModifiers == [.command, .option],
+              let key = key?.lowercased() else { return nil }
+
+        switch key {
+        case "s":
+            self = .toggleSidebar
+        case "i":
+            self = .toggleInspector
+        default:
+            return nil
+        }
+    }
+}
+
 struct ReviewGridMetrics: Equatable, Sendable {
     static let defaultCardWidth: Double = 280
     static let minCardWidth: Double = 220

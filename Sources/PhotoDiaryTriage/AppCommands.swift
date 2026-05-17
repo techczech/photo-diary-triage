@@ -24,11 +24,6 @@ struct PhotoDiaryCommands: Commands {
         }
 
         CommandMenu("Triage") {
-            Button("Toggle Sidebar") {
-                appState.toggleSidebarVisibility()
-            }
-            .keyboardShortcut("s", modifiers: [.command, .option])
-
             Button("Focus Sidebar Navigation") {
                 appState.focusSidebarNavigation()
             }

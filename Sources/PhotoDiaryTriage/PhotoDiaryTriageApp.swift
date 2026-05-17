@@ -15,6 +15,7 @@ struct PhotoDiaryTriageApp: App {
                 }
         }
         .commands {
+            SidebarCommands()
             PhotoDiaryCommands(appState: appState)
         }
 

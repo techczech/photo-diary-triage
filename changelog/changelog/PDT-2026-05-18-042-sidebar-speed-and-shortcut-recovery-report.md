@@ -1,0 +1,31 @@
+# PDT-2026-05-18-042 Sidebar Speed And Shortcut Recovery Report
+
+- Item ID: `PDT-2026-05-18-042`
+- Summary of what changed:
+  - Kept the native macOS `NavigationSplitView` sidebar and SwiftUI inspector structure from the Build macOS Apps guidance.
+  - Added `SidebarCommands()` so the left sidebar uses the system sidebar command path instead of a duplicate custom Triage menu shortcut.
+  - Removed the duplicate custom sidebar shortcut from the Triage command menu.
+  - Made sidebar visibility changes update only the sidebar visibility snapshot instead of rebuilding the full sidebar model and photo-log/source metadata.
+  - Preserved review focus when the native sidebar visibility binding hides the sidebar.
+  - Extended the existing AppKit review key responder as a narrow responder-chain bridge for `Cmd-Option-S` and `Cmd-Option-I` while the review or compare surface has focus.
+  - Updated release metadata to `0.2.4` build `81`.
+- Files changed:
+  - `APP_RELEASE.env`
+  - `Sources/PhotoDiaryTriage/AppCommands.swift`
+  - `Sources/PhotoDiaryTriage/AppState.swift`
+  - `Sources/PhotoDiaryTriage/ContentAuxiliaryViews.swift`
+  - `Sources/PhotoDiaryTriage/ContentViewBrowserSections.swift`
+  - `Sources/PhotoDiaryTriage/PhotoDiaryTriageApp.swift`
+  - `Sources/PhotoDiaryTriage/ReviewInteractionSupport.swift`
+  - `Sources/PhotoDiaryTriage/UIState.swift`
+  - `Tests/PhotoDiaryTriageTests/ReviewInteractionTests.swift`
+  - `changelog/backlog/PDT-2026-05-18-042-sidebar-speed-and-shortcut-recovery.md`
+  - `changelog/backlog.jsonl`
+  - `changelog/changelog.jsonl`
+- Verification performed:
+  - `swift test`
+  - `./scripts/build_app_bundle.sh`
+- Known gaps or follow-up items:
+  - Manual review is still needed in the running app to confirm the native sidebar animation now feels immediate and both `Cmd-Option-S` and `Cmd-Option-I` work from the real review screen.
+- Shipped release version: `0.2.4`
+- Shipped feature slug: `sidebar-speed-and-shortcut-recovery`

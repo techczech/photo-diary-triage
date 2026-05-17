@@ -89,7 +89,7 @@ struct ReviewItemSnapshot: Identifiable, Equatable, Sendable {
 }
 
 struct SidebarSnapshot: Equatable, Sendable {
-    let isVisible: Bool
+    var isVisible: Bool
     let sourceWorkspaceState: SourceWorkspaceState
     let sessionSummary: SessionSummary?
     let photoLogGroups: [PhotoLogGroupSnapshot]

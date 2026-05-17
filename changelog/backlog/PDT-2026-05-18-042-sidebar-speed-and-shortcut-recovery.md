@@ -1,0 +1,29 @@
+# PDT-2026-05-18-042 Sidebar Speed And Shortcut Recovery
+
+- Item ID: `PDT-2026-05-18-042`
+- Title: `sidebar speed and shortcut recovery`
+- User request summary: `The compact UI improvements work, but the sidebars are slow and their keyboard shortcuts do not work.`
+- Constraints:
+  - Preserve the compact review control bar shipped in `0.2.3`.
+  - Keep the native macOS shell improvements where they do not block speed or keyboard-first triage.
+  - Restore fast sidebar and inspector toggles without rebuilding heavy review content unnecessarily.
+  - Keyboard shortcuts must work from the review surface and should not leak into text fields, sheets, or unrelated controls.
+  - Maintain backlog, changelog, and release metadata alignment.
+- Implementation intent:
+  - Inspect the current sidebar and inspector command wiring after the native `NavigationSplitView` and `.inspector` migration.
+  - Restore reliable keyboard shortcuts for the left sidebar and right inspector.
+  - Reduce sidebar/inspector toggle latency by avoiding unnecessary heavy state recomputation or focus churn.
+  - Add focused regression coverage where the shortcut and state behavior can be tested without UI automation.
+- Test conditions:
+  - Sidebar and inspector keyboard shortcuts toggle the intended side panels.
+  - Toggling sidebars from the review surface does not strand keyboard focus.
+  - Review shortcuts still work after sidebar or inspector toggles.
+  - `swift build`
+  - `swift test`
+- Success criteria:
+  - Build `0.2.4` restores keyboard-driven sidebar/inspector toggling.
+  - Sidebar and inspector toggles feel immediate enough for real review work.
+  - Compact grouped review controls from `0.2.3` remain intact.
+- Current status: `awaiting_user_review`
+- Target release version: `0.2.4`
+- Target feature slug: `sidebar-speed-and-shortcut-recovery`

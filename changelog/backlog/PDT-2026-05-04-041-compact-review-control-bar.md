@@ -20,6 +20,10 @@
 - Success criteria:
   - Build `0.2.3` visibly prioritizes vertical photo space.
   - The grouped review controls are compact and do not clip at normal window widths.
-- Current status: `awaiting_user_review`
+- Current status: `approved_done`
 - Target release version: `0.2.3`
 - Target feature slug: `compact-review-control-bar`
+
+## User Review
+
+- 2026-05-17: User confirmed the UI improvements work in the running app.
