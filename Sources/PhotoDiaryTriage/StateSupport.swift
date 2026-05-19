@@ -158,16 +158,18 @@ struct PhotoLogCreationResolver {
             }
         }
 
+        let workspacePath = currentSession.workspaceSourceFolder.standardizedFileURL.path
+        var ownerByRelativePath: [String: (id: UUID, title: String)] = [:]
+        for log in existingPhotoLogs where log.workspaceSourceFolder.standardizedFileURL.path == workspacePath {
+            let owner = (id: log.id, title: log.walkMetadata.title.nonEmpty ?? "Untitled Photo Log")
+            for item in log.mediaItems where ownerByRelativePath[item.relativePath] == nil {
+                ownerByRelativePath[item.relativePath] = owner
+            }
+        }
+
         let collisions = candidateItems.compactMap { item in
-            existingPhotoLogs.first(where: {
-                $0.workspaceSourceFolder.standardizedFileURL.path == currentSession.workspaceSourceFolder.standardizedFileURL.path &&
-                $0.mediaItems.contains(where: { $0.relativePath == item.relativePath })
-            }).map { owner in
-                PhotoLogCollision(
-                    relativePath: item.relativePath,
-                    owningSessionID: owner.id,
-                    owningTitle: owner.walkMetadata.title.nonEmpty ?? "Untitled Photo Log"
-                )
+            ownerByRelativePath[item.relativePath].map { owner in
+                PhotoLogCollision(relativePath: item.relativePath, owningSessionID: owner.id, owningTitle: owner.title)
             }
         }
 
@@ -190,12 +192,13 @@ struct PhotoLogCreationResolver {
         browserNodeMap: [String: BrowserNode],
         visibleItems: [MediaItem]
     ) -> (scope: PhotoLogScopeDescriptor, items: [MediaItem], disabledReason: String?) {
+        let defaultDateRange = capturedDateRange(for: visibleItems)
         let defaultScope = PhotoLogScopeDescriptor(
             kind: .folder,
             label: currentSession.workspaceSourceFolder.lastPathComponent,
             sourceFolderPaths: [currentSession.workspaceSourceFolder.path],
-            startDate: visibleItems.map(\.capturedAt).compactMap { $0 }.min(),
-            endDate: visibleItems.map(\.capturedAt).compactMap { $0 }.max()
+            startDate: defaultDateRange.start,
+            endDate: defaultDateRange.end
         )
 
         let items: [MediaItem]
@@ -208,12 +211,13 @@ struct PhotoLogCreationResolver {
            let folderNode = browserNodeMap[folderNodeID] {
             let mediaByID = Dictionary(uniqueKeysWithValues: currentSession.mediaItems.map { ($0.id, $0) })
             items = folderNode.mediaItemIDs.compactMap { mediaByID[$0] }
+            let dateRange = capturedDateRange(for: items)
             scope = PhotoLogScopeDescriptor(
                 kind: .folder,
                 label: folderNode.title,
                 sourceFolderPaths: [currentSession.workspaceSourceFolder.path],
-                startDate: items.map(\.capturedAt).compactMap { $0 }.min(),
-                endDate: items.map(\.capturedAt).compactMap { $0 }.max()
+                startDate: dateRange.start,
+                endDate: dateRange.end
             )
             disabledReason = items.isEmpty ? "The selected folder does not contain any visible photos." : nil
         } else if activePane == .media, visibleItems.isEmpty == false {
@@ -224,12 +228,13 @@ struct PhotoLogCreationResolver {
                 return node.title
             } ?? currentSession.workspaceSourceFolder.lastPathComponent
             items = visibleItems
+            let dateRange = capturedDateRange(for: items)
             scope = PhotoLogScopeDescriptor(
                 kind: .dateRange,
                 label: label,
                 sourceFolderPaths: [currentSession.workspaceSourceFolder.path],
-                startDate: items.map(\.capturedAt).compactMap { $0 }.min(),
-                endDate: items.map(\.capturedAt).compactMap { $0 }.max()
+                startDate: dateRange.start,
+                endDate: dateRange.end
             )
             disabledReason = nil
         } else {
@@ -239,6 +244,23 @@ struct PhotoLogCreationResolver {
         }
 
         return (scope, items, disabledReason)
+    }
+
+    private func capturedDateRange(for items: [MediaItem]) -> (start: Date?, end: Date?) {
+        var start: Date?
+        var end: Date?
+
+        for item in items {
+            guard let capturedAt = item.capturedAt else { continue }
+            if start.map({ capturedAt < $0 }) ?? true {
+                start = capturedAt
+            }
+            if end.map({ capturedAt > $0 }) ?? true {
+                end = capturedAt
+            }
+        }
+
+        return (start, end)
     }
 
     private func selectionCounts(for items: [MediaItem]) -> PhotoLogSelectionCounts {

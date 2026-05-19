@@ -207,7 +207,7 @@ enum PhotoLogCreationMode: String, CaseIterable, Hashable, Sendable {
         case .decidedInScope:
             return "Decided In Scope"
         case .selectedOnly:
-            return "Selected Only"
+            return "Current Selection"
         }
     }
 }

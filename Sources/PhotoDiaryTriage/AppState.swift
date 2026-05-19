@@ -904,9 +904,16 @@ final class AppState: ObservableObject {
             $0.0.workspaceSourceFolder.standardizedFileURL.path == workspacePath
         }
 
-        let logPaths = Set(logRecord.0.mediaItems.map(\.relativePath))
-        let editableItems = (logRecord.0.mediaItems + (inboxRecord?.0.mediaItems ?? []).filter { !logPaths.contains($0.relativePath) })
-            .sorted(by: Self.mediaSort)
+        var editableItemsByPath: [String: MediaItem] = [:]
+        for item in logRecord.0.mediaItems where editableItemsByPath[item.relativePath] == nil {
+            editableItemsByPath[item.relativePath] = item
+        }
+        if let inboxItems = inboxRecord?.0.mediaItems {
+            for item in inboxItems where editableItemsByPath[item.relativePath] == nil {
+                editableItemsByPath[item.relativePath] = item
+            }
+        }
+        let editableItems = editableItemsByPath.values.sorted(by: Self.mediaSort)
         let grouped = groupingService.group(items: editableItems, settings: settings)
 
         var editableSession = logRecord.0
@@ -919,7 +926,7 @@ final class AppState: ObservableObject {
         sourceWorkspaceState = .idle
         openPersistedSessionRecord(
             (editableSession, grouped.burstGroups, grouped.timeClusters),
-            status: "Editing membership for \(editableSession.walkMetadata.title.nonEmpty ?? "Untitled Photo Log"). Mark S/C/X to keep photos in this log; clear to undecided to leave them in the source inbox."
+            status: "Editing items for \(editableSession.walkMetadata.title.nonEmpty ?? "Untitled Photo Log"). S/C/X keeps a photo in the log; clearing it to undecided returns it to the source inbox."
         )
         activePhotoLogMembershipEditID = sessionID
         requestVisibleThumbnails(prefetching: editableSession.mediaItems)
@@ -1055,13 +1062,13 @@ final class AppState: ObservableObject {
             if openAfterCreate {
                 openPersistedSessionRecord(
                     (draftSession, draftGrouped.burstGroups, draftGrouped.timeClusters),
-                    status: "Created photo log \(draftTitle)."
+                    status: "Created and opened photo log \(draftTitle) with \(draftSession.mediaItems.count) decided photo(s)."
                 )
                 requestVisibleThumbnails(prefetching: draftSession.mediaItems)
             } else {
                 openPersistedSessionRecord(
                     (updatedInbox, inboxGrouped.burstGroups, inboxGrouped.timeClusters),
-                    status: "Created photo log \(draftTitle) with \(draftSession.mediaItems.count) decided photo(s)."
+                    status: "Created photo log \(draftTitle) with \(draftSession.mediaItems.count) decided photo(s); remaining photos stayed in the source inbox."
                 )
                 requestVisibleThumbnails(prefetching: updatedInbox.mediaItems)
             }

@@ -1,0 +1,28 @@
+# PDT-2026-05-19-045 Photo Log Speed And Quality
+
+- Item ID: `PDT-2026-05-19-045`
+- Title: `photo log speed and quality`
+- User request summary: `Skip RAW companion work for another time and focus this pass on speed improvements and the quality of photo log creation and editing.`
+- Constraints:
+  - Do not expand RAW companion handling in this pass.
+  - Preserve the SSD-first selective-import workflow.
+  - Keep keyboard-driven triage, photo log creation, and photo log membership editing reliable.
+  - Improve responsiveness without broad refactors or unrelated visual churn.
+  - Maintain backlog, changelog, and release metadata alignment.
+- Implementation intent:
+  - Inspect the photo log create/edit paths for avoidable recomputation or confusing state.
+  - Improve photo log creation/editing status copy and action clarity.
+  - Add focused speed/quality fixes around membership editing and log-library summaries.
+  - Add regression coverage where state behavior can be tested.
+- Test conditions:
+  - Creating a photo log remains clear and does not include undecided items unexpectedly.
+  - Editing a photo log remains fast enough to handle larger inbox/log combinations.
+  - Existing photo log membership editing tests still pass.
+  - `swift build`
+  - `swift test`
+- Success criteria:
+  - Build `0.2.7` improves photo log creation/editing speed and user confidence without adding RAW companion scope.
+  - Photo log actions and messages are clearer about what will happen next.
+- Current status: `awaiting_user_review`
+- Target release version: `0.2.7`
+- Target feature slug: `photo-log-speed-and-quality`
