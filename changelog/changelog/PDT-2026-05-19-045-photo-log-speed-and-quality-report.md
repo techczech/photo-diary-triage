@@ -1,0 +1,28 @@
+# PDT-2026-05-19-045 Photo Log Speed And Quality Report
+
+- Item ID: `PDT-2026-05-19-045`
+- Summary of what changed:
+  - Optimized photo log creation collision checks by building one ownership lookup per plan instead of repeatedly scanning every existing log.
+  - Computed photo log scope date ranges in one pass.
+  - Made photo log membership editing deduplicate by relative path directly and tolerate duplicate persisted paths.
+  - Clarified photo log library actions by separating `Edit Items` from `Edit Details`.
+  - Clarified creation/editing copy so users know undecided photos stay in the inbox and metadata edits do not change membership.
+  - Left RAW companion work out of scope for this pass.
+- Files changed:
+  - `Sources/PhotoDiaryTriage/AppState.swift`
+  - `Sources/PhotoDiaryTriage/ContentAuxiliaryViews.swift`
+  - `Sources/PhotoDiaryTriage/ContentViewSections.swift`
+  - `Sources/PhotoDiaryTriage/Models.swift`
+  - `Sources/PhotoDiaryTriage/StateSupport.swift`
+  - `Tests/PhotoDiaryTriageTests/StateSupportTests.swift`
+  - `APP_RELEASE.env`
+  - `changelog/backlog/PDT-2026-05-19-045-photo-log-speed-and-quality.md`
+- Verification performed:
+  - `swift test --filter photoLogCreationResolverFindsCollisionsOnlyInSameWorkspace`
+  - `swift test`
+  - `./scripts/build_app_bundle.sh`
+  - Launched `dist/PhotoDiaryTriage.app`
+- Known gaps or follow-up items:
+  - RAW companion polish intentionally deferred.
+- Shipped release version: `0.2.7`
+- Shipped feature slug: `photo-log-speed-and-quality`

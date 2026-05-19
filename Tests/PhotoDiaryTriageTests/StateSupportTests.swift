@@ -72,3 +72,70 @@ import Testing
 
     #expect(resolved.standardizedFileURL.path == selectedFolder.standardizedFileURL.path)
 }
+
+@Test func photoLogCreationResolverFindsCollisionsOnlyInSameWorkspace() throws {
+    let root = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let sourceRoot = root.appendingPathComponent("source", isDirectory: true)
+    let otherRoot = root.appendingPathComponent("other-source", isDirectory: true)
+    let archiveRoot = root.appendingPathComponent("archive", isDirectory: true)
+    let base = Date(timeIntervalSince1970: 80_000)
+    for name in ["0.jpg", "1.jpg"] {
+        try writeTestFile(sourceRoot.appendingPathComponent(name), contents: name)
+        try writeTestFile(otherRoot.appendingPathComponent(name), contents: name)
+    }
+    let items = ["0.jpg", "1.jpg"].enumerated().map { index, name in
+        makeTestMediaItem(
+            sourceRoot: sourceRoot,
+            fileName: name,
+            capturedAt: base.addingTimeInterval(Double(index)),
+            selectionState: .included
+        )
+    }
+    let current = makeTestSession(
+        sourceRoot: sourceRoot,
+        archiveRoot: archiveRoot,
+        items: items,
+        workspaceSourceFolder: sourceRoot,
+        sessionKind: .inbox
+    )
+    let sameWorkspaceOwner = makeTestSession(
+        sourceRoot: sourceRoot,
+        archiveRoot: archiveRoot,
+        items: [items[0]],
+        title: "Existing Same Source",
+        workspaceSourceFolder: sourceRoot,
+        sessionKind: .walkDraft
+    )
+    let otherWorkspaceItem = makeTestMediaItem(
+        sourceRoot: otherRoot,
+        fileName: "1.jpg",
+        capturedAt: base,
+        selectionState: .included
+    )
+    let otherWorkspaceOwner = makeTestSession(
+        sourceRoot: otherRoot,
+        archiveRoot: archiveRoot,
+        items: [otherWorkspaceItem],
+        title: "Existing Other Source",
+        workspaceSourceFolder: otherRoot,
+        sessionKind: .walkDraft
+    )
+
+    let plan = PhotoLogCreationResolver().resolve(
+        currentSession: current,
+        activePane: .media,
+        selectedFolderNodeIDs: [],
+        selectedBrowserNode: nil,
+        browserNodeMap: [:],
+        visibleItems: items,
+        selectedMediaItemIDs: [],
+        existingPhotoLogs: [sameWorkspaceOwner, otherWorkspaceOwner],
+        mode: .decidedInScope
+    )
+
+    let resolved = try #require(plan)
+    #expect(resolved.collisions.map(\.relativePath) == ["0.jpg"])
+    #expect(resolved.collisions.first?.owningTitle == "Existing Same Source")
+    #expect(resolved.disabledReason == "Some photos in this plan already belong to another photo log.")
+}
