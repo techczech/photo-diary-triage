@@ -139,3 +139,67 @@ import Testing
     #expect(resolved.collisions.first?.owningTitle == "Existing Same Source")
     #expect(resolved.disabledReason == "Some photos in this plan already belong to another photo log.")
 }
+
+@Test func copyReadinessGuidesPhotoLogContinuationWhenNoIncludedFilesExist() {
+    let readiness = ImportReadinessSnapshot(
+        sessionKind: .walkDraft,
+        includedItems: 0,
+        candidateItems: 2,
+        excludedItems: 1,
+        undecidedItems: 3,
+        rawCompanionFiles: 0,
+        totalFiles: 0,
+        destinationPath: nil,
+        verifiedAwaitingBackupItems: 0,
+        cleanupPendingItems: 0,
+        backupConfirmed: false,
+        cleanupRequiresBackupConfirmation: true
+    )
+
+    #expect(readiness.idleDetail.contains("C/X choices"))
+    #expect(readiness.idleDetail.contains("S (include)"))
+    #expect(readiness.copyButtonHelp.contains("Continue this photo log"))
+}
+
+@Test func copyReadinessExplainsInboxAndReadyStates() {
+    let inboxWaiting = ImportReadinessSnapshot(
+        sessionKind: .inbox,
+        includedItems: 0,
+        candidateItems: 0,
+        excludedItems: 0,
+        undecidedItems: 5,
+        rawCompanionFiles: 0,
+        totalFiles: 0,
+        destinationPath: nil,
+        verifiedAwaitingBackupItems: 0,
+        cleanupPendingItems: 0,
+        backupConfirmed: false,
+        cleanupRequiresBackupConfirmation: true
+    )
+    let ready = ImportReadinessSnapshot(
+        sessionKind: .walkDraft,
+        includedItems: 1,
+        candidateItems: 0,
+        excludedItems: 0,
+        undecidedItems: 0,
+        rawCompanionFiles: 1,
+        totalFiles: 2,
+        destinationPath: "/archive/photo-log",
+        verifiedAwaitingBackupItems: 0,
+        cleanupPendingItems: 0,
+        backupConfirmed: false,
+        cleanupRequiresBackupConfirmation: true
+    )
+
+    #expect(inboxWaiting.idleDetail.contains("Open an existing photo log"))
+    #expect(ready.idleDetail.contains("1 S (include) photo"))
+    #expect(ready.idleDetail.contains("RAW companion"))
+    #expect(ready.copyButtonHelp.contains("Copy every S"))
+}
+
+@Test func photoLogStatusPolicyLocksImportedMembershipEdits() {
+    #expect(!PhotoLogStatusPolicy.isMembershipLocked(status: "draft"))
+    #expect(PhotoLogStatusPolicy.isMembershipLocked(status: "imported"))
+    #expect(PhotoLogStatusPolicy.isMembershipLocked(status: "source_cleaned"))
+    #expect(PhotoLogStatusPolicy.membershipLockMessage(status: "imported")?.contains("Copied") == true)
+}
