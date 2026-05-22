@@ -73,6 +73,46 @@ import Testing
     #expect(resolved.standardizedFileURL.path == selectedFolder.standardizedFileURL.path)
 }
 
+@MainActor
+@Test func appStateDefaultsToArchiveViewMode() {
+    let state = AppState(testing: true)
+
+    #expect(state.workspaceMode == .archiveView)
+    #expect(state.browserRoots.map(\.id) == ["section-archive-library"])
+    #expect(state.selectedSidebarNodeID == "archive-root")
+    #expect(!state.canMutateImportSelection)
+}
+
+@MainActor
+@Test func workspaceModeSeparatesArchiveAndCameraBrowserRoots() {
+    let state = AppState(testing: true)
+    let root = URL(fileURLWithPath: "/tmp/workspace-mode-state", isDirectory: true)
+    let archiveRoot = root.appendingPathComponent("archive", isDirectory: true)
+    let item = makeTestMediaItem(
+        sourceRoot: root,
+        fileName: "IMG_0001.jpg",
+        capturedAt: Date(timeIntervalSince1970: 90_000),
+        selectionState: .included
+    )
+    state.currentSession = makeTestSession(sourceRoot: root, archiveRoot: archiveRoot, items: [item])
+
+    #expect(state.workspaceMode == .archiveView)
+    #expect(state.browserRoots.map(\.id) == ["section-archive-library"])
+    #expect(!state.canMutateImportSelection)
+
+    state.setWorkspaceMode(.cameraTriage)
+
+    #expect(state.browserRoots.map(\.id) == ["section-current-session"])
+    #expect(state.selectedSidebarNodeID != "archive-root")
+    #expect(state.canMutateImportSelection)
+
+    state.setWorkspaceMode(.archiveTriage)
+
+    #expect(state.browserRoots.map(\.id) == ["section-archive-library"])
+    #expect(state.selectedSidebarNodeID == "archive-root")
+    #expect(!state.canMutateImportSelection)
+}
+
 @Test func photoLogCreationResolverFindsCollisionsOnlyInSameWorkspace() throws {
     let root = try makeTemporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }

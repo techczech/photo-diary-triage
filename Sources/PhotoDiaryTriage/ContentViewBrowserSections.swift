@@ -6,27 +6,75 @@ struct HeaderPaneView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(appState.breadcrumbTitles.joined(separator: " / "))
-                    .font(.headline)
-                Spacer()
-                Button(appState.isDetailsInspectorVisible ? "Hide Inspector" : "Show Inspector") {
-                    appState.toggleDetailsInspector()
+            HStack(alignment: .center, spacing: 12) {
+                Picker("Mode", selection: Binding(
+                    get: { appState.workspaceMode },
+                    set: { appState.setWorkspaceMode($0) }
+                )) {
+                    ForEach(WorkspaceMode.allCases, id: \.self) { mode in
+                        Label(mode.title, systemImage: mode.systemImage)
+                            .tag(mode)
+                    }
                 }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 430)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Label(appState.workspaceMode.title, systemImage: appState.workspaceMode.systemImage)
+                        .font(.caption.weight(.semibold))
+                    Text(appState.workspaceModeDetail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+
+                Spacer()
+
+                Button {
+                    appState.openSelectedBrowserFolder()
+                } label: {
+                    Label("Open in Finder", systemImage: "folder")
+                }
+                .disabled(!appState.canOpenSelectedBrowserFolder)
+                .buttonStyle(.bordered)
+                .help("Open the selected browser folder in Finder")
+
+                Button {
+                    appState.toggleDetailsInspector()
+                } label: {
+                    Label(appState.isDetailsInspectorVisible ? "Hide Inspector" : "Show Inspector", systemImage: "sidebar.right")
+                }
+                .labelStyle(.iconOnly)
                 .buttonStyle(.bordered)
                 .shortcutHint("Cmd-Option-I", help: "\(appState.isDetailsInspectorVisible ? "Hide" : "Show") inspector (Cmd-Option-I)")
-                Button("Keyboard Shortcuts") {
+
+                Button {
                     appState.showKeyboardHelp = true
+                } label: {
+                    Label("Keyboard Shortcuts", systemImage: "keyboard")
                 }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.bordered)
                 .shortcutHint("Cmd-Shift-/", help: "Show keyboard shortcuts (Cmd-Shift-/)")
             }
 
-            if let node = appState.selectedBrowserNode {
-                Text(node.subtitle ?? "")
+            VStack(alignment: .leading, spacing: 3) {
+                Text(appState.breadcrumbTitles.joined(separator: " / "))
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                Text(appState.workspaceModeNextAction)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.65), in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
@@ -36,12 +84,45 @@ struct BrowserOrReviewPaneView: View {
     @ObservedObject var navigationState: ReviewNavigationState
 
     var body: some View {
-        if state.snapshot.contextMediaItemCount > 0 {
-            DayContextPaneView(appState: appState, state: state, navigationState: navigationState)
-        } else if !state.snapshot.detailFolderNodes.isEmpty {
-            FolderBrowserPaneView(appState: appState, state: state)
-        } else {
-            ContentUnavailableView("No Content", systemImage: "folder", description: Text("Choose a source folder and browse by year, month, day, or grouping folders."))
+        VStack(alignment: .leading, spacing: 10) {
+            HeaderPaneView(appState: appState)
+
+            Group {
+                if state.snapshot.contextMediaItemCount > 0 {
+                    DayContextPaneView(appState: appState, state: state, navigationState: navigationState)
+                } else if !state.snapshot.detailFolderNodes.isEmpty {
+                    FolderBrowserPaneView(appState: appState, state: state)
+                } else {
+                    ContentUnavailableView(
+                        emptyTitle,
+                        systemImage: appState.workspaceMode.systemImage,
+                        description: Text(emptyDescription)
+                    )
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+    }
+
+    private var emptyTitle: String {
+        switch appState.workspaceMode {
+        case .archiveView:
+            return "Choose an archive walk"
+        case .cameraTriage:
+            return "No source selected"
+        case .archiveTriage:
+            return "Choose an archive walk"
+        }
+    }
+
+    private var emptyDescription: String {
+        switch appState.workspaceMode {
+        case .archiveView:
+            return "Pick a year, month, or photowalk in the archive library, or open the selected folder in Finder."
+        case .cameraTriage:
+            return "Open the default source or choose a camera folder before starting triage."
+        case .archiveTriage:
+            return "Archive triage is separate from camera triage; in this build it stays read-only while you browse."
         }
     }
 }

@@ -44,6 +44,7 @@ final class AppState: ObservableObject {
             refreshSidebarState()
         }
     }
+    @Published private(set) var workspaceMode: WorkspaceMode = .archiveView
     @Published var burstGroups: [BurstGroup] = [] {
         didSet {
             rebuildBrowserCaches()
@@ -423,6 +424,39 @@ final class AppState: ObservableObject {
         return browserNodeMap[selectedSidebarNodeID] ?? browserRoots.first
     }
 
+    var workspaceModeDetail: String {
+        switch workspaceMode {
+        case .archiveView:
+            return "Browse saved photowalks in the archive library."
+        case .cameraTriage:
+            return "Review photos from the current camera or SSD source."
+        case .archiveTriage:
+            return "Review archive walks separately from source cleanup."
+        }
+    }
+
+    var workspaceModeNextAction: String {
+        switch workspaceMode {
+        case .archiveView:
+            if visibleMediaItems.isEmpty {
+                return "Choose a year, month, or walk. Open in Finder shows the same folder on disk."
+            }
+            return "Viewing \(visibleMediaItems.count) archived photo(s). Open in Finder confirms the folder on disk."
+        case .cameraTriage:
+            guard let currentSession else {
+                return "Open a source folder, then use S, C, and X to decide what belongs in a photo log."
+            }
+            let counts = triageCounts(for: currentSession.mediaItems)
+            return "\(counts.included) selected, \(counts.candidate) candidate, \(counts.excluded) excluded. Create or copy the photo log when ready."
+        case .archiveTriage:
+            return "Archive triage is separated but read-only in this build; browse the archive without changing import states."
+        }
+    }
+
+    var canOpenSelectedBrowserFolder: Bool {
+        selectedBrowserFolderURL != nil
+    }
+
     var breadcrumbTitles: [String] {
         guard let selectedBrowserNode else { return [] }
         var path: [String] = []
@@ -573,7 +607,7 @@ final class AppState: ObservableObject {
     }
 
     func orderedMediaItems(for ids: [UUID]) -> [MediaItem] {
-        ids.compactMap { sessionMediaByID[$0] }
+        ids.compactMap { mediaItem(for: $0) }
     }
 
     var reviewPresentationMode: ReviewPresentationMode {
@@ -644,7 +678,7 @@ final class AppState: ObservableObject {
     }
 
     var selectedMediaItems: [MediaItem] {
-        selectedMediaItemIDs.compactMap { sessionMediaByID[$0] }.sorted(by: Self.mediaSort)
+        selectedMediaItemIDs.compactMap { mediaItem(for: $0) }.sorted(by: Self.mediaSort)
     }
 
     var focusedReviewItem: MediaItem? {
@@ -661,7 +695,7 @@ final class AppState: ObservableObject {
 
     var previewingMediaItem: MediaItem? {
         guard let previewingMediaItemID else { return nil }
-        return sessionMediaByID[previewingMediaItemID]
+        return mediaItem(for: previewingMediaItemID)
     }
 
     var comparingMediaItems: [MediaItem] {
@@ -670,7 +704,7 @@ final class AppState: ObservableObject {
         if orderedVisible.count == comparingMediaItemIDs.count {
             return orderedVisible
         }
-        return comparingMediaItemIDs.compactMap { sessionMediaByID[$0] }
+        return comparingMediaItemIDs.compactMap { mediaItem(for: $0) }
     }
 
     var canOpenSettings: Bool { true }
@@ -732,7 +766,7 @@ final class AppState: ObservableObject {
     }
 
     var canMutateImportSelection: Bool {
-        !isBrowsingArchive && !importOperation.isRunning
+        workspaceMode.allowsImportSelectionMutation && !isBrowsingArchive && !importOperation.isRunning
     }
 
     var sidebarSnapshotGeneration: Int {
@@ -757,6 +791,24 @@ final class AppState: ObservableObject {
 
     func endLatencyMeasurement(_ action: String) {
         latencyRecorder.end(action)
+    }
+
+    func setWorkspaceMode(_ mode: WorkspaceMode) {
+        guard workspaceMode != mode else { return }
+        workspaceMode = mode
+        rebuildBrowserCaches()
+        selectedSidebarNodeID = preferredSidebarNodeID(for: mode)
+        activePane = .sidebar
+        dayDetailDisplayMode = .review
+        reviewKeyboardTarget = .items
+        drilledInlineSectionID = nil
+        drilledInlineSectionMediaItemIDs = []
+        clearDetailSelections()
+        loadArchiveMediaIfNeeded(for: selectedSidebarNodeID)
+        resetInlineExpansionState()
+        requestVisibleThumbnails()
+        statusMessage = statusMessage(for: mode)
+        refreshAllUIState()
     }
 
     func pickSourceFolder() {
@@ -871,6 +923,9 @@ final class AppState: ObservableObject {
                     sourcePath: resolvedFolder.path
                 )
             }
+            if shouldSwitchToCameraTriage(for: origin) {
+                setWorkspaceMode(.cameraTriage)
+            }
             openPersistedSessionRecord(
                 normalizedInbox,
                 status: message
@@ -892,6 +947,7 @@ final class AppState: ObservableObject {
 
         invalidateInFlightSourceLoad()
         sourceWorkspaceState = .idle
+        setWorkspaceMode(.cameraTriage)
         openPersistedSessionRecord(record, status: "Resumed \(record.0.walkMetadata.title.nonEmpty ?? "Untitled Photo Log").")
         requestVisibleThumbnails(prefetching: record.0.mediaItems)
     }
@@ -937,6 +993,7 @@ final class AppState: ObservableObject {
         activePhotoLogMembershipEditID = sessionID
         invalidateInFlightSourceLoad()
         sourceWorkspaceState = .idle
+        setWorkspaceMode(.cameraTriage)
         openPersistedSessionRecord(
             (editableSession, grouped.burstGroups, grouped.timeClusters),
             status: PhotoLogStatusPolicy.editLogStatusMessage(title: editableSession.walkMetadata.title.nonEmpty ?? "Untitled Photo Log")
@@ -1203,6 +1260,25 @@ final class AppState: ObservableObject {
             statusMessage = "Opened archive folder \(url.path)."
         } else {
             statusMessage = "Could not open archive folder \(url.path)."
+        }
+    }
+
+    func openSelectedBrowserFolder() {
+        guard let url = selectedBrowserFolderURL else {
+            statusMessage = "No folder is selected in the browser."
+            return
+        }
+
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            statusMessage = "Folder is not available at \(url.path)."
+            return
+        }
+
+        if NSWorkspace.shared.open(url) {
+            statusMessage = "Opened \(url.path) in Finder."
+        } else {
+            statusMessage = "Could not open \(url.path) in Finder."
         }
     }
 
@@ -2297,7 +2373,7 @@ final class AppState: ObservableObject {
         timeClusters = grouped.timeClusters
         setCurrentSession(session, updateKind: .sessionOnly)
 
-        let fallbackSidebarNodeID = browserViewModel.preferredInitialSidebarNodeID(for: session, bursts: grouped.burstGroups, clusters: grouped.timeClusters)
+        let fallbackSidebarNodeID = preferredSidebarNodeID(for: workspaceMode)
         selectedSidebarNodeID = previousSidebarNodeID.flatMap { browserNodeMap[$0] == nil ? nil : $0 } ?? fallbackSidebarNodeID
         archiveMediaCache.removeAll()
         restoreGroupingDependentUIState(
@@ -2552,13 +2628,20 @@ final class AppState: ObservableObject {
         _ record: (ImportSession, [BurstGroup], [TimeCluster]),
         status: String
     ) {
+        let previousSidebarNodeID = selectedSidebarNodeID
         activePhotoLogMembershipEditID = nil
         setCurrentSession(record.0, updateKind: .full)
         burstGroups = record.1
         timeClusters = record.2
-        selectedSidebarNodeID = browserViewModel.preferredInitialSidebarNodeID(for: record.0, bursts: record.1, clusters: record.2)
+        if workspaceMode == .cameraTriage {
+            selectedSidebarNodeID = preferredSidebarNodeID(for: workspaceMode)
+        } else {
+            selectedSidebarNodeID = previousSidebarNodeID.flatMap { browserNodeMap[$0] == nil ? nil : $0 } ?? preferredSidebarNodeID(for: workspaceMode)
+        }
         clearDetailSelections()
-        archiveMediaCache.removeAll()
+        if workspaceMode == .cameraTriage {
+            archiveMediaCache.removeAll()
+        }
         resetInlineExpansionState()
         statusMessage = status
     }
@@ -2782,12 +2865,59 @@ final class AppState: ObservableObject {
             bursts: burstGroups,
             clusters: timeClusters,
             archiveRoot: settings.archiveRoot,
-            sourceWorkspaceState: sourceWorkspaceState
+            sourceWorkspaceState: sourceWorkspaceState,
+            workspaceMode: workspaceMode
         )
         cachedBrowserNodeMap = browserViewModel.nodeMap(for: cachedBrowserRoots)
+        if selectedSidebarNodeID.flatMap({ cachedBrowserNodeMap[$0] }) == nil {
+            selectedSidebarNodeID = preferredSidebarNodeID(for: workspaceMode)
+        }
         sessionVisibleMediaCacheByNodeID.removeAll()
         invalidateReviewContentCaches()
         invalidateInlineSectionCaches()
+    }
+
+    private func preferredSidebarNodeID(for mode: WorkspaceMode) -> String? {
+        switch mode {
+        case .archiveView, .archiveTriage:
+            if browserNodeMap["archive-root"] != nil {
+                return "archive-root"
+            }
+            if browserNodeMap["section-archive-library"] != nil {
+                return "section-archive-library"
+            }
+            return browserRoots.first?.id
+        case .cameraTriage:
+            let preferred = browserViewModel.preferredInitialSidebarNodeID(
+                for: currentSession,
+                bursts: burstGroups,
+                clusters: timeClusters
+            )
+            return browserNodeMap[preferred] == nil ? browserRoots.first?.id : preferred
+        }
+    }
+
+    private func statusMessage(for mode: WorkspaceMode) -> String {
+        switch mode {
+        case .archiveView:
+            return "Archive View. Browse saved photowalks and open folders in Finder to confirm files on disk."
+        case .cameraTriage:
+            if currentSession == nil {
+                return "Camera Triage. Open a source folder to sort new photos into a photo log."
+            }
+            return "Camera Triage. Use S, C, and X to decide which source photos belong in the log."
+        case .archiveTriage:
+            return "Archive Triage. This mode is separated from source cleanup and is read-only in this build."
+        }
+    }
+
+    private func shouldSwitchToCameraTriage(for origin: SourceLoadOrigin) -> Bool {
+        switch origin {
+        case .launchDefault, .mountedDefault:
+            return false
+        case .manualPicker, .savedWalkInbox, .openDefaultSource, .settingsDefaultRoot, .reloadCurrentSource:
+            return true
+        }
     }
 
     private func refreshAllUIState() {
@@ -3479,6 +3609,39 @@ final class AppState: ObservableObject {
         return items
     }
 
+    private func mediaItem(for id: UUID) -> MediaItem? {
+        if let sessionItem = sessionMediaByID[id] {
+            return sessionItem
+        }
+
+        for cachedItems in archiveMediaCache.values {
+            if let archiveItem = cachedItems.first(where: { $0.id == id }) {
+                return archiveItem
+            }
+        }
+
+        return nil
+    }
+
+    private var selectedBrowserFolderURL: URL? {
+        if activePane == .folders,
+           selectedFolderNodeIDs.count == 1,
+           let nodeID = selectedFolderNodeIDs.first,
+           let folderURL = browserNodeMap[nodeID]?.folderURL {
+            return folderURL
+        }
+
+        if let folderURL = selectedBrowserNode?.folderURL {
+            return folderURL
+        }
+
+        if selectedBrowserNode?.kind == .sessionRoot {
+            return currentSession?.sourceFolder
+        }
+
+        return nil
+    }
+
     private func thumbnailPrefetchCandidates(from items: [MediaItem], excluding visibleIDs: Set<UUID>) -> [MediaItem] {
         guard !items.isEmpty else { return [] }
         let limit = max(96, visibleIDs.count * 4)
@@ -3505,10 +3668,10 @@ final class AppState: ObservableObject {
                 archiveMediaCache: archiveMediaCache,
                 settings: settings
             ) else { return }
-        let sortedItems = loadResult.items.sorted(by: Self.mediaSort)
-        archiveMediaCache[loadResult.nodeID] = sortedItems
-        requestVisibleThumbnails(prefetching: sortedItems)
-        statusMessage = loadResult.statusMessage
+            let sortedItems = loadResult.items.sorted(by: Self.mediaSort)
+            archiveMediaCache[loadResult.nodeID] = sortedItems
+            requestVisibleThumbnails(prefetching: sortedItems)
+            statusMessage = loadResult.statusMessage
         } catch {
             statusMessage = "Failed to load archive folder: \(error.localizedDescription)"
         }

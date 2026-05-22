@@ -27,39 +27,46 @@ final class BrowserViewModel {
         bursts: [BurstGroup],
         clusters: [TimeCluster],
         archiveRoot: URL,
-        sourceWorkspaceState: SourceWorkspaceState
+        sourceWorkspaceState: SourceWorkspaceState,
+        workspaceMode: WorkspaceMode
     ) -> [BrowserNode] {
-        var roots: [BrowserNode] = []
+        switch workspaceMode {
+        case .archiveView, .archiveTriage:
+            return [buildArchiveSection(rootURL: archiveRoot)]
+        case .cameraTriage:
+            return [buildCurrentSessionSection(currentSession: currentSession, bursts: bursts, clusters: clusters, sourceWorkspaceState: sourceWorkspaceState)]
+        }
+    }
+
+    private func buildCurrentSessionSection(
+        currentSession: ImportSession?,
+        bursts: [BurstGroup],
+        clusters: [TimeCluster],
+        sourceWorkspaceState: SourceWorkspaceState
+    ) -> BrowserNode {
         if let session = currentSession {
-            roots.append(
-                BrowserNode(
-                    id: "section-current-session",
-                    title: "Current Session",
-                    subtitle: session.sourceFolder.lastPathComponent,
-                    kind: .sessionSection,
-                    parentID: nil,
-                    mediaItemIDs: [],
-                    children: [buildSessionRoot(for: session, bursts: bursts, clusters: clusters)],
-                    folderURL: nil
-                )
-            )
-        } else {
-            roots.append(
-                BrowserNode(
-                    id: "section-current-session",
-                    title: "Current Session",
-                    subtitle: subtitleForEmptyCurrentSession(sourceWorkspaceState),
-                    kind: .sessionSection,
-                    parentID: nil,
-                    mediaItemIDs: [],
-                    children: nil,
-                    folderURL: nil
-                )
+            return BrowserNode(
+                id: "section-current-session",
+                title: "Current Session",
+                subtitle: session.sourceFolder.lastPathComponent,
+                kind: .sessionSection,
+                parentID: nil,
+                mediaItemIDs: [],
+                children: [buildSessionRoot(for: session, bursts: bursts, clusters: clusters)],
+                folderURL: nil
             )
         }
 
-        roots.append(buildArchiveSection(rootURL: archiveRoot))
-        return roots
+        return BrowserNode(
+            id: "section-current-session",
+            title: "Current Session",
+            subtitle: subtitleForEmptyCurrentSession(sourceWorkspaceState),
+            kind: .sessionSection,
+            parentID: nil,
+            mediaItemIDs: [],
+            children: nil,
+            folderURL: nil
+        )
     }
 
     private func subtitleForEmptyCurrentSession(_ state: SourceWorkspaceState) -> String {
