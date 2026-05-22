@@ -402,6 +402,7 @@ import Testing
     state.currentSession = makeTestSession(sourceRoot: root, archiveRoot: root.appendingPathComponent("archive", isDirectory: true), items: items)
     state.burstGroups = []
     state.timeClusters = []
+    state.setWorkspaceMode(.cameraTriage)
 
     let containerNode = state.browserNodeMap.values.first {
         !($0.children?.isEmpty ?? true) && $0.mediaItemIDs.count == items.count
@@ -420,6 +421,7 @@ import Testing
     state.currentSession = makeTestSession(sourceRoot: root, archiveRoot: root.appendingPathComponent("archive", isDirectory: true), items: items)
     state.burstGroups = []
     state.timeClusters = []
+    state.setWorkspaceMode(.cameraTriage)
 
     let containerNode = state.browserNodeMap.values.first {
         !($0.children?.isEmpty ?? true) && $0.mediaItemIDs.count == items.count
@@ -443,6 +445,7 @@ import Testing
     state.currentSession = makeTestSession(sourceRoot: root, archiveRoot: root.appendingPathComponent("archive", isDirectory: true), items: items)
     state.burstGroups = []
     state.timeClusters = []
+    state.setWorkspaceMode(.cameraTriage)
 
     let containerNode = state.browserNodeMap.values.first(where: { node in
         state.selectedSidebarNodeID = node.id
@@ -850,6 +853,7 @@ import Testing
         workspaceSourceFolder: root,
         sessionKind: .inbox
     )
+    state.setWorkspaceMode(.cameraTriage)
     if let leafID = state.browserNodeMap.values.first(where: { ($0.children?.isEmpty ?? true) && $0.mediaItemIDs.count == items.count })?.id {
         state.selectedSidebarNodeID = leafID
     }
@@ -895,6 +899,7 @@ import Testing
         workspaceSourceFolder: root,
         sessionKind: .inbox
     )
+    state.setWorkspaceMode(.cameraTriage)
     if let leafID = state.browserNodeMap.values.first(where: { ($0.children?.isEmpty ?? true) && $0.mediaItemIDs.count == items.count })?.id {
         state.selectedSidebarNodeID = leafID
     }
@@ -941,6 +946,7 @@ import Testing
         workspaceSourceFolder: root,
         sessionKind: .inbox
     )
+    state.setWorkspaceMode(.cameraTriage)
     if let leafID = state.browserNodeMap.values.first(where: { ($0.children?.isEmpty ?? true) && $0.mediaItemIDs.count == items.count })?.id {
         state.selectedSidebarNodeID = leafID
     }
@@ -990,6 +996,7 @@ import Testing
     )
 
     state.currentSession = makeTestSession(sourceRoot: sourceRoot, archiveRoot: archiveRoot, items: [item], title: "Copy Confidence")
+    state.setWorkspaceMode(.cameraTriage)
 
     let ready = try #require(state.sidebarState.snapshot.importReadiness)
     #expect(ready.includedItems == 1)
@@ -1006,6 +1013,7 @@ import Testing
     verifiedItem.lifecycleState = .verified
     verifiedItem.destinationURL = archiveRoot.appendingPathComponent("IMG_0001.jpg")
     state.currentSession = makeTestSession(sourceRoot: sourceRoot, archiveRoot: archiveRoot, items: [verifiedItem], title: "Copy Confidence")
+    state.setWorkspaceMode(.cameraTriage)
 
     let verified = try #require(state.sidebarState.snapshot.importReadiness)
     #expect(verified.totalFiles == 0)
@@ -1063,6 +1071,7 @@ import Testing
         workspaceSourceFolder: root,
         sessionKind: .inbox
     )
+    state.setWorkspaceMode(.cameraTriage)
     if let leafID = state.browserNodeMap.values.first(where: { ($0.children?.isEmpty ?? true) && $0.mediaItemIDs.count == items.count })?.id {
         state.selectedSidebarNodeID = leafID
     }
@@ -1143,6 +1152,7 @@ private func makeReviewAppState(items: [MediaItem]) -> AppState {
     state.currentSession = makeTestSession(sourceRoot: root, archiveRoot: root.appendingPathComponent("archive", isDirectory: true), items: items)
     state.burstGroups = []
     state.timeClusters = []
+    state.setWorkspaceMode(.cameraTriage)
     state.archiveMediaCache = [:]
     var settings = state.settings
     settings.reviewGridColumnCount = ReviewGridMetrics.defaultRequestedColumnCount()

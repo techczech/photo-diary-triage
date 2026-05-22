@@ -230,6 +230,42 @@ enum StartupSelectionPolicy: String, Equatable, Sendable {
     case sourceInboxFirst
 }
 
+enum WorkspaceMode: String, CaseIterable, Equatable, Sendable {
+    case archiveView
+    case cameraTriage
+    case archiveTriage
+
+    var title: String {
+        switch self {
+        case .archiveView:
+            return "Archive View"
+        case .cameraTriage:
+            return "Camera Triage"
+        case .archiveTriage:
+            return "Archive Triage"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .archiveView:
+            return "photo.stack"
+        case .cameraTriage:
+            return "externaldrive.badge.checkmark"
+        case .archiveTriage:
+            return "archivebox"
+        }
+    }
+
+    var showsArchiveLibrary: Bool {
+        self != .cameraTriage
+    }
+
+    var allowsImportSelectionMutation: Bool {
+        self == .cameraTriage
+    }
+}
+
 enum SourceLoadOrigin: String, Equatable, Sendable {
     case launchDefault
     case mountedDefault
