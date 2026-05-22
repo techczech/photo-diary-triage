@@ -51,11 +51,11 @@ import Testing
     try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true, attributes: nil)
     defer { try? FileManager.default.removeItem(at: tempRoot) }
 
-    let capturedAt = ISO8601DateFormatter().date(from: "2026-03-21T08:15:00Z")!
+    let capturedAt = ISO8601DateFormatter().date(from: "2023-04-03T08:15:00Z")!
     let metadata = MediaMetadata(capturedAt: capturedAt, pixelWidth: 100, pixelHeight: 100, cameraModel: nil, lensModel: nil, latitude: nil, longitude: nil, raw: [:])
 
     var session = ImportSession(sourceFolder: tempRoot, archiveRoot: tempRoot)
-    session.walkMetadata.title = "Morning Canal Walk"
+    session.walkMetadata.title = "Birdwatch walk"
     session.mediaItems = [
         MediaItem(sourceURL: tempRoot.appendingPathComponent("a.jpg"), relativePath: "a.jpg", fileName: "a.jpg", baseName: "a", mediaKind: .jpeg, fileSizeBytes: 10, capturedAt: capturedAt, metadata: metadata, thumbnailCacheKey: "1", selectionState: .included, lifecycleState: .selectedForImport),
         MediaItem(sourceURL: tempRoot.appendingPathComponent("a-duplicate.jpg"), relativePath: "a-duplicate.jpg", fileName: "a.jpg", baseName: "a", mediaKind: .jpeg, fileSizeBytes: 10, capturedAt: capturedAt, metadata: metadata, thumbnailCacheKey: "2", selectionState: .included, lifecycleState: .selectedForImport)
@@ -64,8 +64,11 @@ import Testing
     let plan = ArchivePlanner(fileManager: .default).plan(for: session)
 
     #expect(plan.selectedCount == 2)
-    #expect(plan.archiveFolder.path.contains("2026/03/2026-03-21"))
-    #expect(Set(plan.entries.map(\.destinationURL.lastPathComponent)).count == 2)
+    #expect(plan.archiveFolder.path.hasSuffix("2023/04 - April/03-Monday-Birdwatch-walk"))
+    #expect(plan.entries.map(\.destinationURL.lastPathComponent) == [
+        "03-Monday-Birdwatch-walk-001.jpg",
+        "03-Monday-Birdwatch-walk-002.jpg"
+    ])
 }
 
 @Test func archivePlannerIncludesRawCompanionOnlyWhenEnabled() {

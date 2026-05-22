@@ -21,6 +21,12 @@ enum Slugifier {
         let collapsed = String(allowedScalars).replacingOccurrences(of: "-+", with: "-", options: .regularExpression)
         return collapsed.trimmingCharacters(in: CharacterSet(charactersIn: "-")).nonEmpty ?? "photo-walk"
     }
+
+    static func makeDisplaySlug(from input: String) -> String {
+        let slug = makeSlug(from: input)
+        guard let first = slug.first else { return slug }
+        return String(first).uppercased() + slug.dropFirst()
+    }
 }
 
 extension String {
@@ -43,16 +49,24 @@ enum CacheKeyBuilder {
 }
 
 enum DateFormatting {
-    private static func makeWalkFolderFormatter() -> DateFormatter {
+    private static func archiveFormatter(_ format: String) -> DateFormatter {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = Locale(identifier: "en_GB_POSIX")
-        formatter.dateFormat = "yyyy/MM/yyyy-MM-dd"
+        formatter.dateFormat = format
         return formatter
     }
 
-    static func walkFolderPath(from date: Date) -> String {
-        makeWalkFolderFormatter().string(from: date)
+    static func archiveYearFolderName(from date: Date) -> String {
+        archiveFormatter("yyyy").string(from: date)
+    }
+
+    static func archiveMonthFolderName(from date: Date) -> String {
+        archiveFormatter("MM - MMMM").string(from: date)
+    }
+
+    static func archiveWalkFolderName(from date: Date, title: String) -> String {
+        "\(archiveFormatter("dd-EEEE").string(from: date))-\(Slugifier.makeDisplaySlug(from: title))"
     }
 
     static let iso8601: ISO8601DateFormatter = {
