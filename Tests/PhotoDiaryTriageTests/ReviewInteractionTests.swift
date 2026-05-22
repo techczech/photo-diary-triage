@@ -952,6 +952,9 @@ import Testing
 
     state.editPhotoLogMembership(logID)
     #expect(state.currentSession?.mediaItems.map(\.relativePath) == ["0.jpg", "1.jpg", "2.jpg"])
+    #expect(state.statusMessage.contains("Editing log Editable Log"))
+    #expect(state.statusMessage.contains("Change S/C/X status"))
+    #expect(state.statusMessage.contains("mark more source-inbox photos"))
 
     state.selectMediaItems([items[2].id])
     state.markCurrentSelectionForImport()

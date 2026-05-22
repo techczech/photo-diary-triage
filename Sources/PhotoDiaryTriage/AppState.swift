@@ -931,7 +931,7 @@ final class AppState: ObservableObject {
         sourceWorkspaceState = .idle
         openPersistedSessionRecord(
             (editableSession, grouped.burstGroups, grouped.timeClusters),
-            status: "Editing items for \(editableSession.walkMetadata.title.nonEmpty ?? "Untitled Photo Log"). S/C/X keeps a photo in the log; clearing it to undecided returns it to the source inbox."
+            status: PhotoLogStatusPolicy.editLogStatusMessage(title: editableSession.walkMetadata.title.nonEmpty ?? "Untitled Photo Log")
         )
         activePhotoLogMembershipEditID = sessionID
         requestVisibleThumbnails(prefetching: editableSession.mediaItems)

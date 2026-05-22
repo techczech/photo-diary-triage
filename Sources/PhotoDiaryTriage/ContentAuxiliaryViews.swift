@@ -381,7 +381,7 @@ struct PhotoLogEditorSheet: View {
         case .create:
             return "Create Photo Log"
         case .edit:
-            return "Edit Photo Log"
+            return PhotoLogStatusPolicy.detailsSheetTitle
         }
     }
 
@@ -390,7 +390,7 @@ struct PhotoLogEditorSheet: View {
         case .create:
             return "Create a log from decided photos in the current scope, leaving undecided photos in the source inbox."
         case .edit:
-            return "Update title, notes, and scope. Use Edit Items in the photo log library to change membership."
+            return PhotoLogStatusPolicy.detailsSheetSubtitle
         }
     }
 
