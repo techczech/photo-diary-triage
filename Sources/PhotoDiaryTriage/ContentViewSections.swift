@@ -96,51 +96,65 @@ struct PhotoLogLibraryPane: View {
                                 }
 
                                 ForEach(group.logs) { log in
-                                    HStack(spacing: 8) {
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(log.title)
-                                                .font(.caption.weight(.semibold))
-                                            Text("\(log.itemCount) items • \(log.includedCount) S • \(log.candidateCount) C • \(log.excludedCount) X • \(log.status)")
-                                                .font(.caption2)
-                                                .foregroundStyle(.secondary)
-                                            Text(log.workspaceSourceFolderPath)
-                                                .font(.caption2)
-                                                .foregroundStyle(.secondary)
-                                        }
-                                        Spacer()
-                                        if log.isCurrentSession {
-                                            Text("Open")
-                                                .font(.caption2.weight(.semibold))
-                                                .foregroundStyle(.secondary)
-                                        } else {
-                                            Button("Open") {
-                                                appState.openPhotoLog(log.sessionID)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        HStack(spacing: 8) {
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(log.title)
+                                                    .font(.caption.weight(.semibold))
+                                                Text("\(log.itemCount) items • \(log.includedCount) S • \(log.candidateCount) C • \(log.excludedCount) X • \(log.status)")
+                                                    .font(.caption2)
+                                                    .foregroundStyle(.secondary)
+                                                Text(log.workspaceSourceFolderPath)
+                                                    .font(.caption2)
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                            Spacer()
+                                            if log.isCurrentSession {
+                                                Text("Current")
+                                                    .font(.caption2.weight(.semibold))
+                                                    .foregroundStyle(.secondary)
+                                                    .help("This photo log is open. Continue marking S/C/X in the review grid, then copy included files.")
+                                            } else {
+                                                Button("Continue") {
+                                                    appState.openPhotoLog(log.sessionID)
+                                                }
+                                                .buttonStyle(.bordered)
+                                                .controlSize(.mini)
+                                                .help("Open this photo log to continue marking S/C/X and copy included files.")
+                                            }
+                                            Button("Contents") {
+                                                appState.showPhotoLogContents(log.sessionID)
                                             }
                                             .buttonStyle(.bordered)
                                             .controlSize(.mini)
+                                            .help("Show the files owned by this photo log.")
+                                            Button("Edit Items") {
+                                                appState.editPhotoLogMembership(log.sessionID)
+                                            }
+                                            .buttonStyle(.bordered)
+                                            .controlSize(.mini)
+                                            .disabled(log.isMembershipLocked)
+                                            .help(log.membershipLockMessage ?? "Change which photos belong to this log. S/C/X keeps a photo here; clearing it returns it to the source inbox.")
+                                            Button("Edit Details") {
+                                                appState.presentPhotoLogEditor(log.sessionID)
+                                            }
+                                            .buttonStyle(.bordered)
+                                            .controlSize(.mini)
+                                            .help("Update the title, notes, date range, and scope description.")
+                                            Button("Delete") {
+                                                appState.deletePhotoLog(log.sessionID)
+                                            }
+                                            .buttonStyle(.bordered)
+                                            .controlSize(.mini)
+                                            .disabled(log.isMembershipLocked)
+                                            .help(log.isMembershipLocked ? "Copied or cleaned logs cannot be deleted from here." : "Delete this photo log and return uncopied photos to the source inbox.")
                                         }
-                                        Button("Reveal") {
-                                            appState.showPhotoLogContents(log.sessionID)
+                                        if let lockMessage = log.membershipLockMessage {
+                                            Text(lockMessage)
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                                .lineLimit(2)
                                         }
-                                        .buttonStyle(.bordered)
-                                        .controlSize(.mini)
-                                        Button("Edit Items") {
-                                            appState.editPhotoLogMembership(log.sessionID)
-                                        }
-                                        .buttonStyle(.bordered)
-                                        .controlSize(.mini)
-                                        .disabled(log.status == "imported" || log.status == "source_cleaned")
-                                        Button("Edit Details") {
-                                            appState.presentPhotoLogEditor(log.sessionID)
-                                        }
-                                        .buttonStyle(.bordered)
-                                        .controlSize(.mini)
-                                        Button("Delete") {
-                                            appState.deletePhotoLog(log.sessionID)
-                                        }
-                                        .buttonStyle(.bordered)
-                                        .controlSize(.mini)
-                                        .disabled(log.status == "imported" || log.status == "source_cleaned")
                                     }
                                     .padding(.vertical, 2)
                                 }
@@ -242,16 +256,19 @@ struct ActionButtonsPaneView: View {
                 appState.commitImport()
             }
             .disabled(!appState.canCommitImport)
+            .help(appState.sidebarState.snapshot.importReadiness?.copyButtonHelp ?? "Copy included files into the archive.")
 
             Button("Confirm Backup") {
                 appState.markBackupConfirmed()
             }
             .disabled(!appState.canConfirmBackup)
+            .help(appState.sidebarState.snapshot.importReadiness?.confirmBackupButtonHelp ?? "Confirm backup after copy verification.")
 
             Button("Clean Source SSD") {
                 appState.cleanupImportedSources()
             }
             .disabled(!appState.canCleanupImportedSources)
+            .help(appState.sidebarState.snapshot.importReadiness?.cleanupButtonHelp ?? "Clean copied source files from the SSD when allowed.")
         }
     }
 }
@@ -353,17 +370,7 @@ struct CopyToArchiveStatusView: View {
     private var detail: String {
         switch operation.phase {
         case .idle:
-            if readiness.hasFilesToCopy {
-                let rawDetail = readiness.rawCompanionFiles == 0 ? "" : " plus \(readiness.rawCompanionFiles) RAW companion file(s)"
-                return "\(readiness.includedItems) selected photo(s)\(rawDetail) will be copied and verified before cleanup is offered."
-            }
-            if readiness.verifiedAwaitingBackupItems > 0 {
-                return "\(readiness.verifiedAwaitingBackupItems) copied photo(s) are verified. Confirm the backup before source cleanup."
-            }
-            if readiness.cleanupPendingItems > 0 {
-                return "\(readiness.cleanupPendingItems) copied photo(s) are ready for source cleanup."
-            }
-            return "Select photos with S to make a copy plan visible here before writing to the archive."
+            return readiness.idleDetail
         case .copying, .completed, .failed:
             return operation.detail
         }

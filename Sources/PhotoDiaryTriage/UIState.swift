@@ -34,6 +34,14 @@ struct PhotoLogSummary: Identifiable, Equatable, Sendable {
     let scopeLabel: String
 
     var id: UUID { sessionID }
+
+    var isMembershipLocked: Bool {
+        PhotoLogStatusPolicy.isMembershipLocked(status: status)
+    }
+
+    var membershipLockMessage: String? {
+        PhotoLogStatusPolicy.membershipLockMessage(status: status)
+    }
 }
 
 struct PhotoLogGroupSnapshot: Identifiable, Equatable, Sendable {
@@ -72,7 +80,11 @@ struct PhotoLogRevealState: Identifiable, Equatable {
 }
 
 struct ImportReadinessSnapshot: Equatable, Sendable {
+    let sessionKind: SessionKind
     let includedItems: Int
+    let candidateItems: Int
+    let excludedItems: Int
+    let undecidedItems: Int
     let rawCompanionFiles: Int
     let totalFiles: Int
     let destinationPath: String?
@@ -83,6 +95,58 @@ struct ImportReadinessSnapshot: Equatable, Sendable {
 
     var hasFilesToCopy: Bool {
         totalFiles > 0
+    }
+
+    var copyButtonHelp: String {
+        if hasFilesToCopy {
+            return "Copy every S (include) photo into the archive destination shown here."
+        }
+        if sessionKind == .walkDraft {
+            return "Continue this photo log and mark at least one keeper with S (include) before copying."
+        }
+        return "Open a photo log or mark at least one source photo with S (include) before copying."
+    }
+
+    var confirmBackupButtonHelp: String {
+        if verifiedAwaitingBackupItems > 0 {
+            return "Confirm that copied files are backed up before source cleanup is offered."
+        }
+        return "Available after copied files have been verified."
+    }
+
+    var cleanupButtonHelp: String {
+        if cleanupPendingItems > 0 {
+            return backupConfirmed || !cleanupRequiresBackupConfirmation
+                ? "Remove copied source files from the SSD."
+                : "Confirm backup before cleaning copied source files from the SSD."
+        }
+        return "Available after files are copied, verified, and ready for cleanup."
+    }
+
+    var idleDetail: String {
+        if hasFilesToCopy {
+            let rawDetail = rawCompanionFiles == 0 ? "" : " plus \(rawCompanionFiles) RAW companion file(s)"
+            return "\(includedItems) S (include) photo(s)\(rawDetail) will be copied and verified before cleanup is offered."
+        }
+        if verifiedAwaitingBackupItems > 0 {
+            return "\(verifiedAwaitingBackupItems) copied photo(s) are verified. Confirm the backup before source cleanup."
+        }
+        if cleanupPendingItems > 0 {
+            return "\(cleanupPendingItems) copied photo(s) are ready for source cleanup."
+        }
+        if sessionKind == .walkDraft {
+            if candidateItems > 0 || excludedItems > 0 {
+                return "This photo log has C/X choices but no uncopied S photos. Mark keepers with S (include); only S photos are copied."
+            }
+            if undecidedItems > 0 {
+                return "Continue this photo log by marking keepers with S (include). The copy button turns on after at least one uncopied S photo."
+            }
+            return "This photo log has no uncopied photos ready. Continue the log to review its state or create another log from the source inbox."
+        }
+        if candidateItems > 0 || excludedItems > 0 {
+            return "Only S (include) photos are copied. Change keepers to S or continue triage before copying."
+        }
+        return "Open an existing photo log from the library or mark source photos with S (include) to make a copy plan visible here."
     }
 }
 

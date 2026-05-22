@@ -896,6 +896,10 @@ final class AppState: ObservableObject {
             statusMessage = "Photo log could not be found in the local library."
             return
         }
+        if PhotoLogStatusPolicy.isMembershipLocked(status: logRecord.0.status) {
+            statusMessage = PhotoLogStatusPolicy.membershipLockMessage(status: logRecord.0.status) ?? "This photo log's item list is locked."
+            return
+        }
 
         let workspacePath = logRecord.0.workspaceSourceFolder.standardizedFileURL.path
         let inboxRecord = persistedSessions.first {
@@ -2870,13 +2874,26 @@ final class AppState: ObservableObject {
         }
         let totalFiles = copyableItems.count + rawCompanionFiles
         let destinationPath = totalFiles > 0 ? ArchivePlanner(fileManager: fileManager).plan(for: session).archiveFolder.path : nil
+        let candidateItems = session.mediaItems.filter {
+            $0.selectionState.isCandidate && !$0.lifecycleState.isImportedOrBeyond
+        }.count
+        let excludedItems = session.mediaItems.filter {
+            $0.selectionState.isExcluded && !$0.lifecycleState.isImportedOrBeyond
+        }.count
+        let undecidedItems = session.mediaItems.filter {
+            $0.selectionState.isUndecided && !$0.lifecycleState.isImportedOrBeyond
+        }.count
         let verifiedAwaitingBackupItems = session.mediaItems.filter {
             $0.selectionState.isIncluded && ($0.lifecycleState == .verified || $0.lifecycleState == .imported)
         }.count
         let cleanupPendingItems = session.mediaItems.filter { $0.lifecycleState == .sourceCleanupPending }.count
 
         return ImportReadinessSnapshot(
+            sessionKind: session.sessionKind,
             includedItems: copyableItems.count,
+            candidateItems: candidateItems,
+            excludedItems: excludedItems,
+            undecidedItems: undecidedItems,
             rawCompanionFiles: rawCompanionFiles,
             totalFiles: totalFiles,
             destinationPath: destinationPath,
