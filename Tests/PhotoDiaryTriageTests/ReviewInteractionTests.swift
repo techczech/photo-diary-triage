@@ -1002,7 +1002,7 @@ import Testing
     #expect(ready.includedItems == 1)
     #expect(ready.rawCompanionFiles == 1)
     #expect(ready.totalFiles == 2)
-    #expect(ready.destinationPath?.contains("copy-confidence") == true)
+    #expect(ready.destinationPath?.contains("Copy-confidence") == true)
     #expect(ready.archiveDestinationLabel == "Planned archive folder")
     #expect(state.canCommitImport)
     #expect(!state.canOpenArchiveDestination)

@@ -140,3 +140,4 @@
 {"ts":"2026-05-22T08:29:56Z","item_id":"PDT-2026-05-22-051","event":"report_created","status":"implemented","title":"inspector workflow redesign","file":"changelog/changelog/PDT-2026-05-22-051-inspector-workflow-redesign-report.md"}
 {"ts":"2026-05-22T09:35:31Z","item_id":"PDT-2026-05-22-052","event":"report_created","status":"implemented","title":"photo log list redesign","file":"changelog/changelog/PDT-2026-05-22-052-photo-log-list-redesign-report.md"}
 {"ts":"2026-05-22T09:56:23Z","item_id":"PDT-2026-05-22-053","event":"report_created","status":"implemented","title":"view and triage modes","file":"changelog/changelog/PDT-2026-05-22-053-view-and-triage-modes-report.md"}
+{"ts":"2026-05-22T10:10:31Z","item_id":"PDT-2026-05-22-054","event":"report_created","status":"implemented","title":"archive filesystem naming","file":"changelog/changelog/PDT-2026-05-22-054-archive-filesystem-naming-report.md"}

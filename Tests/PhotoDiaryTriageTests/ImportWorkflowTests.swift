@@ -23,7 +23,10 @@ import Testing
 
     let result = try await ImportCoordinator().commit(session: session)
     let importedItem = try requireSingleMediaItem(in: result.session)
-    let sessionFolder = result.walkManifest.archiveFolder.appendingPathComponent("_session", isDirectory: true)
+    let walkBasename = result.walkManifest.archiveFolder.lastPathComponent
+    let walkManifestURL = result.walkManifest.archiveFolder.appendingPathComponent("\(walkBasename).md")
+    let fileManifestURL = try #require(importedItem.destinationURL?.deletingPathExtension().appendingPathExtension("md"))
+    let sessionLogURL = result.walkManifest.archiveFolder.appendingPathComponent("\(walkBasename)-session-log.jsonl")
 
     #expect(importedItem.destinationURL != nil)
     #expect(importedItem.lifecycleState == .verified)
@@ -32,8 +35,12 @@ import Testing
     #expect(result.session.status == "imported")
     #expect(result.fileManifests.count == 1)
     #expect(FileManager.default.fileExists(atPath: importedItem.destinationURL?.path ?? ""))
-    #expect(FileManager.default.fileExists(atPath: sessionFolder.appendingPathComponent("WalkManifest.md").path))
-    #expect(FileManager.default.fileExists(atPath: sessionFolder.appendingPathComponent("session-log.jsonl").path))
+    #expect(importedItem.destinationURL?.lastPathComponent == "\(walkBasename)-001.jpg")
+    #expect(FileManager.default.fileExists(atPath: walkManifestURL.path))
+    #expect(FileManager.default.fileExists(atPath: fileManifestURL.path))
+    #expect(fileManifestURL.deletingPathExtension().lastPathComponent == importedItem.destinationURL?.deletingPathExtension().lastPathComponent)
+    #expect(FileManager.default.fileExists(atPath: sessionLogURL.path))
+    #expect(!FileManager.default.fileExists(atPath: result.walkManifest.archiveFolder.appendingPathComponent("_session", isDirectory: true).path))
 }
 
 @Test func importCoordinatorCommitImportsCompanionsWhenEnabled() async throws {

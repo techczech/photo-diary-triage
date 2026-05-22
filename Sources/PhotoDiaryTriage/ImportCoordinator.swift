@@ -240,21 +240,17 @@ struct ImportCoordinator: ImportCoordinating {
     }
 
     private func writeManifests(walkManifest: WalkManifest, fileManifests: [FileManifest], archiveFolder: URL, events: [SessionLogEvent]) throws {
-        let sessionFolder = archiveFolder.appendingPathComponent("_session", isDirectory: true)
-        try AppDirectories.ensureExists(sessionFolder, fileManager: fileManager)
-
-        let walkManifestURL = sessionFolder.appendingPathComponent("WalkManifest.md")
+        let walkBasename = archiveFolder.lastPathComponent
+        let walkManifestURL = archiveFolder.appendingPathComponent("\(walkBasename).md")
         try manifestRenderer.renderWalkManifest(walkManifest).write(to: walkManifestURL, atomically: true, encoding: .utf8)
 
-        let filesFolder = sessionFolder.appendingPathComponent("files", isDirectory: true)
-        try AppDirectories.ensureExists(filesFolder, fileManager: fileManager)
-
         for fileManifest in fileManifests {
-            let fileURL = filesFolder.appendingPathComponent("\(fileManifest.mediaItemID.uuidString).md")
+            let destinationURL = URL(fileURLWithPath: fileManifest.archivePath)
+            let fileURL = destinationURL.deletingPathExtension().appendingPathExtension("md")
             try manifestRenderer.renderFileManifest(fileManifest).write(to: fileURL, atomically: true, encoding: .utf8)
         }
 
-        let logURL = sessionFolder.appendingPathComponent("session-log.jsonl")
+        let logURL = archiveFolder.appendingPathComponent("\(walkBasename)-session-log.jsonl")
         try manifestRenderer.renderLog(events).write(to: logURL, atomically: true, encoding: .utf8)
     }
 }

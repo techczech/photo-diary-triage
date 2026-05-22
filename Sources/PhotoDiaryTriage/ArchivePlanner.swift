@@ -8,18 +8,22 @@ struct ArchivePlanner {
     }
 
     func plan(for session: ImportSession) -> ArchiveCommitPlan {
-        let selectedItems = session.mediaItems.filter { $0.selectionState.isIncluded }
+        let selectedItems = session.mediaItems
+            .filter { $0.selectionState.isIncluded }
+            .sorted(by: Self.mediaSort)
         let walkDate = selectedItems.compactMap(\.capturedAt).min() ?? session.startedAt
-        let walkFolder = DateFormatting.walkFolderPath(from: walkDate)
         let titleSource = session.walkMetadata.title.nonEmpty ?? session.walkMetadata.location.nonEmpty ?? "photo-walk"
+        let walkFolderName = DateFormatting.archiveWalkFolderName(from: walkDate, title: titleSource)
         let archiveFolder = session.archiveRoot
-            .appendingPathComponent(walkFolder, isDirectory: true)
-            .appendingPathComponent(Slugifier.makeSlug(from: titleSource), isDirectory: true)
+            .appendingPathComponent(DateFormatting.archiveYearFolderName(from: walkDate), isDirectory: true)
+            .appendingPathComponent(DateFormatting.archiveMonthFolderName(from: walkDate), isDirectory: true)
+            .appendingPathComponent(walkFolderName, isDirectory: true)
 
         var reservedDestinations: Set<String> = []
         var entries: [ArchiveEntry] = []
-        for item in selectedItems {
-            let destination = makeUniqueDestination(for: item.fileName, in: archiveFolder, reserved: &reservedDestinations)
+        for (offset, item) in selectedItems.enumerated() {
+            let archiveStem = "\(walkFolderName)-\(String(format: "%03d", offset + 1))"
+            let destination = makeUniqueDestination(stem: archiveStem, originalFileName: item.fileName, in: archiveFolder, reserved: &reservedDestinations)
             entries.append(
                 ArchiveEntry(
                     mediaItemID: item.id,
@@ -32,7 +36,7 @@ struct ArchivePlanner {
 
             if item.importRawCompanions {
                 for companion in item.companionFiles {
-                    let companionDestination = makeUniqueDestination(for: companion.fileName, in: archiveFolder, reserved: &reservedDestinations)
+                    let companionDestination = makeUniqueDestination(stem: archiveStem, originalFileName: companion.fileName, in: archiveFolder, reserved: &reservedDestinations)
                     entries.append(
                         ArchiveEntry(
                             mediaItemID: item.id,
@@ -55,9 +59,9 @@ struct ArchivePlanner {
         )
     }
 
-    private func makeUniqueDestination(for fileName: String, in folder: URL, reserved: inout Set<String>) -> URL {
-        let stem = URL(fileURLWithPath: fileName).deletingPathExtension().lastPathComponent
-        let ext = URL(fileURLWithPath: fileName).pathExtension
+    private func makeUniqueDestination(stem: String, originalFileName: String, in folder: URL, reserved: inout Set<String>) -> URL {
+        let ext = URL(fileURLWithPath: originalFileName).pathExtension.lowercased()
+        let fileName = stem + (ext.isEmpty ? "" : ".\(ext)")
         var candidate = folder.appendingPathComponent(fileName)
         var counter = 1
 
@@ -69,5 +73,14 @@ struct ArchivePlanner {
 
         reserved.insert(candidate.path)
         return candidate
+    }
+
+    private static func mediaSort(lhs: MediaItem, rhs: MediaItem) -> Bool {
+        let lhsDate = lhs.capturedAt ?? .distantPast
+        let rhsDate = rhs.capturedAt ?? .distantPast
+        if lhsDate == rhsDate {
+            return lhs.fileName.localizedCaseInsensitiveCompare(rhs.fileName) == .orderedAscending
+        }
+        return lhsDate < rhsDate
     }
 }
