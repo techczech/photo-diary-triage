@@ -139,7 +139,7 @@ struct DetailsInspectorView: View {
     private var walkDetailsSection: some View {
         if sidebarState.snapshot.canMutateImportSelection,
            sidebarState.snapshot.sessionSummary?.sessionKind == .walkDraft {
-            GroupBox("Photo Log Details") {
+            GroupBox("Log Details") {
                 WalkDetailsPaneView(
                     appState: appState,
                     isExpanded: Binding(

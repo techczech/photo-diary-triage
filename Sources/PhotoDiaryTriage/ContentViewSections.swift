@@ -128,19 +128,19 @@ struct PhotoLogLibraryPane: View {
                                             .buttonStyle(.bordered)
                                             .controlSize(.mini)
                                             .help("Show the files owned by this photo log.")
-                                            Button("Edit Items") {
+                                            Button(PhotoLogStatusPolicy.editLogActionTitle) {
                                                 appState.editPhotoLogMembership(log.sessionID)
                                             }
                                             .buttonStyle(.bordered)
                                             .controlSize(.mini)
                                             .disabled(log.isMembershipLocked)
-                                            .help(log.membershipLockMessage ?? "Change which photos belong to this log. S/C/X keeps a photo here; clearing it returns it to the source inbox.")
-                                            Button("Edit Details") {
+                                            .help(log.membershipLockMessage ?? PhotoLogStatusPolicy.editLogHelp)
+                                            Button(PhotoLogStatusPolicy.detailsActionTitle) {
                                                 appState.presentPhotoLogEditor(log.sessionID)
                                             }
                                             .buttonStyle(.bordered)
                                             .controlSize(.mini)
-                                            .help("Update the title, notes, date range, and scope description.")
+                                            .help(PhotoLogStatusPolicy.detailsHelp)
                                             Button("Delete") {
                                                 appState.deletePhotoLog(log.sessionID)
                                             }
@@ -188,14 +188,14 @@ struct WalkDetailsPaneView: View {
                     TextField("Location", text: $walkLocation)
                     TextField("Notes", text: $walkNotes, axis: .vertical)
                         .lineLimit(4...8)
-                    Button("Save Photo Log Details") {
+                    Button("Save Log Details") {
                         appState.updateWalkMetadata(title: walkTitle, location: walkLocation, notes: walkNotes)
                     }
                 }
                 .padding(.top, 8)
             } label: {
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text("Photo Log Details")
+                    Text(PhotoLogStatusPolicy.detailsSheetTitle)
                         .font(.headline)
                     Text(summary)
                         .font(.caption)

@@ -184,7 +184,7 @@ struct WorkflowGuidanceResolver {
                 title: "Photo Log In Progress",
                 state: "No uncopied S photos",
                 detail: readiness.idleDetail,
-                nextAction: "Mark keepers with S. C and X choices are not copied.",
+                nextAction: "Change S/C/X status here. Use Edit Log to add or remove source-inbox photos.",
                 systemImage: "doc.text.magnifyingglass"
             )
         }

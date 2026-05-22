@@ -202,6 +202,13 @@ import Testing
     #expect(PhotoLogStatusPolicy.isMembershipLocked(status: "imported"))
     #expect(PhotoLogStatusPolicy.isMembershipLocked(status: "source_cleaned"))
     #expect(PhotoLogStatusPolicy.membershipLockMessage(status: "imported")?.contains("Copied") == true)
+    #expect(PhotoLogStatusPolicy.editLogActionTitle == "Edit Log")
+    #expect(PhotoLogStatusPolicy.editLogHelp.contains("Add or remove photos"))
+    #expect(PhotoLogStatusPolicy.editLogHelp.contains("S/C/X status"))
+    #expect(PhotoLogStatusPolicy.editLogHelp.contains("add them"))
+    #expect(PhotoLogStatusPolicy.detailsActionTitle == "Details")
+    #expect(PhotoLogStatusPolicy.detailsHelp.contains("does not change which photos belong"))
+    #expect(PhotoLogStatusPolicy.detailsSheetSubtitle.contains("Use Edit Log"))
 }
 
 @Test func workflowGuidanceShowsSourceInboxReadyToCreatePhotoLog() {
@@ -248,7 +255,8 @@ import Testing
 
     #expect(guidance.title == "Photo Log In Progress")
     #expect(guidance.state.contains("No uncopied S"))
-    #expect(guidance.nextAction.contains("Mark keepers with S"))
+    #expect(guidance.nextAction.contains("Use Edit Log"))
+    #expect(guidance.nextAction.contains("add or remove"))
 }
 
 @Test func workflowGuidanceShowsPhotoLogReadyToCopy() {
