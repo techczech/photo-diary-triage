@@ -686,12 +686,20 @@ final class AppState: ObservableObject {
         } ?? false
     }
 
+    var canOpenArchiveDestination: Bool {
+        guard importOperation.isRunning == false else { return false }
+        guard let url = currentCopiedArchiveDestinationURL else { return false }
+        var isDirectory: ObjCBool = false
+        return fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory) && isDirectory.boolValue
+    }
+
     var canConfirmBackup: Bool {
         guard importOperation.isRunning == false else { return false }
         guard let currentSession else { return false }
         guard currentSession.walkMetadata.backupConfirmedAt == nil else { return false }
         return currentSession.mediaItems.contains {
-            $0.selectionState.isIncluded && ($0.lifecycleState == .verified || $0.lifecycleState == .imported)
+            $0.selectionState.isIncluded
+                && ($0.lifecycleState == .verified || $0.lifecycleState == .imported || $0.lifecycleState == .sourceCleanupPending)
         }
     }
 
@@ -1177,6 +1185,25 @@ final class AppState: ObservableObject {
     func markBackupConfirmed() {
         guard let currentSession else { return }
         save(sessionMutationCoordinator.sessionByMarkingBackupConfirmed(currentSession))
+    }
+
+    func openArchiveDestinationForCurrentSession() {
+        guard let url = currentCopiedArchiveDestinationURL else {
+            statusMessage = "No copied archive folder is available for this log yet."
+            return
+        }
+
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            statusMessage = "Archive folder is not available at \(url.path)."
+            return
+        }
+
+        if NSWorkspace.shared.open(url) {
+            statusMessage = "Opened archive folder \(url.path)."
+        } else {
+            statusMessage = "Could not open archive folder \(url.path)."
+        }
     }
 
     func commitImport() {
@@ -2888,7 +2915,7 @@ final class AppState: ObservableObject {
             count + (item.importRawCompanions ? item.companionFiles.count : 0)
         }
         let totalFiles = copyableItems.count + rawCompanionFiles
-        let destinationPath = totalFiles > 0 ? ArchivePlanner(fileManager: fileManager).plan(for: session).archiveFolder.path : nil
+        let destinationPath = archiveDestinationURL(for: session, includePlannedDestination: true)?.path
         let candidateItems = session.mediaItems.filter {
             $0.selectionState.isCandidate && !$0.lifecycleState.isImportedOrBeyond
         }.count
@@ -2917,6 +2944,35 @@ final class AppState: ObservableObject {
             backupConfirmed: session.walkMetadata.backupConfirmedAt != nil,
             cleanupRequiresBackupConfirmation: settings.cleanupRequiresBackupConfirmation
         )
+    }
+
+    private var currentCopiedArchiveDestinationURL: URL? {
+        if importOperation.phase == .completed, let destinationPath = importOperation.destinationPath {
+            return URL(fileURLWithPath: destinationPath, isDirectory: true).standardizedFileURL
+        }
+
+        guard let currentSession else { return nil }
+        return archiveDestinationURL(for: currentSession, includePlannedDestination: false)
+    }
+
+    private func archiveDestinationURL(for session: ImportSession, includePlannedDestination: Bool) -> URL? {
+        let copiedDestination = session.mediaItems
+            .filter { $0.selectionState.isIncluded && $0.lifecycleState.isImportedOrBeyond }
+            .compactMap(\.destinationURL)
+            .sorted { lhs, rhs in
+                lhs.path.localizedStandardCompare(rhs.path) == .orderedAscending
+            }
+            .first
+
+        if let copiedDestination {
+            return copiedDestination.deletingLastPathComponent().standardizedFileURL
+        }
+
+        guard includePlannedDestination else { return nil }
+        guard session.mediaItems.contains(where: { $0.selectionState.isIncluded && !$0.lifecycleState.isImportedOrBeyond }) else {
+            return nil
+        }
+        return ArchivePlanner(fileManager: fileManager).plan(for: session).archiveFolder.standardizedFileURL
     }
 
     private func refreshSidebarVisibilityState() {

@@ -997,8 +997,10 @@ import Testing
     #expect(ready.totalFiles == 2)
     #expect(ready.destinationPath?.contains("copy-confidence") == true)
     #expect(state.canCommitImport)
+    #expect(!state.canOpenArchiveDestination)
     #expect(!state.canConfirmBackup)
 
+    try FileManager.default.createDirectory(at: archiveRoot, withIntermediateDirectories: true)
     var verifiedItem = item
     verifiedItem.lifecycleState = .verified
     verifiedItem.destinationURL = archiveRoot.appendingPathComponent("IMG_0001.jpg")
@@ -1006,8 +1008,10 @@ import Testing
 
     let verified = try #require(state.sidebarState.snapshot.importReadiness)
     #expect(verified.totalFiles == 0)
+    #expect(verified.destinationPath == archiveRoot.path)
     #expect(verified.verifiedAwaitingBackupItems == 1)
     #expect(!state.canCommitImport)
+    #expect(state.canOpenArchiveDestination)
     #expect(state.canConfirmBackup)
 }
 

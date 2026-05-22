@@ -84,8 +84,33 @@ struct DetailsInspectorView: View {
 
     private var workflowSection: some View {
         GroupBox("Workflow") {
-            WorkflowGuidanceView(guidance: sidebarState.snapshot.workflowGuidance, compact: false)
+            VStack(alignment: .leading, spacing: 10) {
+                WorkflowGuidanceView(guidance: sidebarState.snapshot.workflowGuidance, compact: false)
+
+                if sidebarState.snapshot.importReadiness?.needsArchiveReviewBeforeBackupConfirmation == true {
+                    copiedLogWorkflowActions
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private var copiedLogWorkflowActions: some View {
+        HStack(spacing: 8) {
+            Button("Open Archive Folder") {
+                appState.openArchiveDestinationForCurrentSession()
+            }
+            .disabled(!appState.canOpenArchiveDestination)
+            .help("Open the folder containing copied photos before confirming backup.")
+
+            Button("Confirm Backup") {
+                appState.markBackupConfirmed()
+            }
+            .disabled(!appState.canConfirmBackup)
+            .help(sidebarState.snapshot.importReadiness?.confirmBackupButtonHelp ?? "Confirm backup after copy verification.")
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
     }
 
     private var sourceSection: some View {

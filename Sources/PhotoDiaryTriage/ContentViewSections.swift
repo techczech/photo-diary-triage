@@ -258,6 +258,12 @@ struct ActionButtonsPaneView: View {
             .disabled(!appState.canCommitImport)
             .help(appState.sidebarState.snapshot.importReadiness?.copyButtonHelp ?? "Copy included files into the archive.")
 
+            Button("Open Archive Folder") {
+                appState.openArchiveDestinationForCurrentSession()
+            }
+            .disabled(!appState.canOpenArchiveDestination)
+            .help("Open the folder containing copied photos before confirming backup.")
+
             Button("Confirm Backup") {
                 appState.markBackupConfirmed()
             }
@@ -383,7 +389,7 @@ struct CopyToArchiveStatusView: View {
                 : "\(readiness.cleanupPendingItems) source photo(s) are waiting for backup confirmation."
         }
         if readiness.verifiedAwaitingBackupItems > 0 && readiness.cleanupRequiresBackupConfirmation {
-            return "Cleanup is locked until backup confirmation."
+            return "Open the archive folder to inspect copied photos. Cleanup is locked until backup confirmation."
         }
         return ""
     }
