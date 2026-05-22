@@ -1,0 +1,36 @@
+# PDT-2026-05-22-046 Latest Trust Review
+
+- Item ID: `PDT-2026-05-22-046`
+- Title: `latest trust review`
+- User request summary: `Review the latest app version, summarize what is developed, identify what still needs work, and assess whether it is safe enough to trust for triaging and copying photos.`
+- Constraints:
+  - Treat safety, copy reliability, and source cleanup trust as the priority.
+  - Check current release metadata, backlog, changelog, and implementation paths before answering.
+  - Verify with tests and a packaged app build where practical.
+  - Do not make implementation changes unless the review finds a blocking defect that needs immediate repair.
+- Implementation intent:
+  - Inspect current release marker and recent implementation reports.
+  - Review copy-to-archive, verification, backup, and cleanup gates in code.
+  - Run the relevant test suite and rebuild the packaged app.
+  - Launch `dist/PhotoDiaryTriage.app` for manual review if verification passes.
+- Test conditions:
+  - Tracking files and release metadata agree on the latest version.
+  - `swift test`
+  - `./scripts/build_app_bundle.sh`
+  - Latest packaged app launches.
+- Success criteria:
+  - The review names the exact `APP_VERSION` to test.
+  - The review distinguishes copied-file safety from source-cleanup/destructive safety.
+  - The review gives a clear trust recommendation and concrete remaining work.
+- Review outcome:
+  - Current latest packaged app: `APP_VERSION=0.2.7`, `APP_BUILD=84`, `APP_FEATURE_SLUG=photo-log-speed-and-quality`.
+  - `swift test` passed: 91 tests.
+  - `./scripts/build_app_bundle.sh` succeeded.
+  - `dist/PhotoDiaryTriage.app` launched for manual review.
+  - Trust assessment: safe enough for staged copy triage with a sample folder and independent backup; not yet safe enough for automatic destructive cleanup on irreplaceable originals.
+  - Main risk: copy verification is size-only; checksum verification remains draft backlog item `PDT-2026-03-24-015`.
+  - Main destructive-action gap: `Clean Source SSD` directly removes source files once gated; add explicit confirmation or trash-first cleanup before treating cleanup as fully trustworthy.
+  - Recent shipped items still awaiting user review: sidebar speed/shortcut recovery, photo log membership editing, robust copy-to-disk UI, photo log speed and quality.
+- Current status: `review_completed`
+- Target release version: `0.2.7`
+- Target feature slug: `latest-trust-review`
