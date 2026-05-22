@@ -1,0 +1,9 @@
+Create one bitmap UI mockup of a modern native macOS inspector pane for a photo triage application.
+
+The pane is narrow, about 430 px wide, with compact macOS spacing and native SwiftUI-style controls. The first visible section is a workflow panel titled "Photo Log Copied" with a small system folder/check icon, a clear state line, and a clickable link-style archive path labelled "Copied archive folder". The path should look like a Finder link, not plain metadata.
+
+The main actions are immediately below the link: "Open Archive Folder", "Confirm Backup", and "Clean Source SSD". The design must show that opening the folder is inspection, confirming backup is separate, and cleaning the source SSD is the final step.
+
+Below the workflow panel, show a compact "Current Log" section with the title "Morning Birdwatch Near Blenheim", source path "/Volumes/EOS_DIGITAL/DCIM", and small metric chips for 57 selected, 1 candidate, 341 excluded, 399 visible. Put lower-priority "Photo Logs" and "Storage Details" into collapsed disclosure rows.
+
+Use a restrained macOS native visual style: system materials, small SF Symbols, link buttons, subtle separators, and readable compact typography. Avoid marketing style, decorative gradients, oversized cards, and cluttered tables. The mockup should look like a real app screen, not a website.

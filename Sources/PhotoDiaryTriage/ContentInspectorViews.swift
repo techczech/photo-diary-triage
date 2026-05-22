@@ -42,6 +42,8 @@ struct DetailsInspectorView: View {
     @Binding var walkLocation: String
     @Binding var walkNotes: String
     let summary: String
+    @State private var isPhotoLogLibraryExpanded = false
+    @State private var isStorageDetailsExpanded = false
 
     var body: some View {
         Group {
@@ -62,15 +64,12 @@ struct DetailsInspectorView: View {
                             .help("Hide inspector")
                         }
 
-                        sourceSection
                         workflowSection
                         sessionSection
-                        photoLogsSection
-                        walkDetailsSection
-                        importActionsSection
-                        archiveSection
-                        folderSection
                         photoSection
+                        walkDetailsSection
+                        photoLogsDisclosureSection
+                        storageDetailsSection
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(16)
@@ -84,42 +83,11 @@ struct DetailsInspectorView: View {
 
     private var workflowSection: some View {
         GroupBox("Workflow") {
-            VStack(alignment: .leading, spacing: 10) {
-                WorkflowGuidanceView(guidance: sidebarState.snapshot.workflowGuidance, compact: false)
-
-                if sidebarState.snapshot.importReadiness?.needsArchiveReviewBeforeBackupConfirmation == true {
-                    copiedLogWorkflowActions
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    private var copiedLogWorkflowActions: some View {
-        HStack(spacing: 8) {
-            Button("Open Archive Folder") {
-                appState.openArchiveDestinationForCurrentSession()
-            }
-            .disabled(!appState.canOpenArchiveDestination)
-            .help("Open the folder containing copied photos before confirming backup.")
-
-            Button("Confirm Backup") {
-                appState.markBackupConfirmed()
-            }
-            .disabled(!appState.canConfirmBackup)
-            .help(sidebarState.snapshot.importReadiness?.confirmBackupButtonHelp ?? "Confirm backup after copy verification.")
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
-    }
-
-    private var sourceSection: some View {
-        GroupBox("Source Workspace") {
-            SourceWorkspaceStatusPane(
-                summary: sidebarState.snapshot.sourceWorkspaceState.summary,
-                canOpenDefaultSourceWorkspace: sidebarState.snapshot.canOpenDefaultSourceWorkspace,
-                canReloadSourceWorkspace: sidebarState.snapshot.canReloadSourceWorkspace,
-                appState: appState
+            InspectorWorkflowPanel(
+                appState: appState,
+                guidance: sidebarState.snapshot.workflowGuidance,
+                readiness: sidebarState.snapshot.importReadiness,
+                operation: sidebarState.snapshot.importOperation
             )
         }
     }
@@ -127,17 +95,36 @@ struct DetailsInspectorView: View {
     @ViewBuilder
     private var sessionSection: some View {
         if let session = sidebarState.snapshot.sessionSummary {
-            GroupBox("Current Session") {
-                VStack(alignment: .leading, spacing: 8) {
-                    inspectorRow("Summary", summary)
-                    inspectorRow("Source", session.sourceFolderPath)
-                    inspectorRow("Visible Items", "\(session.itemCount)")
-                    inspectorRow("State", "\(session.sessionKind.title) • \(session.status)")
-                    inspectorRow("Triage", "\(session.includedCount) selected • \(session.candidateCount) candidate • \(session.excludedCount) excluded")
+            GroupBox("Current Log") {
+                VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(logTitle(for: session))
+                            .font(.headline)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        if let location = session.walkMetadata.location.nonEmpty {
+                            Text(location)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 8) {
+                        InspectorMetricBadge(label: "Selected", value: "\(session.includedCount)")
+                        InspectorMetricBadge(label: "Candidate", value: "\(session.candidateCount)")
+                        InspectorMetricBadge(label: "Excluded", value: "\(session.excludedCount)")
+                        InspectorMetricBadge(label: "Visible", value: "\(session.itemCount)")
+                    }
+
+                    InspectorPathRow(label: "Source", path: session.sourceFolderPath)
 
                     if let scopeLabel = session.photoLogScope?.label.nonEmpty, session.sessionKind == .walkDraft {
-                        inspectorRow("Primary Scope", scopeLabel)
+                        InspectorMetadataLine(label: "Primary scope", value: scopeLabel)
                     }
+
+                    InspectorMetadataLine(label: "State", value: "\(session.sessionKind.title) · \(session.status)")
 
                     if let hiddenSummary = sidebarState.snapshot.hiddenPhotoLogSummary {
                         Text(hiddenSummary)
@@ -150,13 +137,19 @@ struct DetailsInspectorView: View {
         }
     }
 
-    private var photoLogsSection: some View {
-        GroupBox("Photo Logs") {
-            PhotoLogLibraryPane(
-                appState: appState,
-                groups: sidebarState.snapshot.photoLogGroups,
-                canPresentPhotoLogCreation: sidebarState.snapshot.canPresentPhotoLogCreation
-            )
+    private var photoLogsDisclosureSection: some View {
+        GroupBox {
+            DisclosureGroup(isExpanded: $isPhotoLogLibraryExpanded) {
+                PhotoLogLibraryPane(
+                    appState: appState,
+                    groups: sidebarState.snapshot.photoLogGroups,
+                    canPresentPhotoLogCreation: sidebarState.snapshot.canPresentPhotoLogCreation
+                )
+                .padding(.top, 8)
+            } label: {
+                Label("Photo Logs", systemImage: "books.vertical")
+                    .font(.subheadline.weight(.semibold))
+            }
         }
     }
 
@@ -182,61 +175,46 @@ struct DetailsInspectorView: View {
         }
     }
 
-    @ViewBuilder
-    private var importActionsSection: some View {
-        if sidebarState.snapshot.canMutateImportSelection {
-            GroupBox("Import Actions") {
-                ActionButtonsPaneView(appState: appState, compact: true)
+    private var storageDetailsSection: some View {
+        GroupBox {
+            DisclosureGroup(isExpanded: $isStorageDetailsExpanded) {
+                VStack(alignment: .leading, spacing: 12) {
+                    SourceWorkspaceStatusPane(
+                        summary: sidebarState.snapshot.sourceWorkspaceState.summary,
+                        canOpenDefaultSourceWorkspace: sidebarState.snapshot.canOpenDefaultSourceWorkspace,
+                        canReloadSourceWorkspace: sidebarState.snapshot.canReloadSourceWorkspace,
+                        appState: appState
+                    )
+
+                    Divider()
+
+                    InspectorPathRow(label: "Archive root", path: sidebarState.snapshot.archiveRootDisplayPath)
+                    if !sidebarState.snapshot.archiveYearFolders.isEmpty {
+                        InspectorMetadataLine(label: "Years", value: sidebarState.snapshot.archiveYearFolders.joined(separator: ", "))
+                    }
+
+                    currentFolderDetails
+                }
+                .padding(.top, 8)
+            } label: {
+                Label("Storage Details", systemImage: "externaldrive")
+                    .font(.subheadline.weight(.semibold))
             }
         }
     }
 
-    private var archiveSection: some View {
-        GroupBox("Archive Root") {
-            VStack(alignment: .leading, spacing: 8) {
-                inspectorRow("Path", sidebarState.snapshot.archiveRootDisplayPath)
-
-                if sidebarState.snapshot.archiveYearFolders.isEmpty {
-                    Text("No `202x` folders detected yet")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    inspectorRow("Years", sidebarState.snapshot.archiveYearFolders.joined(separator: ", "))
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
     @ViewBuilder
-    private var folderSection: some View {
-        GroupBox("Current Folder") {
-            VStack(alignment: .leading, spacing: 8) {
-                if let node = state.snapshot.browserNode {
-                    inspectorRow("Name", node.title)
-                    inspectorRow("Kind", kindLabel(node.kind))
-                    inspectorRow("Photos", "\(node.mediaItemIDs.count)")
-                    inspectorRow("Children", "\(node.children?.count ?? 0)")
-                    if let subtitle = node.subtitle?.nonEmpty {
-                        inspectorRow("Summary", subtitle)
-                    }
-                    if let folderURL = node.folderURL {
-                        inspectorRow("Path", folderURL.path)
-                    } else if node.kind == .sessionRoot, let fallbackPath = state.snapshot.fallbackFolderPath {
-                        inspectorRow("Path", fallbackPath)
-                    }
-                    if let title = state.snapshot.walkTitle {
-                        inspectorRow("Walk Title", title)
-                    }
-                    if let location = state.snapshot.walkLocation {
-                        inspectorRow("Location", location)
-                    }
-                } else {
-                    Text("No folder selected.")
-                        .foregroundStyle(.secondary)
-                }
+    private var currentFolderDetails: some View {
+        if let node = state.snapshot.browserNode {
+            Divider()
+            InspectorMetadataLine(label: "Folder", value: node.title)
+            InspectorMetadataLine(label: "Kind", value: kindLabel(node.kind))
+            InspectorMetadataLine(label: "Photos", value: "\(node.mediaItemIDs.count)")
+            if let folderURL = node.folderURL {
+                InspectorPathRow(label: "Path", path: folderURL.path)
+            } else if node.kind == .sessionRoot, let fallbackPath = state.snapshot.fallbackFolderPath {
+                InspectorPathRow(label: "Path", path: fallbackPath)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -305,6 +283,10 @@ struct DetailsInspectorView: View {
                 .font(.callout)
                 .textSelection(.enabled)
         }
+    }
+
+    private func logTitle(for session: SessionSummary) -> String {
+        session.walkMetadata.title.nonEmpty ?? summary
     }
 
     private func kindLabel(_ kind: BrowserNodeKind) -> String {
