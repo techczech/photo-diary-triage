@@ -1,0 +1,9 @@
+version: v1
+status: implemented_directly_in_swiftui
+surface: macOS inspector pane
+source_screenshot: /Users/dominiklukes/Library/CloudStorage/OneDrive-Nexus365/Screenshots/MacOS Screenshots/CleanShot 2026-05-22 at 09.17.56.png
+target_release: 0.2.12
+feature_slug: inspector-workflow-redesign
+notes: >
+  Prompt preserved for image-to-design traceability. The working artifact is
+  the native SwiftUI implementation in Sources/PhotoDiaryTriage.

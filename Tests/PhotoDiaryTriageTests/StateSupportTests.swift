@@ -362,6 +362,7 @@ import Testing
     #expect(cleanupLocked.nextAction.contains("Open Archive Folder"))
     #expect(cleanupLocked.nextAction.contains("Confirm Backup"))
     #expect(cleanupReady.state.contains("Ready for source cleanup"))
+    #expect(cleanupReady.detail.contains("Backup is confirmed"))
     #expect(cleanupReady.nextAction == "Use Clean Source SSD.")
 }
 

@@ -97,6 +97,14 @@ struct ImportReadinessSnapshot: Equatable, Sendable {
         totalFiles > 0
     }
 
+    var hasCopiedArchiveDestination: Bool {
+        destinationPath != nil && (verifiedAwaitingBackupItems > 0 || cleanupPendingItems > 0 || backupConfirmed)
+    }
+
+    var archiveDestinationLabel: String {
+        hasCopiedArchiveDestination ? "Copied archive folder" : "Planned archive folder"
+    }
+
     var needsArchiveReviewBeforeBackupConfirmation: Bool {
         if verifiedAwaitingBackupItems > 0 {
             return cleanupRequiresBackupConfirmation && !backupConfirmed

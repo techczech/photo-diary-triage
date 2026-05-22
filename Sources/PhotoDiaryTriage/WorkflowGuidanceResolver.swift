@@ -153,7 +153,9 @@ struct WorkflowGuidanceResolver {
             return WorkflowGuidanceSnapshot(
                 title: "Photo Log Copied",
                 state: needsBackup ? "Waiting for backup confirmation" : "Ready for source cleanup",
-                detail: "\(readiness.cleanupPendingItems) copied source photo(s) can be cleaned after backup is confirmed.",
+                detail: needsBackup
+                    ? "\(readiness.cleanupPendingItems) copied source photo(s) are locked until backup is confirmed."
+                    : "Backup is confirmed. \(readiness.cleanupPendingItems) copied source photo(s) can now be cleaned from the SSD.",
                 nextAction: needsBackup ? "Open Archive Folder, inspect the copied photos, then Confirm Backup." : "Use Clean Source SSD.",
                 systemImage: needsBackup ? "checkmark.shield" : "externaldrive.badge.minus"
             )
