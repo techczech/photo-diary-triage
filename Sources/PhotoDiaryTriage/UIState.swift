@@ -194,10 +194,27 @@ struct ReviewItemSnapshot: Identifiable, Equatable, Sendable {
     var id: UUID { item.id }
 }
 
+struct WorkflowGuidanceSnapshot: Equatable, Sendable {
+    let title: String
+    let state: String
+    let detail: String
+    let nextAction: String
+    let systemImage: String
+
+    static let empty = WorkflowGuidanceSnapshot(
+        title: "No Source Open",
+        state: "Waiting",
+        detail: "No source inbox or photo log is open.",
+        nextAction: "Open the default source or choose a source folder.",
+        systemImage: "tray"
+    )
+}
+
 struct SidebarSnapshot: Equatable, Sendable {
     var isVisible: Bool
     let sourceWorkspaceState: SourceWorkspaceState
     let sessionSummary: SessionSummary?
+    let workflowGuidance: WorkflowGuidanceSnapshot
     let photoLogGroups: [PhotoLogGroupSnapshot]
     let canMutateImportSelection: Bool
     let canPresentPhotoLogCreation: Bool
@@ -217,6 +234,7 @@ struct SidebarSnapshot: Equatable, Sendable {
         isVisible: true,
         sourceWorkspaceState: .idle,
         sessionSummary: nil,
+        workflowGuidance: .empty,
         photoLogGroups: [],
         canMutateImportSelection: false,
         canPresentPhotoLogCreation: false,

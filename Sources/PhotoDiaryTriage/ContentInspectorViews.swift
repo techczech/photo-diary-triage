@@ -63,6 +63,7 @@ struct DetailsInspectorView: View {
                         }
 
                         sourceSection
+                        workflowSection
                         sessionSection
                         photoLogsSection
                         walkDetailsSection
@@ -78,6 +79,12 @@ struct DetailsInspectorView: View {
             } else {
                 Color.clear
             }
+        }
+    }
+
+    private var workflowSection: some View {
+        GroupBox("Workflow") {
+            WorkflowGuidanceView(guidance: sidebarState.snapshot.workflowGuidance, compact: false)
         }
     }
 

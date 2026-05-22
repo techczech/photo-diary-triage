@@ -134,3 +134,4 @@
 {"ts":"2026-05-17T23:53:30Z","item_id":"PDT-2026-05-18-044","event":"report_created","status":"implemented","title":"robust copy to disk UI","file":"changelog/changelog/PDT-2026-05-18-044-robust-copy-to-disk-ui-report.md"}
 {"ts":"2026-05-19T00:29:47Z","item_id":"PDT-2026-05-19-045","event":"report_created","status":"implemented","title":"photo log speed and quality","file":"changelog/changelog/PDT-2026-05-19-045-photo-log-speed-and-quality-report.md"}
 {"ts":"2026-05-22T01:25:00Z","item_id":"PDT-2026-05-22-047","event":"report_created","status":"implemented","title":"photo log copy continuation","file":"changelog/changelog/PDT-2026-05-22-047-photo-log-copy-continuation-report.md"}
+{"ts":"2026-05-22T01:33:00Z","item_id":"PDT-2026-05-22-048","event":"report_created","status":"implemented","title":"workflow state guidance","file":"changelog/changelog/PDT-2026-05-22-048-workflow-state-guidance-report.md"}
