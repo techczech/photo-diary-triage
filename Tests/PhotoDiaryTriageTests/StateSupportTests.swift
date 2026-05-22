@@ -203,3 +203,219 @@ import Testing
     #expect(PhotoLogStatusPolicy.isMembershipLocked(status: "source_cleaned"))
     #expect(PhotoLogStatusPolicy.membershipLockMessage(status: "imported")?.contains("Copied") == true)
 }
+
+@Test func workflowGuidanceShowsSourceInboxReadyToCreatePhotoLog() {
+    let candidateID = UUID()
+    let plan = PhotoLogCreationPlan(
+        scope: PhotoLogScopeDescriptor(
+            kind: .folder,
+            label: "Morning walk",
+            sourceFolderPaths: ["/source"],
+            startDate: nil,
+            endDate: nil
+        ),
+        mode: .decidedInScope,
+        scopeMediaItemIDs: [candidateID],
+        candidateMediaItemIDs: [candidateID],
+        counts: PhotoLogSelectionCounts(included: 1, candidate: 0, excluded: 0, undecided: 3),
+        collisions: [],
+        disabledReason: nil
+    )
+
+    let guidance = WorkflowGuidanceResolver().resolve(
+        sourceWorkspaceState: .loaded(itemCount: 4, sourcePath: "/source"),
+        sessionSummary: makeWorkflowSummary(sessionKind: .inbox, itemCount: 4, included: 1),
+        creationPlan: plan,
+        isBrowsingArchive: false,
+        importReadiness: makeWorkflowReadiness(sessionKind: .inbox),
+        importOperation: .idle
+    )
+
+    #expect(guidance.title == "Source Inbox Ready")
+    #expect(guidance.state.contains("Photo log can be created"))
+    #expect(guidance.nextAction.contains("Create Photo Log"))
+}
+
+@Test func workflowGuidanceShowsPhotoLogNeedsIncludedPhotosBeforeCopy() {
+    let guidance = WorkflowGuidanceResolver().resolve(
+        sourceWorkspaceState: .loaded(itemCount: 3, sourcePath: "/source"),
+        sessionSummary: makeWorkflowSummary(sessionKind: .walkDraft, itemCount: 3, candidate: 2, excluded: 1),
+        creationPlan: nil,
+        isBrowsingArchive: false,
+        importReadiness: makeWorkflowReadiness(sessionKind: .walkDraft, candidateItems: 2, excludedItems: 1),
+        importOperation: .idle
+    )
+
+    #expect(guidance.title == "Photo Log In Progress")
+    #expect(guidance.state.contains("No uncopied S"))
+    #expect(guidance.nextAction.contains("Mark keepers with S"))
+}
+
+@Test func workflowGuidanceShowsPhotoLogReadyToCopy() {
+    let guidance = WorkflowGuidanceResolver().resolve(
+        sourceWorkspaceState: .loaded(itemCount: 2, sourcePath: "/source"),
+        sessionSummary: makeWorkflowSummary(sessionKind: .walkDraft, itemCount: 2, included: 2),
+        creationPlan: nil,
+        isBrowsingArchive: false,
+        importReadiness: makeWorkflowReadiness(sessionKind: .walkDraft, includedItems: 2, totalFiles: 2),
+        importOperation: .idle
+    )
+
+    #expect(guidance.title == "Photo Log Ready To Copy")
+    #expect(guidance.state.contains("2 S"))
+    #expect(guidance.nextAction == "Use Copy To Archive.")
+
+    let afterPreviousCopy = WorkflowGuidanceResolver().resolve(
+        sourceWorkspaceState: .loaded(itemCount: 2, sourcePath: "/source"),
+        sessionSummary: makeWorkflowSummary(sessionKind: .walkDraft, itemCount: 2, included: 2),
+        creationPlan: nil,
+        isBrowsingArchive: false,
+        importReadiness: makeWorkflowReadiness(sessionKind: .walkDraft, includedItems: 2, totalFiles: 2),
+        importOperation: ImportOperationSnapshot(
+            phase: .completed,
+            title: "Copy complete",
+            detail: "Previous copy finished.",
+            progress: nil,
+            destinationPath: "/archive"
+        )
+    )
+
+    #expect(afterPreviousCopy.title == "Photo Log Ready To Copy")
+    #expect(afterPreviousCopy.nextAction == "Use Copy To Archive.")
+}
+
+@Test func workflowGuidanceShowsCopyProgressAndFailureStates() {
+    let copying = WorkflowGuidanceResolver().resolve(
+        sourceWorkspaceState: .loaded(itemCount: 2, sourcePath: "/source"),
+        sessionSummary: makeWorkflowSummary(sessionKind: .walkDraft, itemCount: 2, included: 2),
+        creationPlan: nil,
+        isBrowsingArchive: false,
+        importReadiness: makeWorkflowReadiness(sessionKind: .walkDraft, includedItems: 2, totalFiles: 2),
+        importOperation: ImportOperationSnapshot(
+            phase: .copying,
+            title: "Copying to archive",
+            detail: "Copied 1 of 2 file(s).",
+            progress: ImportProgress(current: 1, total: 2),
+            destinationPath: "/archive"
+        )
+    )
+    let failed = WorkflowGuidanceResolver().resolve(
+        sourceWorkspaceState: .loaded(itemCount: 2, sourcePath: "/source"),
+        sessionSummary: makeWorkflowSummary(sessionKind: .walkDraft, itemCount: 2, included: 2),
+        creationPlan: nil,
+        isBrowsingArchive: false,
+        importReadiness: makeWorkflowReadiness(sessionKind: .walkDraft, includedItems: 2, totalFiles: 2),
+        importOperation: ImportOperationSnapshot(
+            phase: .failed,
+            title: "Copy failed",
+            detail: "Permission denied.",
+            progress: nil,
+            destinationPath: "/archive"
+        )
+    )
+
+    #expect(copying.title == "Copying To Archive")
+    #expect(copying.state == "1/2 files")
+    #expect(copying.nextAction.contains("Wait"))
+    #expect(failed.title == "Copy Failed")
+    #expect(failed.nextAction.contains("Copy To Archive again"))
+}
+
+@Test func workflowGuidanceShowsBackupAndCleanupStates() {
+    let backup = WorkflowGuidanceResolver().resolve(
+        sourceWorkspaceState: .loaded(itemCount: 2, sourcePath: "/source"),
+        sessionSummary: makeWorkflowSummary(sessionKind: .walkDraft, status: "imported", itemCount: 2, included: 2),
+        creationPlan: nil,
+        isBrowsingArchive: false,
+        importReadiness: makeWorkflowReadiness(sessionKind: .walkDraft, verifiedAwaitingBackupItems: 2),
+        importOperation: .idle
+    )
+    let cleanupLocked = WorkflowGuidanceResolver().resolve(
+        sourceWorkspaceState: .loaded(itemCount: 2, sourcePath: "/source"),
+        sessionSummary: makeWorkflowSummary(sessionKind: .walkDraft, status: "imported", itemCount: 2, included: 2),
+        creationPlan: nil,
+        isBrowsingArchive: false,
+        importReadiness: makeWorkflowReadiness(sessionKind: .walkDraft, cleanupPendingItems: 2),
+        importOperation: .idle
+    )
+    let cleanupReady = WorkflowGuidanceResolver().resolve(
+        sourceWorkspaceState: .loaded(itemCount: 2, sourcePath: "/source"),
+        sessionSummary: makeWorkflowSummary(sessionKind: .walkDraft, status: "imported", itemCount: 2, included: 2),
+        creationPlan: nil,
+        isBrowsingArchive: false,
+        importReadiness: makeWorkflowReadiness(sessionKind: .walkDraft, cleanupPendingItems: 2, backupConfirmed: true),
+        importOperation: .idle
+    )
+
+    #expect(backup.state.contains("Files verified"))
+    #expect(backup.nextAction.contains("Confirm"))
+    #expect(cleanupLocked.state.contains("Waiting for backup"))
+    #expect(cleanupLocked.nextAction == "Use Confirm Backup.")
+    #expect(cleanupReady.state.contains("Ready for source cleanup"))
+    #expect(cleanupReady.nextAction == "Use Clean Source SSD.")
+}
+
+@Test func workflowGuidanceShowsArchiveBrowsingAsReadOnly() {
+    let guidance = WorkflowGuidanceResolver().resolve(
+        sourceWorkspaceState: .loaded(itemCount: 2, sourcePath: "/source"),
+        sessionSummary: makeWorkflowSummary(sessionKind: .walkDraft, itemCount: 2, included: 2),
+        creationPlan: nil,
+        isBrowsingArchive: true,
+        importReadiness: nil,
+        importOperation: .idle
+    )
+
+    #expect(guidance.title == "Archive Browsing")
+    #expect(guidance.state.contains("Read-only"))
+    #expect(guidance.nextAction.contains("source inbox"))
+}
+
+private func makeWorkflowSummary(
+    sessionKind: SessionKind,
+    status: String = "draft",
+    itemCount: Int,
+    included: Int = 0,
+    candidate: Int = 0,
+    excluded: Int = 0
+) -> SessionSummary {
+    SessionSummary(
+        sessionID: UUID(),
+        sourceFolderPath: "/source",
+        workspaceSourceFolderPath: "/source",
+        itemCount: itemCount,
+        includedCount: included,
+        candidateCount: candidate,
+        excludedCount: excluded,
+        sessionKind: sessionKind,
+        status: status,
+        walkMetadata: .empty,
+        photoLogScope: nil
+    )
+}
+
+private func makeWorkflowReadiness(
+    sessionKind: SessionKind,
+    includedItems: Int = 0,
+    candidateItems: Int = 0,
+    excludedItems: Int = 0,
+    undecidedItems: Int = 0,
+    totalFiles: Int = 0,
+    verifiedAwaitingBackupItems: Int = 0,
+    cleanupPendingItems: Int = 0,
+    backupConfirmed: Bool = false
+) -> ImportReadinessSnapshot {
+    ImportReadinessSnapshot(
+        sessionKind: sessionKind,
+        includedItems: includedItems,
+        candidateItems: candidateItems,
+        excludedItems: excludedItems,
+        undecidedItems: undecidedItems,
+        rawCompanionFiles: 0,
+        totalFiles: totalFiles,
+        destinationPath: totalFiles > 0 ? "/archive/photo-log" : nil,
+        verifiedAwaitingBackupItems: verifiedAwaitingBackupItems,
+        cleanupPendingItems: cleanupPendingItems,
+        backupConfirmed: backupConfirmed,
+        cleanupRequiresBackupConfirmation: true
+    )
+}

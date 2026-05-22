@@ -288,6 +288,7 @@ final class AppState: ObservableObject {
     private let backupStore = BackupStore()
     private let persistedSessionNormalizer = PersistedSessionNormalizer()
     private let photoLogCreationResolver = PhotoLogCreationResolver()
+    private let workflowGuidanceResolver = WorkflowGuidanceResolver()
     private let fileManager: FileManager
     private let sourceWorkspaceFolderResolver: SourceWorkspaceFolderResolver
     private let supportRoot: URL
@@ -2836,11 +2837,25 @@ final class AppState: ObservableObject {
 
         let canReloadSourceWorkspace = sourceWorkspaceState.sourcePath != nil || currentSession != nil
         let importReadiness = importReadinessSnapshot(for: currentSession)
+        let photoLogCreationPlan = currentSession?.sessionKind == .inbox
+            ? proposedPhotoLogCreationPlan(mode: .decidedInScope)
+            : nil
+        let canPresentPhotoLogCreation = currentSession?.sessionKind == .inbox && photoLogCreationPlan != nil
+        let hiddenPhotoLogSummary = photoLogHiddenSummary()
+        let workflowGuidance = workflowGuidanceResolver.resolve(
+            sourceWorkspaceState: sourceWorkspaceState,
+            sessionSummary: summary,
+            creationPlan: photoLogCreationPlan,
+            isBrowsingArchive: isBrowsingArchive,
+            importReadiness: importReadiness,
+            importOperation: importOperation
+        )
 
         let snapshot = SidebarSnapshot(
             isVisible: isSidebarVisible,
             sourceWorkspaceState: sourceWorkspaceState,
             sessionSummary: summary,
+            workflowGuidance: workflowGuidance,
             photoLogGroups: photoLogGroups,
             canMutateImportSelection: canMutateImportSelection,
             canPresentPhotoLogCreation: canPresentPhotoLogCreation,
@@ -2853,7 +2868,7 @@ final class AppState: ObservableObject {
                 browserRoots: browserRoots,
                 selectedSidebarNodeID: selectedSidebarNodeID
             ),
-            hiddenPhotoLogSummary: photoLogHiddenSummary(),
+            hiddenPhotoLogSummary: hiddenPhotoLogSummary,
             statusMessage: statusMessage,
             importProgress: importProgress,
             importReadiness: importReadiness,

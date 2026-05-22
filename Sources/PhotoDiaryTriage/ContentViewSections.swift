@@ -389,6 +389,39 @@ struct CopyToArchiveStatusView: View {
     }
 }
 
+struct WorkflowGuidanceView: View {
+    let guidance: WorkflowGuidanceSnapshot
+    var compact: Bool = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: compact ? 5 : 7) {
+            Label(guidance.title, systemImage: guidance.systemImage)
+                .font(compact ? .caption.weight(.semibold) : .subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+
+            guidanceRow("State", guidance.state, lineLimit: compact ? 2 : 3)
+            guidanceRow("Now", guidance.detail, lineLimit: compact ? 3 : 4)
+            guidanceRow("Next", guidance.nextAction, lineLimit: compact ? 3 : 4)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func guidanceRow(_ label: String, _ value: String, lineLimit: Int) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(label)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: compact ? 32 : 40, alignment: .leading)
+
+            Text(value)
+                .font(compact ? .caption2 : .caption)
+                .foregroundStyle(label == "Next" ? .primary : .secondary)
+                .lineLimit(lineLimit)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
 struct SidebarStatusView: View {
     @ObservedObject var state: SidebarState
     let appRelease: AppRelease
@@ -401,10 +434,12 @@ struct SidebarStatusView: View {
                 .font(.caption2.monospaced())
                 .foregroundStyle(.secondary)
 
-            Text(snapshot.statusMessage)
-                .font(.caption)
+            WorkflowGuidanceView(guidance: snapshot.workflowGuidance, compact: true)
+
+            Text("Last update: \(snapshot.statusMessage)")
+                .font(.caption2)
                 .foregroundStyle(.secondary)
-                .lineLimit(3)
+                .lineLimit(2)
 
             if let progress = snapshot.importOperation.progress {
                 ProgressView(value: progress.fractionCompleted)
@@ -429,6 +464,8 @@ struct FooterStatusBarView: View {
     let appRelease: AppRelease
 
     var body: some View {
+        let workflow = state.snapshot.workflowGuidance
+
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             Text(appRelease.displayString)
                 .font(.caption.monospaced())
@@ -441,9 +478,10 @@ struct FooterStatusBarView: View {
                         .stroke(Color.accentColor.opacity(0.45), lineWidth: 1)
                 }
 
-            Text(state.snapshot.statusMessage)
+            Text("\(workflow.title): \(workflow.nextAction)")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
 
             if let progress = state.snapshot.importOperation.progress {
                 ProgressView(value: progress.fractionCompleted)
