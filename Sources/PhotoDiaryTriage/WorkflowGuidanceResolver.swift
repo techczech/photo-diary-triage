@@ -154,7 +154,7 @@ struct WorkflowGuidanceResolver {
                 title: "Photo Log Copied",
                 state: needsBackup ? "Waiting for backup confirmation" : "Ready for source cleanup",
                 detail: "\(readiness.cleanupPendingItems) copied source photo(s) can be cleaned after backup is confirmed.",
-                nextAction: needsBackup ? "Use Confirm Backup." : "Use Clean Source SSD.",
+                nextAction: needsBackup ? "Open Archive Folder, inspect the copied photos, then Confirm Backup." : "Use Clean Source SSD.",
                 systemImage: needsBackup ? "checkmark.shield" : "externaldrive.badge.minus"
             )
         }
@@ -164,7 +164,7 @@ struct WorkflowGuidanceResolver {
                 title: "Photo Log Copied",
                 state: "Files verified in archive",
                 detail: "\(readiness.verifiedAwaitingBackupItems) copied photo(s) are verified. Source cleanup is still locked.",
-                nextAction: "Confirm the backup before cleaning the SSD.",
+                nextAction: "Open Archive Folder, inspect the copied photos, then Confirm Backup.",
                 systemImage: "checkmark.seal"
             )
         }
@@ -205,10 +205,10 @@ struct WorkflowGuidanceResolver {
         let nextAction: String
         if let readiness, readiness.cleanupPendingItems > 0 {
             nextAction = readiness.cleanupRequiresBackupConfirmation && !readiness.backupConfirmed
-                ? "Confirm the backup before cleaning the SSD."
+                ? "Open Archive Folder, inspect the copied photos, then Confirm Backup."
                 : "Clean source files from the SSD when ready."
         } else if let readiness, readiness.verifiedAwaitingBackupItems > 0 {
-            nextAction = "Confirm the backup before cleaning the SSD."
+            nextAction = "Open Archive Folder, inspect the copied photos, then Confirm Backup."
         } else {
             nextAction = "Review the archive result or continue another log."
         }

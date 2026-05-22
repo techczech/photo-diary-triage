@@ -97,6 +97,16 @@ struct ImportReadinessSnapshot: Equatable, Sendable {
         totalFiles > 0
     }
 
+    var needsArchiveReviewBeforeBackupConfirmation: Bool {
+        if verifiedAwaitingBackupItems > 0 {
+            return cleanupRequiresBackupConfirmation && !backupConfirmed
+        }
+        if cleanupPendingItems > 0 {
+            return cleanupRequiresBackupConfirmation && !backupConfirmed
+        }
+        return false
+    }
+
     var copyButtonHelp: String {
         if hasFilesToCopy {
             return "Copy every S (include) photo into the archive destination shown here."
@@ -108,8 +118,8 @@ struct ImportReadinessSnapshot: Equatable, Sendable {
     }
 
     var confirmBackupButtonHelp: String {
-        if verifiedAwaitingBackupItems > 0 {
-            return "Confirm that copied files are backed up before source cleanup is offered."
+        if needsArchiveReviewBeforeBackupConfirmation {
+            return "Open the archive folder, inspect the copied photos, then confirm that they are backed up."
         }
         return "Available after copied files have been verified."
     }
@@ -129,7 +139,7 @@ struct ImportReadinessSnapshot: Equatable, Sendable {
             return "\(includedItems) S (include) photo(s)\(rawDetail) will be copied and verified before cleanup is offered."
         }
         if verifiedAwaitingBackupItems > 0 {
-            return "\(verifiedAwaitingBackupItems) copied photo(s) are verified. Confirm the backup before source cleanup."
+            return "\(verifiedAwaitingBackupItems) copied photo(s) are verified. Open the archive folder, inspect them, then confirm the backup."
         }
         if cleanupPendingItems > 0 {
             return "\(cleanupPendingItems) copied photo(s) are ready for source cleanup."

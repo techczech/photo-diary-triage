@@ -224,6 +224,11 @@ struct PhotoDiaryCommands: Commands {
             .keyboardShortcut("m", modifiers: [.command, .shift])
             .disabled(!appState.canCommitImport)
 
+            Button("Open Copied Archive Folder") {
+                appState.openArchiveDestinationForCurrentSession()
+            }
+            .disabled(!appState.canOpenArchiveDestination)
+
             Button("Confirm Backup And Enable Cleanup") {
                 appState.markBackupConfirmed()
             }
