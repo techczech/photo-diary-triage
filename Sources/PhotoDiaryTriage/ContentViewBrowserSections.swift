@@ -21,7 +21,7 @@ struct HeaderPaneView: View {
                 .frame(width: 560)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Label(appState.workspaceMode.title, systemImage: appState.workspaceMode.systemImage)
+                    Label(appState.workspaceContextTitle, systemImage: appState.workspaceContextSystemImage)
                         .font(.caption.weight(.semibold))
                     Text(appState.workspaceModeDetail)
                         .font(.caption)

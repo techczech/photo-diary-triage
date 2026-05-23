@@ -1161,7 +1161,97 @@ import Testing
     let sourceOnlySnapshot = state.reviewState.snapshot.visibleItems.first { $0.item.relativePath == "IMG_0002.jpg" }
     #expect(copiedSnapshot?.sourceArchiveCopy?.archivePath == archiveCopy.path)
     #expect(copiedSnapshot?.sourceLogOwnership == nil)
+    #expect(copiedSnapshot?.item.lifecycleState == .verified)
+    #expect(copiedSnapshot?.item.destinationURL?.path == archiveCopy.path)
+    #expect(copiedSnapshot?.item.selectionState == .undecided)
+    #expect(copiedSnapshot?.displayStatusLabel == "Copied")
+    #expect(copiedSnapshot?.isTriageActionLocked == true)
     #expect(sourceOnlySnapshot?.sourceArchiveCopy == nil)
+    #expect(sourceOnlySnapshot?.isTriageActionLocked == false)
+}
+
+@MainActor
+@Test func sourceInboxKeepsOnDiskCopiesOutOfNewPhotoLogDecisions() async throws {
+    let state = AppState(testing: true)
+    let root = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let sourceRoot = root.appendingPathComponent("source", isDirectory: true)
+    let archiveRoot = root.appendingPathComponent("archive", isDirectory: true)
+    let archiveWalk = archiveRoot
+        .appendingPathComponent("2026", isDirectory: true)
+        .appendingPathComponent("05 - May", isDirectory: true)
+        .appendingPathComponent("23-Saturday-Test-walk", isDirectory: true)
+    try writeTestFile(sourceRoot.appendingPathComponent("IMG_0001.jpg"), contents: "already copied")
+    let archiveCopy = archiveWalk.appendingPathComponent("23-Saturday-Test-walk-001.jpg")
+    try writeTestFile(archiveCopy, contents: "already copied")
+
+    var components = DateComponents()
+    components.year = 2026
+    components.month = 5
+    components.day = 23
+    components.hour = 9
+    components.minute = 30
+    components.timeZone = TimeZone(secondsFromGMT: 0)
+    let capturedAt = Calendar(identifier: .gregorian).date(from: components)!
+    let manifest = """
+    ---
+    media_item_id: \(UUID().uuidString)
+    archive_path: \(archiveCopy.path)
+    source_file_name: IMG_0001.jpg
+    captured_at: \(DateFormatting.iso8601.string(from: capturedAt))
+    walk_title: "Test walk"
+    walk_location: ""
+    ---
+
+    Test manifest.
+    """
+    try AppDirectories.ensureExists(archiveWalk)
+    try manifest.write(
+        to: archiveCopy.deletingPathExtension().appendingPathExtension("md"),
+        atomically: true,
+        encoding: .utf8
+    )
+
+    let copiedItem = makeTestMediaItem(
+        sourceRoot: sourceRoot,
+        fileName: "IMG_0001.jpg",
+        capturedAt: capturedAt,
+        selectionState: .included,
+        lifecycleState: .selectedForImport
+    )
+    var settings = state.settings
+    settings.archiveRoot = archiveRoot
+    state.settings = settings
+    state.testingSourceScanHandler = { _, _ in
+        SessionOpenResult(
+            session: makeTestSession(
+                sourceRoot: sourceRoot,
+                archiveRoot: archiveRoot,
+                items: [copiedItem],
+                workspaceSourceFolder: sourceRoot,
+                sessionKind: .inbox
+            ),
+            bursts: [],
+            clusters: []
+        )
+    }
+
+    await state.openSession(for: sourceRoot)
+
+    let copied = try #require(state.currentSession?.mediaItems.first)
+    #expect(copied.lifecycleState == .verified)
+    #expect(copied.selectionState == .undecided)
+    #expect(!state.canCommitImport)
+    #expect(!state.canPresentPhotoLogCreation)
+
+    state.selectMediaItems([copied.id])
+    state.markCurrentSelectionForImport()
+
+    let afterMark = try #require(state.currentSession?.mediaItems.first)
+    #expect(afterMark.lifecycleState == .verified)
+    #expect(afterMark.selectionState == .undecided)
+    #expect(state.statusMessage.contains("already copied"))
 }
 
 @MainActor
