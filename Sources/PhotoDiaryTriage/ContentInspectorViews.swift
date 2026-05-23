@@ -129,6 +129,49 @@ struct DetailsInspectorView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
+
+                    if session.sessionKind == .walkDraft || session.sessionKind == .inbox {
+                        Divider()
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            TextField("Photo log title", text: $walkTitle)
+                            TextField("Location", text: $walkLocation)
+                            TextField("Notes", text: $walkNotes, axis: .vertical)
+                                .lineLimit(2...4)
+
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 136), spacing: 6)], alignment: .leading, spacing: 6) {
+                                Button {
+                                    appState.updateWalkMetadata(title: walkTitle, location: walkLocation, notes: walkNotes)
+                                } label: {
+                                    Label("Save Details", systemImage: "checkmark")
+                                }
+                                .buttonStyle(.bordered)
+                                .help("Save the current log title, location, and notes.")
+
+                                Button {
+                                    appState.openPhotoLogLibrary()
+                                } label: {
+                                    Label("Open Logs", systemImage: "books.vertical")
+                                }
+                                .buttonStyle(.bordered)
+                                .help("Open the photo log list.")
+
+                                Button {
+                                    appState.saveCurrentLogDetailsAndStartNext(
+                                        title: walkTitle,
+                                        location: walkLocation,
+                                        notes: walkNotes
+                                    )
+                                } label: {
+                                    Label(appState.photoLogSessionStartActionTitle, systemImage: "plus.square.on.square")
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(!appState.canStartNewPhotoLogSession)
+                                .help(appState.photoLogSessionStartActionHelp)
+                            }
+                            .controlSize(.small)
+                        }
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }

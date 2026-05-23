@@ -668,13 +668,19 @@ struct ComparePanCommand: Equatable {
 
 struct FullPhotoSheet: View {
     @Environment(\.dismiss) private var dismiss
-    let appState: AppState
+    @ObservedObject var appState: AppState
     let item: MediaItem
     @State private var zoom: CGFloat = 1
     @State private var viewport = CompareViewport.zero
     @State private var panCommand = ComparePanCommand.idle
 
+    private var currentItem: MediaItem {
+        appState.previewingMediaItem ?? item
+    }
+
     var body: some View {
+        let displayItem = currentItem
+
         ZStack {
             ReviewKeyInputView(
                 isFocused: true,
@@ -687,11 +693,26 @@ struct FullPhotoSheet: View {
                 },
                 onSectionArrow: { _, _ in },
                 onSectionExpandCollapse: { _ in },
-                onSingleKey: { _ in },
+                onSingleKey: { key in
+                    switch key.uppercased() {
+                    case "S":
+                        appState.markPreviewItemForImport(displayItem.id)
+                    case "C":
+                        appState.markPreviewItemAsCandidate(displayItem.id)
+                    case "X":
+                        appState.excludePreviewItemFromImport(displayItem.id)
+                    case "D":
+                        appState.clearPreviewItemTriageState(displayItem.id)
+                    case "R":
+                        appState.toggleRawForPreviewItem(displayItem.id)
+                    default:
+                        break
+                    }
+                },
                 onPan: { dx, dy in
                     guard zoom > 1 else { return }
                     panCommand = ComparePanCommand(
-                        targetItemID: item.id,
+                        targetItemID: displayItem.id,
                         dx: dx,
                         dy: dy,
                         revision: panCommand.revision &+ 1
@@ -703,8 +724,12 @@ struct FullPhotoSheet: View {
                 onEscape: {
                     dismiss()
                 },
-                onSelectAll: { },
-                onDeselectAll: { },
+                onSelectAll: {
+                    appState.selectFocusedReviewItemOnly()
+                },
+                onDeselectAll: {
+                    appState.deselectAllVisibleMedia()
+                },
                 onZoomIn: {
                     zoom = min(4, zoom + 0.25)
                 },
@@ -723,17 +748,23 @@ struct FullPhotoSheet: View {
                 }
             )
             .frame(width: 1, height: 1)
+            .onChange(of: displayItem.id) { _, _ in
+                zoom = 1
+                viewport = .zero
+                panCommand = .idle
+            }
 
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(item.fileName)
+                        Text(displayItem.fileName)
                             .font(.title3.weight(.semibold))
-                        Text(item.relativePath)
+                        Text(displayItem.relativePath)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
+                    previewTriageControls(for: displayItem)
                     Button("Previous") {
                         appState.navigatePreview(by: -1)
                     }
@@ -758,7 +789,7 @@ struct FullPhotoSheet: View {
 
                 FullPhotoPreviewCanvas(
                     appState: appState,
-                    item: item,
+                    item: displayItem,
                     zoom: zoom,
                     viewport: $viewport,
                     panCommand: panCommand
@@ -772,6 +803,89 @@ struct FullPhotoSheet: View {
             zoom = 1
             viewport = .zero
             panCommand = .idle
+        }
+    }
+
+    @ViewBuilder
+    private func previewTriageControls(for item: MediaItem) -> some View {
+        let canEdit = appState.canMutateImportSelection && !item.lifecycleState.isImportedOrBeyond
+
+        HStack(spacing: 6) {
+            Text(item.selectionState.statusLabel)
+                .font(.caption2)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(statusBadgeColor(for: item.selectionState))
+                .clipShape(Capsule())
+
+            if appState.canMutateImportSelection {
+                Button("S") {
+                    appState.markPreviewItemForImport(item.id)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(!canEdit || item.selectionState.isIncluded)
+                .shortcutHint("S", help: "Select this photo for import")
+
+                Button("C") {
+                    appState.markPreviewItemAsCandidate(item.id)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(!canEdit || item.selectionState.isCandidate)
+                .shortcutHint("C", help: "Mark this photo as candidate")
+
+                Button("X") {
+                    appState.excludePreviewItemFromImport(item.id)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(!canEdit || item.selectionState.isExcluded)
+                .shortcutHint("X", help: "Exclude this photo from import")
+
+                if !item.selectionState.isUndecided {
+                    Button("D") {
+                        appState.clearPreviewItemTriageState(item.id)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(!canEdit)
+                    .shortcutHint("D", help: "Clear this photo back to undecided")
+                }
+
+                if !item.companionFiles.isEmpty {
+                    if item.importRawCompanions {
+                        Button("R") {
+                            appState.toggleRawForPreviewItem(item.id)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .disabled(!canEdit)
+                        .shortcutHint("R", help: "Toggle RAW companion import for this photo")
+                    } else {
+                        Button("R") {
+                            appState.toggleRawForPreviewItem(item.id)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(!canEdit)
+                        .shortcutHint("R", help: "Toggle RAW companion import for this photo")
+                    }
+                }
+            }
+        }
+    }
+
+    private func statusBadgeColor(for selectionState: SelectionState) -> Color {
+        switch selectionState {
+        case .included:
+            return Color.accentColor.opacity(0.15)
+        case .candidate:
+            return Color.orange.opacity(0.18)
+        case .excluded:
+            return Color.red.opacity(0.14)
+        case .undecided:
+            return Color.secondary.opacity(0.12)
         }
     }
 
@@ -872,8 +986,12 @@ struct CompareSheet: View {
                 onEscape: {
                     onClose()
                 },
-                onSelectAll: { },
-                onDeselectAll: { },
+                onSelectAll: {
+                    appState.selectAllComparisonItems()
+                },
+                onDeselectAll: {
+                    appState.deselectComparisonItems()
+                },
                 onZoomIn: {
                     zoom = min(4, zoom + 0.25)
                 },

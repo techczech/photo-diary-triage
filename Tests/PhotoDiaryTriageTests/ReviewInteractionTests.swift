@@ -370,6 +370,27 @@ import Testing
 }
 
 @MainActor
+@Test func compareSelectAllAndDeselectStayScopedToCompareItems() {
+    let items = makeSelectionItems(count: 4)
+    let state = makeReviewAppState(items: items)
+
+    state.openComparison(for: [items[0].id, items[2].id], title: "Compare Pair")
+    state.selectAllVisibleMedia()
+    #expect(state.selectedMediaItemIDs == Set(items.map(\.id)))
+
+    state.selectAllComparisonItems()
+
+    #expect(state.selectedMediaItemIDs == [items[0].id, items[2].id])
+    #expect(state.focusedReviewItemID == items[0].id)
+
+    state.selectedMediaItemIDs.insert(items[3].id)
+    state.deselectComparisonItems()
+
+    #expect(state.selectedMediaItemIDs == [items[3].id])
+    #expect(state.focusedReviewItemID == items[0].id)
+}
+
+@MainActor
 @Test func compareShortcutQRemovesFocusedItemAndKeepsNextFocused() {
     let items = makeSelectionItems(count: 3)
     let state = makeReviewAppState(items: items)
@@ -448,6 +469,59 @@ import Testing
     #expect(state.previewingMediaItemID == items[2].id)
     #expect(state.focusedReviewItemID == items[2].id)
     #expect(state.selectedMediaItemIDs == [items[2].id])
+}
+
+@MainActor
+@Test func previewTriageActionsMutatePreviewedItemOnly() {
+    let items = makeSelectionItems(count: 3)
+    let state = makeReviewAppState(items: items)
+    state.previewingMediaItemID = items[1].id
+    state.focusedReviewItemID = items[0].id
+    state.selectedMediaItemIDs = [items[0].id]
+
+    state.excludePreviewItemFromImport(items[1].id)
+
+    #expect(state.currentSession?.mediaItems.first(where: { $0.id == items[0].id })?.selectionState == .undecided)
+    #expect(state.currentSession?.mediaItems.first(where: { $0.id == items[1].id })?.selectionState == .excluded)
+    #expect(state.previewingMediaItemID == items[1].id)
+    #expect(state.focusedReviewItemID == items[1].id)
+    #expect(state.selectedMediaItemIDs == [items[1].id])
+
+    state.markPreviewItemForImport(items[1].id)
+
+    #expect(state.currentSession?.mediaItems.first(where: { $0.id == items[1].id })?.selectionState == .included)
+}
+
+@MainActor
+@Test func previewRawToggleTargetsPreviewedItem() {
+    let sourceRoot = URL(fileURLWithPath: "/tmp/review-preview-raw", isDirectory: true)
+    let capturedAt = Date(timeIntervalSince1970: 30_000)
+    let companion = CompanionFile(
+        sourceURL: sourceRoot.appendingPathComponent("second.cr3"),
+        relativePath: "second.cr3",
+        fileName: "second.cr3",
+        fileSizeBytes: 1,
+        kind: .raw
+    )
+    let items = [
+        makeTestMediaItem(sourceRoot: sourceRoot, fileName: "first.jpg", capturedAt: capturedAt),
+        makeTestMediaItem(
+            sourceRoot: sourceRoot,
+            fileName: "second.jpg",
+            capturedAt: capturedAt.addingTimeInterval(1),
+            companionFiles: [companion]
+        )
+    ]
+    let state = makeReviewAppState(items: items)
+    state.previewingMediaItemID = items[1].id
+
+    state.toggleRawForPreviewItem(items[1].id)
+
+    #expect(state.currentSession?.mediaItems.first(where: { $0.id == items[0].id })?.importRawCompanions == false)
+    #expect(state.currentSession?.mediaItems.first(where: { $0.id == items[1].id })?.importRawCompanions == true)
+    #expect(state.currentSession?.mediaItems.first(where: { $0.id == items[1].id })?.selectionState == .included)
+    #expect(state.focusedReviewItemID == items[1].id)
+    #expect(state.selectedMediaItemIDs == [items[1].id])
 }
 
 @MainActor
@@ -1430,6 +1504,112 @@ import Testing
     #expect(state.currentSession?.mediaItems.first { $0.relativePath == "IMG_0002.jpg" }?.lifecycleState == .selectedForImport)
     #expect(state.currentSession?.mediaItems.first { $0.relativePath == "IMG_0003.jpg" }?.selectionState == .excluded)
     #expect(state.canCommitImport)
+}
+
+@MainActor
+@Test func activePhotoLogControlsSaveRenameAndReturnToSourceInboxFromPhotoLogsMode() async throws {
+    let state = AppState(testing: true)
+    let root = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let archiveRoot = root.appendingPathComponent("archive", isDirectory: true)
+    let base = Date(timeIntervalSince1970: 1_779_533_000)
+    let fileNames = ["IMG_0101.jpg", "IMG_0102.jpg", "IMG_0103.jpg"]
+    for fileName in fileNames {
+        try writeTestFile(root.appendingPathComponent(fileName), contents: fileName)
+    }
+    let items = fileNames.enumerated().map { index, fileName in
+        makeTestMediaItem(
+            sourceRoot: root,
+            fileName: fileName,
+            capturedAt: base.addingTimeInterval(Double(index)),
+            selectionState: index == 0 ? .included : .undecided
+        )
+    }
+
+    state.currentSession = makeTestSession(
+        sourceRoot: root,
+        archiveRoot: archiveRoot,
+        items: items,
+        title: "Original Log",
+        workspaceSourceFolder: root,
+        sessionKind: .inbox
+    )
+    state.setWorkspaceMode(.cameraTriage)
+    if let leafID = state.browserNodeMap.values.first(where: { ($0.children?.isEmpty ?? true) && $0.mediaItemIDs.count == items.count })?.id {
+        state.selectedSidebarNodeID = leafID
+    }
+    state.activePane = .media
+
+    state.presentPhotoLogCreation()
+    state.createPhotoLog(openAfterCreate: true)
+    let draftID = try #require(state.currentSession?.id)
+    #expect(state.currentSession?.sessionKind == .walkDraft)
+
+    state.setWorkspaceMode(.photoLogs)
+    #expect(state.canStartNewPhotoLogSession)
+
+    state.saveCurrentLogDetailsAndStartNext(
+        title: "Renamed Log",
+        location: "Woodstock",
+        notes: "Ready for the next selection"
+    )
+
+    #expect(state.workspaceMode == .cameraTriage)
+    #expect(state.currentSession?.sessionKind == .inbox)
+    #expect(state.currentSession?.mediaItems.map(\.relativePath).sorted() == ["IMG_0102.jpg", "IMG_0103.jpg"])
+    #expect(state.canMutateImportSelection)
+    #expect(state.statusMessage.contains("Opened the source inbox"))
+
+    state.openSavedWalk(draftID)
+    #expect(state.currentSession?.walkMetadata.title == "Renamed Log")
+    #expect(state.currentSession?.walkMetadata.location == "Woodstock")
+    #expect(state.currentSession?.walkMetadata.notes == "Ready for the next selection")
+}
+
+@MainActor
+@Test func sourceInboxStartNewPhotoLogSessionPresentsCreationEditor() throws {
+    let state = AppState(testing: true)
+    let root = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let archiveRoot = root.appendingPathComponent("archive", isDirectory: true)
+    let fileNames = ["IMG_0201.jpg", "IMG_0202.jpg"]
+    for fileName in fileNames {
+        try writeTestFile(root.appendingPathComponent(fileName), contents: fileName)
+    }
+    let items = fileNames.enumerated().map { index, fileName in
+        makeTestMediaItem(
+            sourceRoot: root,
+            fileName: fileName,
+            capturedAt: Date(timeIntervalSince1970: 1_779_534_000 + Double(index)),
+            selectionState: index == 0 ? .included : .undecided
+        )
+    }
+
+    state.currentSession = makeTestSession(
+        sourceRoot: root,
+        archiveRoot: archiveRoot,
+        items: items,
+        title: "Inbox Log",
+        workspaceSourceFolder: root,
+        sessionKind: .inbox
+    )
+    state.setWorkspaceMode(.cameraTriage)
+    if let leafID = state.browserNodeMap.values.first(where: { ($0.children?.isEmpty ?? true) && $0.mediaItemIDs.count == items.count })?.id {
+        state.selectedSidebarNodeID = leafID
+    }
+    state.activePane = .media
+
+    #expect(state.canStartNewPhotoLogSession)
+    state.startNewPhotoLogSession()
+
+    let editor = try #require(state.activePhotoLogEditor)
+    if case .create = editor.mode {
+        #expect(editor.title == "Inbox Log")
+    } else {
+        Issue.record("Expected photo log creation editor.")
+    }
 }
 
 @MainActor
