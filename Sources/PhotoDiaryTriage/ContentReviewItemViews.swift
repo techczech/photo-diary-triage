@@ -147,16 +147,18 @@ struct ReviewGridCard: View {
 
                 Spacer(minLength: 0)
 
-                Text(item.selectionState.statusLabel)
+                Text(snapshot.displaySelectionState.statusLabel)
                     .font(.caption2)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(statusBadgeColor)
+                    .background(statusBadgeColor(for: snapshot.displaySelectionState))
                     .clipShape(Capsule())
             }
 
             if let ownership = snapshot.sourceLogOwnership {
                 SourceLogOwnershipBadge(ownership: ownership)
+            } else if let copyStatus = snapshot.directCopyStatus {
+                ReviewCopyStatusBadge(copyStatus: copyStatus)
             }
 
             if canMutateImportSelection {
@@ -220,8 +222,8 @@ struct ReviewGridCard: View {
         }
     }
 
-    private var statusBadgeColor: Color {
-        switch item.selectionState {
+    private func statusBadgeColor(for selectionState: SelectionState) -> Color {
+        switch selectionState {
         case .included:
             return Color.accentColor.opacity(0.15)
         case .candidate:
@@ -279,16 +281,18 @@ struct MediaItemRow: View {
                             .font(.caption.weight(.semibold))
                             .lineLimit(1)
                         Spacer()
-                        Text(item.selectionState.statusLabel)
+                        Text(snapshot.displaySelectionState.statusLabel)
                             .font(.caption2)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
-                            .background(statusBadgeColor)
+                            .background(statusBadgeColor(for: snapshot.displaySelectionState))
                             .clipShape(Capsule())
                     }
 
                     if let ownership = snapshot.sourceLogOwnership {
                         SourceLogOwnershipBadge(ownership: ownership)
+                    } else if let copyStatus = snapshot.directCopyStatus {
+                        ReviewCopyStatusBadge(copyStatus: copyStatus)
                     }
                 }
             }
@@ -351,8 +355,8 @@ struct MediaItemRow: View {
         }
     }
 
-    private var statusBadgeColor: Color {
-        switch item.selectionState {
+    private func statusBadgeColor(for selectionState: SelectionState) -> Color {
+        switch selectionState {
         case .included:
             return Color.accentColor.opacity(0.15)
         case .candidate:
@@ -387,5 +391,26 @@ private struct SourceLogOwnershipBadge: View {
 
     private var backgroundColor: Color {
         ownership.isCopied ? Color.green.opacity(0.12) : Color.blue.opacity(0.12)
+    }
+}
+
+private struct ReviewCopyStatusBadge: View {
+    let copyStatus: ReviewCopyStatusSnapshot
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "checkmark.seal.fill")
+                .imageScale(.small)
+            Text(copyStatus.label)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .font(.caption2.weight(.medium))
+        .foregroundStyle(Color.green.opacity(0.95))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color.green.opacity(0.12))
+        .clipShape(Capsule())
+        .help(copyStatus.helpText)
     }
 }

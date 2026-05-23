@@ -2695,6 +2695,7 @@ final class AppState: ObservableObject {
                 ownershipByPath[item.relativePath] = SourceLogOwnershipSnapshot(
                     title: title,
                     statusLabel: item.lifecycleState.isImportedOrBeyond ? "Copied" : "In Log",
+                    selectionState: item.selectionState,
                     isCopied: item.lifecycleState.isImportedOrBeyond
                 )
             }

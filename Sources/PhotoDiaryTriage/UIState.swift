@@ -211,11 +211,21 @@ struct ReviewItemSnapshot: Identifiable, Equatable, Sendable {
     let thumbnailFailed: Bool
 
     var id: UUID { item.id }
+
+    var displaySelectionState: SelectionState {
+        sourceLogOwnership?.selectionState ?? item.selectionState
+    }
+
+    var directCopyStatus: ReviewCopyStatusSnapshot? {
+        guard sourceLogOwnership == nil, item.lifecycleState.isImportedOrBeyond else { return nil }
+        return ReviewCopyStatusSnapshot(label: "Copied", helpText: "This photo has already been copied into the archive.")
+    }
 }
 
 struct SourceLogOwnershipSnapshot: Equatable, Sendable {
     let title: String
     let statusLabel: String
+    let selectionState: SelectionState
     let isCopied: Bool
 
     var badgeLabel: String {
@@ -231,6 +241,11 @@ struct SourceLogOwnershipSnapshot: Equatable, Sendable {
         }
         return "This source photo already belongs to \(title)."
     }
+}
+
+struct ReviewCopyStatusSnapshot: Equatable, Sendable {
+    let label: String
+    let helpText: String
 }
 
 struct WorkflowGuidanceSnapshot: Equatable, Sendable {

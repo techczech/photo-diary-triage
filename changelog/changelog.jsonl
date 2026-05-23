@@ -142,3 +142,4 @@
 {"ts":"2026-05-22T09:56:23Z","item_id":"PDT-2026-05-22-053","event":"report_created","status":"implemented","title":"view and triage modes","file":"changelog/changelog/PDT-2026-05-22-053-view-and-triage-modes-report.md"}
 {"ts":"2026-05-22T10:10:31Z","item_id":"PDT-2026-05-22-054","event":"report_created","status":"implemented","title":"archive filesystem naming","file":"changelog/changelog/PDT-2026-05-22-054-archive-filesystem-naming-report.md"}
 {"ts":"2026-05-23T00:05:40Z","item_id":"PDT-2026-05-23-055","event":"report_created","status":"implemented","title":"source log membership marks","file":"changelog/changelog/PDT-2026-05-23-055-source-log-membership-marks-report.md"}
+{"ts":"2026-05-23T00:16:08Z","item_id":"PDT-2026-05-23-056","event":"report_created","status":"implemented","title":"owned item log status badges","file":"changelog/changelog/PDT-2026-05-23-056-owned-item-log-status-badges-report.md"}
