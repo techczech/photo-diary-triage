@@ -117,6 +117,9 @@ struct ImportReadinessSnapshot: Equatable, Sendable {
 
     var copyButtonHelp: String {
         if hasFilesToCopy {
+            if sessionKind == .inbox {
+                return "Create a dated photo log automatically, then copy every S (include) photo into the archive."
+            }
             return "Copy every S (include) photo into the archive destination shown here."
         }
         if sessionKind == .walkDraft {
@@ -144,6 +147,9 @@ struct ImportReadinessSnapshot: Equatable, Sendable {
     var idleDetail: String {
         if hasFilesToCopy {
             let rawDetail = rawCompanionFiles == 0 ? "" : " plus \(rawCompanionFiles) RAW companion file(s)"
+            if sessionKind == .inbox {
+                return "\(includedItems) S (include) photo(s)\(rawDetail) will become a dated photo log, then be copied and verified."
+            }
             return "\(includedItems) S (include) photo(s)\(rawDetail) will be copied and verified before cleanup is offered."
         }
         if verifiedAwaitingBackupItems > 0 {

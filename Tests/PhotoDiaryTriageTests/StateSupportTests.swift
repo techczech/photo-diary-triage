@@ -230,11 +230,27 @@ import Testing
         backupConfirmed: false,
         cleanupRequiresBackupConfirmation: true
     )
+    let inboxReady = ImportReadinessSnapshot(
+        sessionKind: .inbox,
+        includedItems: 1,
+        candidateItems: 0,
+        excludedItems: 1,
+        undecidedItems: 0,
+        rawCompanionFiles: 0,
+        totalFiles: 1,
+        destinationPath: "/archive/dated-log",
+        verifiedAwaitingBackupItems: 0,
+        cleanupPendingItems: 0,
+        backupConfirmed: false,
+        cleanupRequiresBackupConfirmation: true
+    )
 
     #expect(inboxWaiting.idleDetail.contains("Open an existing photo log"))
     #expect(ready.idleDetail.contains("1 S (include) photo"))
     #expect(ready.idleDetail.contains("RAW companion"))
     #expect(ready.copyButtonHelp.contains("Copy every S"))
+    #expect(inboxReady.idleDetail.contains("dated photo log"))
+    #expect(inboxReady.copyButtonHelp.contains("Create a dated photo log"))
 }
 
 @Test func photoLogStatusPolicyLocksImportedMembershipEdits() {

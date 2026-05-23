@@ -11,6 +11,17 @@ private enum CurrentSessionUpdateKind {
     case sessionOnly
 }
 
+private enum CopyPreparationError: LocalizedError {
+    case cannotCreateAutomaticLog(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .cannotCreateAutomaticLog(let message):
+            return message
+        }
+    }
+}
+
 private struct CompareSelectionBackup {
     let selectionState: ReviewSelectionState
     let keyboardTarget: ReviewKeyboardTarget
@@ -1160,6 +1171,189 @@ final class AppState: ObservableObject {
         createPhotoLog(openAfterCreate: true)
     }
 
+    func canAddCurrentSourceDecisions(to sessionID: UUID) -> Bool {
+        do {
+            return try sourceDecisionAppendPlan(for: sessionID).itemsToAdd.isEmpty == false
+        } catch {
+            return false
+        }
+    }
+
+    func addCurrentSourceDecisions(to sessionID: UUID) {
+        do {
+            let appendPlan = try sourceDecisionAppendPlan(for: sessionID)
+            guard appendPlan.itemsToAdd.isEmpty == false else {
+                statusMessage = "Mark source photos with S, C, or X before adding them to this log."
+                return
+            }
+
+            let selectedIDs = Set(appendPlan.itemsToAdd.map(\.id))
+            var itemsToAdd = appendPlan.itemsToAdd
+            for index in itemsToAdd.indices where itemsToAdd[index].selectionState.isIncluded && itemsToAdd[index].lifecycleState == .discovered {
+                itemsToAdd[index].lifecycleState = try itemsToAdd[index].lifecycleState.transition(to: .selectedForImport)
+            }
+
+            var mergedItemsByPath: [String: MediaItem] = [:]
+            for item in appendPlan.target.mediaItems where mergedItemsByPath[item.relativePath] == nil {
+                mergedItemsByPath[item.relativePath] = item
+            }
+            for item in itemsToAdd where mergedItemsByPath[item.relativePath] == nil {
+                mergedItemsByPath[item.relativePath] = item
+            }
+
+            let mergedItems = mergedItemsByPath.values.sorted(by: Self.mediaSort)
+            let logGrouped = groupingService.group(items: mergedItems, settings: settings)
+            let inboxItems = appendPlan.inbox.mediaItems.filter { !selectedIDs.contains($0.id) }
+            let inboxGrouped = groupingService.group(items: inboxItems, settings: settings)
+
+            var updatedLog = appendPlan.target
+            updatedLog.mediaItems = logGrouped.items
+            updatedLog.lastUpdatedAt = Date()
+            updatedLog.status = appendPlan.target.status
+
+            var updatedInbox = appendPlan.inbox
+            updatedInbox.mediaItems = inboxGrouped.items
+            updatedInbox.lastUpdatedAt = Date()
+            updatedInbox.walkMetadata = .empty
+            updatedInbox.photoLogScope = nil
+            updatedInbox.sessionKind = .inbox
+            updatedInbox.sessionKindWasExplicit = true
+            updatedInbox.status = inboxGrouped.items.isEmpty ? "inbox_empty" : "draft"
+
+            try sessionManager.save(updatedLog, bursts: logGrouped.burstGroups, clusters: logGrouped.timeClusters, to: sessionStore)
+            try sessionManager.save(updatedInbox, bursts: inboxGrouped.burstGroups, clusters: inboxGrouped.timeClusters, to: sessionStore)
+            storePersistedSession(updatedLog, bursts: logGrouped.burstGroups, clusters: logGrouped.timeClusters)
+            storePersistedSession(updatedInbox, bursts: inboxGrouped.burstGroups, clusters: inboxGrouped.timeClusters)
+            invalidateInFlightSourceLoad()
+            openPersistedSessionRecord(
+                (updatedLog, logGrouped.burstGroups, logGrouped.timeClusters),
+                status: "Added \(itemsToAdd.count) marked photo(s) to \(updatedLog.walkMetadata.title.nonEmpty ?? "Untitled Photo Log"). Copy any new S photos when ready."
+            )
+            requestVisibleThumbnails(prefetching: updatedLog.mediaItems)
+        } catch {
+            statusMessage = userFacingCopyFailureMessage(for: error)
+        }
+    }
+
+    private func prepareSessionForCopy(_ session: ImportSession) throws -> ImportSession {
+        guard session.sessionKind == .inbox else { return session }
+        return try createAutomaticPhotoLogForCopy(from: session)
+    }
+
+    private func sourceDecisionAppendPlan(for sessionID: UUID) throws -> (target: ImportSession, inbox: ImportSession, itemsToAdd: [MediaItem]) {
+        guard let inbox = currentSession, inbox.sessionKind == .inbox else {
+            throw CopyPreparationError.cannotCreateAutomaticLog("Open the source inbox before adding marked photos to an existing log.")
+        }
+        guard let target = persistedSessions.first(where: { $0.0.id == sessionID && $0.0.sessionKind == .walkDraft })?.0 else {
+            throw CopyPreparationError.cannotCreateAutomaticLog("Photo log could not be found in the local library.")
+        }
+        guard target.status != LifecycleState.sourceCleaned.rawValue else {
+            throw CopyPreparationError.cannotCreateAutomaticLog("Source-cleaned logs cannot accept more photos.")
+        }
+        guard target.workspaceSourceFolder.standardizedFileURL.path == inbox.workspaceSourceFolder.standardizedFileURL.path else {
+            throw CopyPreparationError.cannotCreateAutomaticLog("This photo log belongs to a different source folder.")
+        }
+        guard let plan = proposedPhotoLogCreationPlan(mode: .decidedInScope) else {
+            throw CopyPreparationError.cannotCreateAutomaticLog("Select a source folder or review area before adding marked photos to this log.")
+        }
+
+        let plannedIDs = Set(plan.candidateMediaItemIDs)
+        let targetPaths = Set(target.mediaItems.map(\.relativePath))
+        let otherOwnedPaths = Set(persistedSessions
+            .map(\.0)
+            .filter {
+                $0.id != target.id &&
+                $0.sessionKind == .walkDraft &&
+                $0.workspaceSourceFolder.standardizedFileURL.path == inbox.workspaceSourceFolder.standardizedFileURL.path
+            }
+            .flatMap { $0.mediaItems.map(\.relativePath) })
+
+        let itemsToAdd = inbox.mediaItems.filter {
+            plannedIDs.contains($0.id) &&
+            !$0.lifecycleState.isImportedOrBeyond &&
+            !targetPaths.contains($0.relativePath) &&
+            !otherOwnedPaths.contains($0.relativePath)
+        }
+        return (target, inbox, itemsToAdd)
+    }
+
+    private func createAutomaticPhotoLogForCopy(from inbox: ImportSession) throws -> ImportSession {
+        guard let plan = proposedPhotoLogCreationPlan(mode: .decidedInScope) else {
+            throw CopyPreparationError.cannotCreateAutomaticLog("Select a source folder or review area before copying. The app needs that scope to create the photo log.")
+        }
+        guard plan.canCreate else {
+            throw CopyPreparationError.cannotCreateAutomaticLog(plan.disabledReason ?? "This selection cannot become a photo log yet.")
+        }
+
+        let plannedIDs = Set(plan.candidateMediaItemIDs)
+        let selectedIDs = Set(inbox.mediaItems.filter {
+            plannedIDs.contains($0.id) && !$0.lifecycleState.isImportedOrBeyond
+        }.map(\.id))
+        guard !selectedIDs.isEmpty else {
+            throw CopyPreparationError.cannotCreateAutomaticLog("These photos already belong to copied logs. Start a new source selection or open the existing log.")
+        }
+
+        var selectedItems = inbox.mediaItems.filter { selectedIDs.contains($0.id) }
+        for index in selectedItems.indices where selectedItems[index].selectionState.isIncluded && selectedItems[index].lifecycleState == .discovered {
+            selectedItems[index].lifecycleState = try selectedItems[index].lifecycleState.transition(to: .selectedForImport)
+        }
+
+        let remainingItems = inbox.mediaItems.filter { !selectedIDs.contains($0.id) }
+        let draftGrouped = groupingService.group(items: selectedItems, settings: settings)
+        let inboxGrouped = groupingService.group(items: remainingItems, settings: settings)
+        let autoTitle = automaticPhotoLogTitle(for: selectedItems)
+        let metadata = WalkMetadata(
+            title: autoTitle,
+            location: inbox.walkMetadata.location,
+            notes: inbox.walkMetadata.notes,
+            backupConfirmedAt: nil
+        )
+        let draftSession = ImportSession(
+            sourceFolder: inbox.sourceFolder,
+            workspaceSourceFolder: inbox.workspaceSourceFolder,
+            startedAt: Date(),
+            lastUpdatedAt: Date(),
+            walkMetadata: metadata,
+            photoLogScope: PhotoLogScopeDescriptor(
+                kind: plan.scope.kind,
+                label: autoTitle,
+                sourceFolderPaths: plan.scope.sourceFolderPaths,
+                startDate: plan.scope.startDate,
+                endDate: plan.scope.endDate
+            ),
+            archiveRoot: inbox.archiveRoot,
+            sessionKind: .walkDraft,
+            status: "draft",
+            mediaItems: draftGrouped.items
+        )
+
+        var updatedInbox = inbox
+        updatedInbox.mediaItems = inboxGrouped.items
+        updatedInbox.lastUpdatedAt = Date()
+        updatedInbox.walkMetadata = .empty
+        updatedInbox.photoLogScope = nil
+        updatedInbox.sessionKind = .inbox
+        updatedInbox.sessionKindWasExplicit = true
+        updatedInbox.status = updatedInbox.mediaItems.isEmpty ? "inbox_empty" : "draft"
+
+        try sessionManager.save(draftSession, bursts: draftGrouped.burstGroups, clusters: draftGrouped.timeClusters, to: sessionStore)
+        try sessionManager.save(updatedInbox, bursts: inboxGrouped.burstGroups, clusters: inboxGrouped.timeClusters, to: sessionStore)
+        storePersistedSession(draftSession, bursts: draftGrouped.burstGroups, clusters: draftGrouped.timeClusters)
+        storePersistedSession(updatedInbox, bursts: inboxGrouped.burstGroups, clusters: inboxGrouped.timeClusters)
+        invalidateInFlightSourceLoad()
+        openPersistedSessionRecord(
+            (draftSession, draftGrouped.burstGroups, draftGrouped.timeClusters),
+            status: "Created photo log \(autoTitle) and started copying \(draftSession.mediaItems.filter { $0.selectionState.isIncluded }.count) S photo(s)."
+        )
+        requestVisibleThumbnails(prefetching: draftSession.mediaItems)
+        return draftSession
+    }
+
+    private func automaticPhotoLogTitle(for items: [MediaItem]) -> String {
+        let date = items.compactMap(\.capturedAt).min() ?? Date()
+        return DateFormatting.automaticPhotoLogTitle.string(from: date)
+    }
+
     func saveActivePhotoLogEdits() {
         guard let editor = activePhotoLogEditor else { return }
         guard case .edit(let sessionID) = editor.mode else { return }
@@ -1292,12 +1486,28 @@ final class AppState: ObservableObject {
     func commitImport() {
         guard let session = currentSession else { return }
         guard canCommitImport else { return }
-        let readiness = importReadinessSnapshot(for: session)
+        let preparedSession: ImportSession
+        do {
+            preparedSession = try prepareSessionForCopy(session)
+        } catch {
+            let message = userFacingCopyFailureMessage(for: error)
+            importProgress = nil
+            importOperation = ImportOperationSnapshot(
+                phase: .failed,
+                title: "Copy failed",
+                detail: message,
+                progress: nil,
+                destinationPath: importReadinessSnapshot(for: session)?.destinationPath
+            )
+            statusMessage = message
+            return
+        }
+        let readiness = importReadinessSnapshot(for: preparedSession)
         let destinationPath = readiness?.destinationPath
 
         Task {
             do {
-                let initialProgress = ImportProgress(current: 0, total: readiness?.totalFiles ?? ImportProgress.expectedTotalEntries(for: session))
+                let initialProgress = ImportProgress(current: 0, total: readiness?.totalFiles ?? ImportProgress.expectedTotalEntries(for: preparedSession))
                 importProgress = initialProgress
                 importOperation = ImportOperationSnapshot(
                     phase: .copying,
@@ -1307,7 +1517,7 @@ final class AppState: ObservableObject {
                     destinationPath: destinationPath
                 )
                 statusMessage = "Copying marked files into archive..."
-                let result = try await importWorkflow.commit(session: session) { [weak self] progress in
+                let result = try await importWorkflow.commit(session: preparedSession) { [weak self] progress in
                     guard let self else { return }
                     self.importProgress = progress
                     if let progress {
@@ -1333,15 +1543,16 @@ final class AppState: ObservableObject {
                 )
                 statusMessage = "Imported \(result.fileManifests.count) marked items and wrote manifests."
             } catch {
+                let message = userFacingCopyFailureMessage(for: error)
                 importProgress = nil
                 importOperation = ImportOperationSnapshot(
                     phase: .failed,
                     title: "Copy failed",
-                    detail: error.localizedDescription,
+                    detail: message,
                     progress: nil,
                     destinationPath: destinationPath
                 )
-                statusMessage = error.localizedDescription
+                statusMessage = message
             }
         }
     }
@@ -1360,6 +1571,21 @@ final class AppState: ObservableObject {
                 statusMessage = error.localizedDescription
             }
         }
+    }
+
+    private func userFacingCopyFailureMessage(for error: Error) -> String {
+        if let lifecycleError = error as? LifecycleTransitionError {
+            switch lifecycleError {
+            case .invalidTransition:
+                return "Copy could not continue because this log already contains copied photos. Start a new photo log for new selections, or continue a log that still has uncopied S photos."
+            }
+        }
+
+        let message = error.localizedDescription
+        if message.localizedCaseInsensitiveContains("Invalid lifecycle transition") {
+            return "Copy could not continue because this log already contains copied photos. Start a new photo log for new selections, or continue a log that still has uncopied S photos."
+        }
+        return message
     }
 
     func archivePreview(for item: MediaItem) -> String {
