@@ -351,7 +351,15 @@ final class AppState: ObservableObject {
     private var cachedVisibleMediaItems: [MediaItem] = []
     private var cachedReviewInteractionGeneration: Int = -1
     private var cachedReviewInteractionItems: [MediaItem] = []
+    private var cachedGroupableInlineDaySectionsGeneration: Int = -1
+    private var cachedGroupableInlineDaySectionsNodeID: String?
+    private var cachedGroupableInlineDaySections: [InlineDaySection] = []
     private var persistedSessions: [(ImportSession, [BurstGroup], [TimeCluster])] = []
+    private var persistedSessionsGeneration: Int = 0
+    private var cachedSourceLogOwnershipWorkspacePath: String?
+    private var cachedSourceLogOwnershipExcludedSessionID: UUID?
+    private var cachedSourceLogOwnershipPersistedGeneration: Int = -1
+    private var cachedSourceLogOwnershipByRelativePath: [String: SourceLogOwnershipSnapshot] = [:]
     private var activePhotoLogMembershipEditID: UUID?
 
     init(testing: Bool = false) {
@@ -411,6 +419,7 @@ final class AppState: ObservableObject {
             settings = settingsStore.load(defaults: AppSettings.default())
             configurePersistence()
             archiveYearFolders = ArchiveLibraryInspector.existingYearFolders(in: settings.archiveRoot)
+            browserViewModel.invalidateArchiveTreeCache()
             archiveMediaCache.removeAll()
             primePersistedSessionCache()
             hasAttemptedInitialAutoLoad = false
@@ -1544,6 +1553,8 @@ final class AppState: ObservableObject {
                     progress: nil,
                     destinationPath: result.walkManifest.archiveFolder.path
                 )
+                archiveYearFolders = ArchiveLibraryInspector.existingYearFolders(in: settings.archiveRoot)
+                browserViewModel.invalidateArchiveTreeCache()
                 statusMessage = "Imported \(result.fileManifests.count) marked items and wrote manifests."
             } catch {
                 let message = userFacingCopyFailureMessage(for: error)
@@ -1643,6 +1654,7 @@ final class AppState: ObservableObject {
         settings.archiveRoot = archiveRoot
         archiveYearFolders = ArchiveLibraryInspector.existingYearFolders(in: archiveRoot)
         archiveMediaCache.removeAll()
+        browserViewModel.invalidateArchiveTreeCache()
         rebuildBrowserCaches()
 
         if var session = currentSession {
@@ -1746,6 +1758,7 @@ final class AppState: ObservableObject {
         }
         dayDetailDisplayMode = mode
         if mode == .sections {
+            expandInlineSectionsForGroupedReviewIfNeeded()
             ensureFocusedInlineSection()
         } else {
             pendingInlineSectionScrollTargetID = nil
@@ -2401,6 +2414,7 @@ final class AppState: ObservableObject {
             try reloadPersistedSessionsFromStore()
             persistSettings()
             archiveYearFolders = ArchiveLibraryInspector.existingYearFolders(in: settings.archiveRoot)
+            browserViewModel.invalidateArchiveTreeCache()
             loadMostRecentSession()
             statusMessage = "Imported app backup from \(url.lastPathComponent)."
         } catch {
@@ -2578,7 +2592,11 @@ final class AppState: ObservableObject {
     }
 
     private func resetInlineExpansionState() {
-        expandedInlineSectionIDs = Set(inlineSectionOrganizer.flattenSectionIDs(from: organizedInlineSections))
+        if dayDetailDisplayMode == .sections {
+            expandedInlineSectionIDs = Set(inlineSectionOrganizer.flattenSectionIDs(from: organizedInlineSections))
+        } else {
+            expandedInlineSectionIDs.removeAll()
+        }
         pendingInlineSectionScrollTargetID = nil
         estimatedVisibleReviewIndexRange = nil
 
@@ -2588,6 +2606,11 @@ final class AppState: ObservableObject {
             focusedInlineSectionID = nil
         }
         reconcileReviewSelectionWithVisibleItems()
+    }
+
+    private func expandInlineSectionsForGroupedReviewIfNeeded() {
+        guard dayDetailDisplayMode == .sections, expandedInlineSectionIDs.isEmpty else { return }
+        expandedInlineSectionIDs = Set(inlineSectionOrganizer.flattenSectionIDs(from: organizedInlineSections))
     }
 
     private var inlineSectionOrganizer: InlineSectionOrganizer {
@@ -2855,6 +2878,8 @@ final class AppState: ObservableObject {
             pendingLegacyMigrationNoticeCount = normalized.legacyRecoveredSessionCount
         }
         persistedSessions = normalized.records
+        persistedSessionsGeneration &+= 1
+        invalidateSourceLogOwnershipCache()
         refreshSidebarState()
     }
 
@@ -2862,6 +2887,8 @@ final class AppState: ObservableObject {
         persistedSessions.removeAll { $0.0.id == session.id }
         persistedSessions.append((session, bursts, clusters))
         persistedSessions.sort { $0.0.lastUpdatedAt > $1.0.lastUpdatedAt }
+        persistedSessionsGeneration &+= 1
+        invalidateSourceLogOwnershipCache()
         refreshSidebarState()
     }
 
@@ -2949,10 +2976,29 @@ final class AppState: ObservableObject {
 
     private func currentSourceLogOwnershipByRelativePath() -> [String: SourceLogOwnershipSnapshot] {
         guard let currentSession, currentSession.sessionKind == .inbox else { return [:] }
-        return sourceLogOwnershipByRelativePath(
+        let workspacePath = currentSession.workspaceSourceFolder.standardizedFileURL.path
+        if cachedSourceLogOwnershipWorkspacePath == workspacePath,
+           cachedSourceLogOwnershipExcludedSessionID == currentSession.id,
+           cachedSourceLogOwnershipPersistedGeneration == persistedSessionsGeneration {
+            return cachedSourceLogOwnershipByRelativePath
+        }
+
+        let ownership = sourceLogOwnershipByRelativePath(
             for: currentSession.workspaceSourceFolder,
             excludingSessionIDs: [currentSession.id]
         )
+        cachedSourceLogOwnershipWorkspacePath = workspacePath
+        cachedSourceLogOwnershipExcludedSessionID = currentSession.id
+        cachedSourceLogOwnershipPersistedGeneration = persistedSessionsGeneration
+        cachedSourceLogOwnershipByRelativePath = ownership
+        return ownership
+    }
+
+    private func invalidateSourceLogOwnershipCache() {
+        cachedSourceLogOwnershipWorkspacePath = nil
+        cachedSourceLogOwnershipExcludedSessionID = nil
+        cachedSourceLogOwnershipPersistedGeneration = -1
+        cachedSourceLogOwnershipByRelativePath = [:]
     }
 
     private func rebuildInboxSession(
@@ -3235,7 +3281,7 @@ final class AppState: ObservableObject {
 
         let canReloadSourceWorkspace = sourceWorkspaceState.sourcePath != nil || currentSession != nil
         let importReadiness = importReadinessSnapshot(for: currentSession)
-        let photoLogCreationPlan = currentSession?.sessionKind == .inbox
+        let photoLogCreationPlan = currentSession?.sessionKind == .inbox && !isBrowsingArchive
             ? proposedPhotoLogCreationPlan(mode: .decidedInScope)
             : nil
         let canPresentPhotoLogCreation = currentSession?.sessionKind == .inbox && photoLogCreationPlan != nil
@@ -3389,6 +3435,13 @@ final class AppState: ObservableObject {
             )
         }
         let itemSnapshotsByID = Dictionary(uniqueKeysWithValues: snapshots.map { ($0.id, $0) })
+        let canUseGroupedReviewModeValue = canUseGroupedReviewMode
+        let isGroupedReviewActive = canUseGroupedReviewModeValue && dayDetailDisplayMode == .sections
+        let organizedSections = isGroupedReviewActive ? organizedInlineSections : []
+        let groupedSections = isGroupedReviewActive
+            ? inlineSectionOrganizer.groupedReviewSections(from: organizedSections)
+            : []
+        let canUseGroupedSectionNavigation = isGroupedReviewActive && !groupedSections.isEmpty
 
         let snapshot = ReviewSnapshot(
             breadcrumbTitles: breadcrumbTitles,
@@ -3396,9 +3449,9 @@ final class AppState: ObservableObject {
             detailFolderNodes: detailFolderNodes,
             visibleItems: snapshots,
             itemSnapshotsByID: itemSnapshotsByID,
-            organizedInlineSections: organizedInlineSections,
-            groupedReviewSections: groupedReviewSections,
-            canUseGroupedReviewMode: canUseGroupedReviewMode,
+            organizedInlineSections: organizedSections,
+            groupedReviewSections: groupedSections,
+            canUseGroupedReviewMode: canUseGroupedReviewModeValue,
             availableDayDetailDisplayModes: availableDayDetailDisplayModes,
             dayOrganizationMode: dayOrganizationMode,
             dayDetailDisplayMode: dayDetailDisplayMode,
@@ -3414,8 +3467,8 @@ final class AppState: ObservableObject {
             canMutateImportSelection: canMutateImportSelection,
             canFocusReviewSurface: canFocusReviewSurface,
             canUseGroupedSectionNavigation: canUseGroupedSectionNavigation,
-            canExpandAllGroupedSections: canExpandAllGroupedSections,
-            canCollapseAllGroupedSections: canCollapseAllGroupedSections,
+            canExpandAllGroupedSections: canUseGroupedSectionNavigation && !organizedSections.isEmpty,
+            canCollapseAllGroupedSections: canUseGroupedSectionNavigation && !expandedInlineSectionIDs.isEmpty,
             canOpenComparison: canOpenComparison,
             canMarkSelectionForImport: canMarkSelectionForImport,
             canMarkSelectionAsCandidate: canMarkSelectionAsCandidate,
@@ -3516,6 +3569,9 @@ final class AppState: ObservableObject {
         cachedInlineDaySectionsGeneration = -1
         cachedInlineDaySectionsNodeID = nil
         cachedInlineDaySections = []
+        cachedGroupableInlineDaySectionsGeneration = -1
+        cachedGroupableInlineDaySectionsNodeID = nil
+        cachedGroupableInlineDaySections = []
         invalidateOrganizedInlineSectionCache()
         focusedInlineSectionID = nil
         pendingInlineSectionScrollTargetID = nil
@@ -3840,7 +3896,17 @@ final class AppState: ObservableObject {
     }
 
     private var groupableInlineDaySections: [InlineDaySection] {
-        inlineSectionOrganizer.inlineDaySections(from: selectedBrowserNode, visibleItems: contextMediaItems)
+        let nodeID = selectedBrowserNode?.id
+        if cachedGroupableInlineDaySectionsGeneration == inlineSectionCacheGeneration,
+           cachedGroupableInlineDaySectionsNodeID == nodeID {
+            return cachedGroupableInlineDaySections
+        }
+
+        let sections = inlineSectionOrganizer.inlineDaySections(from: selectedBrowserNode, visibleItems: contextMediaItems)
+        cachedGroupableInlineDaySectionsGeneration = inlineSectionCacheGeneration
+        cachedGroupableInlineDaySectionsNodeID = nodeID
+        cachedGroupableInlineDaySections = sections
+        return sections
     }
 
     private func filterReviewItems(_ items: [MediaItem]) -> [MediaItem] {
@@ -3968,10 +4034,14 @@ final class AppState: ObservableObject {
             return
         }
 
+        latencyRecorder.begin("archive.load")
         cancelArchiveMediaLoad()
 
         if let cachedItems = archiveMediaCache[nodeID] {
             requestVisibleThumbnails(prefetching: cachedItems)
+            DispatchQueue.main.async { [weak self] in
+                self?.latencyRecorder.end("archive.load")
+            }
             return
         }
 
@@ -4005,6 +4075,7 @@ final class AppState: ObservableObject {
                 case .failure(let error):
                     self.statusMessage = "Failed to load archive folder: \(error.localizedDescription)"
                 }
+                self.latencyRecorder.end("archive.load")
             }
         }
     }

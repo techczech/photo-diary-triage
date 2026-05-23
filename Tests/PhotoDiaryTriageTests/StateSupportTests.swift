@@ -113,6 +113,84 @@ import Testing
     #expect(!state.canMutateImportSelection)
 }
 
+@Test func archiveBrowserTreeIsReusedUntilInvalidated() throws {
+    let root = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let month = root
+        .appendingPathComponent("2026", isDirectory: true)
+        .appendingPathComponent("05 - May", isDirectory: true)
+    try AppDirectories.ensureExists(month.appendingPathComponent("Walk A", isDirectory: true))
+
+    let viewModel = BrowserViewModel(scanner: FileScanner())
+    let firstRoots = viewModel.browserRoots(
+        currentSession: nil,
+        bursts: [],
+        clusters: [],
+        archiveRoot: root,
+        sourceWorkspaceState: .idle,
+        workspaceMode: .archiveView
+    )
+
+    try AppDirectories.ensureExists(month.appendingPathComponent("Walk B", isDirectory: true))
+    let cachedRoots = viewModel.browserRoots(
+        currentSession: nil,
+        bursts: [],
+        clusters: [],
+        archiveRoot: root,
+        sourceWorkspaceState: .idle,
+        workspaceMode: .archiveView
+    )
+
+    viewModel.invalidateArchiveTreeCache()
+    let refreshedRoots = viewModel.browserRoots(
+        currentSession: nil,
+        bursts: [],
+        clusters: [],
+        archiveRoot: root,
+        sourceWorkspaceState: .idle,
+        workspaceMode: .archiveView
+    )
+
+    #expect(archiveWalkCount(in: firstRoots) == 1)
+    #expect(archiveWalkCount(in: cachedRoots) == 1)
+    #expect(archiveWalkCount(in: refreshedRoots) == 2)
+}
+
+@Test func archiveMediaLoadUsesFastFileAttributeScan() throws {
+    let root = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let walk = root
+        .appendingPathComponent("2026", isDirectory: true)
+        .appendingPathComponent("05 - May", isDirectory: true)
+        .appendingPathComponent("Tiny Walk", isDirectory: true)
+    let imageURL = walk.appendingPathComponent("IMG_0001.jpg")
+    try writeTestFile(imageURL, contents: "not real image data")
+    let modifiedAt = Date(timeIntervalSince1970: 1_779_532_200)
+    try FileManager.default.setAttributes([.modificationDate: modifiedAt], ofItemAtPath: imageURL.path)
+
+    let node = BrowserNode(
+        id: "archive-walk-\(walk.path)",
+        title: "Tiny Walk",
+        subtitle: walk.path,
+        kind: .archiveWalkFolder,
+        parentID: nil,
+        mediaItemIDs: [],
+        children: nil,
+        folderURL: walk
+    )
+
+    let maybeResult = try BrowserViewModel(scanner: FileScanner()).loadArchiveMedia(for: node, settings: makeTestSettings(root: root))
+    let result = try #require(maybeResult)
+    let item = try #require(result.items.first)
+
+    #expect(result.items.count == 1)
+    #expect(item.capturedAt?.timeIntervalSince1970 == modifiedAt.timeIntervalSince1970)
+    #expect(item.metadata.pixelWidth == nil)
+    #expect(item.metadata.raw.isEmpty)
+}
+
 @Test func photoLogCreationResolverFindsCollisionsOnlyInSameWorkspace() throws {
     let root = try makeTemporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -178,6 +256,12 @@ import Testing
     #expect(resolved.collisions.map(\.relativePath) == ["0.jpg"])
     #expect(resolved.collisions.first?.owningTitle == "Existing Same Source")
     #expect(resolved.disabledReason == "Some photos in this plan already belong to another photo log.")
+}
+
+private func archiveWalkCount(in nodes: [BrowserNode]) -> Int {
+    nodes.reduce(0) { count, node in
+        count + (node.kind == .archiveWalkFolder ? 1 : 0) + archiveWalkCount(in: node.children ?? [])
+    }
 }
 
 @Test func copyReadinessGuidesPhotoLogContinuationWhenNoIncludedFilesExist() {
