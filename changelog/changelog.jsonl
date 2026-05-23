@@ -147,3 +147,4 @@
 {"ts":"2026-05-23T00:48:24Z","item_id":"PDT-2026-05-23-058","event":"report_created","status":"implemented","title":"flexible automatic log creation","file":"changelog/changelog/PDT-2026-05-23-058-flexible-auto-log-creation-report.md"}
 {"ts":"2026-05-23T01:02:01Z","item_id":"PDT-2026-05-23-059","event":"report_created","status":"implemented","title":"interactive image responsiveness","file":"changelog/changelog/PDT-2026-05-23-059-interactive-image-responsiveness-report.md"}
 {"ts":"2026-05-23T07:25:48Z","item_id":"PDT-2026-05-23-060","event":"report_created","status":"implemented","title":"global responsiveness speed","file":"changelog/changelog/PDT-2026-05-23-060-global-responsiveness-speed-report.md"}
+{"ts":"2026-05-23T07:32:40Z","item_id":"PDT-2026-05-23-061","event":"report_created","status":"implemented","title":"zoom preview sidebar navigation","file":"changelog/changelog/PDT-2026-05-23-061-zoom-preview-sidebar-navigation-report.md"}

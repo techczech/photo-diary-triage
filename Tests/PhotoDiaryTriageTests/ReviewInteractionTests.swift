@@ -155,6 +155,62 @@ import Testing
     #expect(CompareKeyboardPanDirection(key: "q") == nil)
 }
 
+@Test func sidebarTreeExpansionDefaultsExposeMonthsWithoutOpeningMonthChildren() {
+    let walk = BrowserNode(
+        id: "archive-walk",
+        title: "Morning Walk",
+        subtitle: nil,
+        kind: .archiveWalkFolder,
+        parentID: "archive-month-2026-05",
+        mediaItemIDs: [],
+        children: nil
+    )
+    let month = BrowserNode(
+        id: "archive-month-2026-05",
+        title: "05 - May",
+        subtitle: nil,
+        kind: .month,
+        parentID: "archive-year-2026",
+        mediaItemIDs: [],
+        children: [walk]
+    )
+    let year = BrowserNode(
+        id: "archive-year-2026",
+        title: "2026",
+        subtitle: nil,
+        kind: .year,
+        parentID: "archive-root",
+        mediaItemIDs: [],
+        children: [month]
+    )
+    let root = BrowserNode(
+        id: "archive-root",
+        title: "Archive",
+        subtitle: nil,
+        kind: .archiveRoot,
+        parentID: "section-archive-library",
+        mediaItemIDs: [],
+        children: [year]
+    )
+    let section = BrowserNode(
+        id: "section-archive-library",
+        title: "Archive Library",
+        subtitle: nil,
+        kind: .archiveSection,
+        parentID: nil,
+        mediaItemIDs: [],
+        children: [root]
+    )
+
+    let expandedIDs = SidebarTreeExpansion.defaultExpandedNodeIDs(for: [section])
+
+    #expect(expandedIDs.contains("section-archive-library"))
+    #expect(expandedIDs.contains("archive-root"))
+    #expect(expandedIDs.contains("archive-year-2026"))
+    #expect(!expandedIDs.contains("archive-month-2026-05"))
+    #expect(!expandedIDs.contains("archive-walk"))
+}
+
 @Test func appChromeKeyboardShortcutsRequireCommandOption() {
     #expect(AppChromeKeyboardShortcut(key: "s", modifiers: [.command, .option]) == .toggleSidebar)
     #expect(AppChromeKeyboardShortcut(key: "I", modifiers: [.command, .option]) == .toggleInspector)
