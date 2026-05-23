@@ -491,6 +491,25 @@ import Testing
 }
 
 @MainActor
+@Test func flatReviewSnapshotDefersGroupedSectionPayloadUntilGroupedReviewOpens() {
+    let items = makeSelectionItems(count: 4)
+    let state = makeReviewAppState(items: items)
+
+    #expect(state.dayDetailDisplayMode == .review)
+    #expect(state.canUseGroupedReviewMode)
+    #expect(state.reviewState.snapshot.canUseGroupedReviewMode)
+    #expect(state.reviewState.snapshot.organizedInlineSections.isEmpty)
+    #expect(state.reviewState.snapshot.groupedReviewSections.isEmpty)
+
+    state.showGroupedReview()
+
+    #expect(state.dayDetailDisplayMode == .sections)
+    #expect(!state.reviewState.snapshot.organizedInlineSections.isEmpty)
+    #expect(!state.reviewState.snapshot.groupedReviewSections.isEmpty)
+    #expect(!state.expandedInlineSectionIDs.isEmpty)
+}
+
+@MainActor
 @Test func openCurrentSelectionJumpsFromSidebarIntoReviewGrid() {
     let items = makeSelectionItems(count: 4)
     let state = makeReviewAppState(items: items)

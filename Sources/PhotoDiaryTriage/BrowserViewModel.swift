@@ -11,6 +11,8 @@ final class BrowserViewModel {
     private let scanner: FileScanner
     private let fileManager: FileManager
     private let logger: Logger
+    private var cachedArchiveRootPath: String?
+    private var cachedArchiveSection: BrowserNode?
 
     init(
         scanner: FileScanner,
@@ -32,10 +34,15 @@ final class BrowserViewModel {
     ) -> [BrowserNode] {
         switch workspaceMode {
         case .archiveView, .archiveTriage:
-            return [buildArchiveSection(rootURL: archiveRoot)]
+            return [cachedArchiveSection(rootURL: archiveRoot)]
         case .cameraTriage:
             return [buildCurrentSessionSection(currentSession: currentSession, bursts: bursts, clusters: clusters, sourceWorkspaceState: sourceWorkspaceState)]
         }
+    }
+
+    func invalidateArchiveTreeCache() {
+        cachedArchiveRootPath = nil
+        cachedArchiveSection = nil
     }
 
     private func buildCurrentSessionSection(
@@ -130,7 +137,7 @@ final class BrowserViewModel {
     func loadArchiveMedia(for node: BrowserNode, settings: AppSettings) throws -> ArchiveLoadResult? {
         guard (node.children?.isEmpty ?? true), let folderURL = node.folderURL, node.kind == .archiveWalkFolder else { return nil }
 
-        let items = try scanner.scanFolder(folderURL, settings: settings)
+        let items = try scanner.scanFolder(folderURL, settings: settings, metadataMode: .fileAttributesOnly)
         logger.log("Loaded \(items.count) archived items from \(folderURL.path, privacy: .public)")
         return ArchiveLoadResult(
             nodeID: node.id,
@@ -327,6 +334,18 @@ final class BrowserViewModel {
             ],
             folderURL: nil
         )
+    }
+
+    private func cachedArchiveSection(rootURL: URL) -> BrowserNode {
+        let rootPath = rootURL.standardizedFileURL.path
+        if cachedArchiveRootPath == rootPath, let cachedArchiveSection {
+            return cachedArchiveSection
+        }
+
+        let section = buildArchiveSection(rootURL: rootURL)
+        cachedArchiveRootPath = rootPath
+        cachedArchiveSection = section
+        return section
     }
 
     private func buildArchiveYearNodes(rootURL: URL) -> [BrowserNode] {

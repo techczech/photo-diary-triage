@@ -705,10 +705,37 @@ struct FullPhotoSheet: View {
                 .shortcutHint("Escape", help: "Close preview (Escape)")
             }
 
-            ZoomableImageCanvas(imageURL: item.sourceURL, zoom: zoom)
+            FullPhotoPreviewCanvas(appState: appState, item: item, zoom: zoom)
         }
         .padding(20)
         .frame(minWidth: 900, minHeight: 650)
+    }
+}
+
+struct FullPhotoPreviewCanvas: View {
+    let appState: AppState
+    let item: MediaItem
+    let zoom: CGFloat
+
+    @ObservedObject private var thumbnailSlot: ThumbnailSlot
+
+    init(appState: AppState, item: MediaItem, zoom: CGFloat) {
+        self.appState = appState
+        self.item = item
+        self.zoom = zoom
+        _thumbnailSlot = ObservedObject(wrappedValue: appState.thumbnailSlot(for: item))
+    }
+
+    var body: some View {
+        ZoomableImageCanvas(
+            imageURL: item.sourceURL,
+            zoom: zoom,
+            placeholderImage: thumbnailSlot.image
+        )
+        .task(id: item.id) {
+            appState.requestThumbnail(for: item)
+            _ = appState.thumbnailImage(for: item)
+        }
     }
 }
 
@@ -1004,8 +1031,8 @@ struct CompareItemCard: View {
             }
 
             LoadedLockedCompareImageCanvas(
-                itemID: item.id,
-                imageURL: item.sourceURL,
+                appState: appState,
+                item: item,
                 zoom: zoom,
                 synchronizedViewport: $synchronizedViewport,
                 panCommand: panCommand,
@@ -1082,6 +1109,7 @@ struct ZoomToolbar: View {
 struct ZoomableImageCanvas: View {
     let imageURL: URL
     let zoom: CGFloat
+    var placeholderImage: NSImage?
     @StateObject private var imageModel = DecodedImageModel()
 
     var body: some View {
@@ -1104,6 +1132,18 @@ struct ZoomableImageCanvas: View {
                         )
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let placeholderImage {
+                Image(nsImage: placeholderImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .overlay(alignment: .bottomTrailing) {
+                        ProgressView()
+                            .controlSize(.small)
+                            .padding(10)
+                            .background(.ultraThinMaterial, in: Capsule())
+                            .padding(12)
+                    }
             } else {
                 Rectangle()
                     .fill(.quaternary)
@@ -1117,19 +1157,37 @@ struct ZoomableImageCanvas: View {
 }
 
 struct LoadedLockedCompareImageCanvas: View {
-    let itemID: UUID
-    let imageURL: URL
+    let appState: AppState
+    let item: MediaItem
     let zoom: CGFloat
     @Binding var synchronizedViewport: CompareViewport
     let panCommand: ComparePanCommand
     let isPanLocked: Bool
     @StateObject private var imageModel = DecodedImageModel()
+    @ObservedObject private var thumbnailSlot: ThumbnailSlot
+
+    init(
+        appState: AppState,
+        item: MediaItem,
+        zoom: CGFloat,
+        synchronizedViewport: Binding<CompareViewport>,
+        panCommand: ComparePanCommand,
+        isPanLocked: Bool
+    ) {
+        self.appState = appState
+        self.item = item
+        self.zoom = zoom
+        _synchronizedViewport = synchronizedViewport
+        self.panCommand = panCommand
+        self.isPanLocked = isPanLocked
+        _thumbnailSlot = ObservedObject(wrappedValue: appState.thumbnailSlot(for: item))
+    }
 
     var body: some View {
         Group {
             if let image = imageModel.image {
                 LockedCompareImageCanvas(
-                    itemID: itemID,
+                    itemID: item.id,
                     image: image,
                     zoom: zoom,
                     synchronizedViewport: $synchronizedViewport,
@@ -1137,14 +1195,34 @@ struct LoadedLockedCompareImageCanvas: View {
                     isPanLocked: isPanLocked
                 )
             } else {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(.quaternary)
-                    .overlay(ProgressView())
+                CompareImagePlaceholder(image: thumbnailSlot.image)
             }
         }
-        .task(id: imageURL) {
-            imageModel.load(.interactiveDisplay(imageURL))
+        .task(id: item.id) {
+            appState.requestThumbnail(for: item)
+            _ = appState.thumbnailImage(for: item)
+            imageModel.load(.interactiveDisplay(item.sourceURL))
         }
+    }
+}
+
+struct CompareImagePlaceholder: View {
+    let image: NSImage?
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(.quaternary)
+            } else {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(.quaternary)
+            }
+        }
+        .overlay(ProgressView())
     }
 }
 

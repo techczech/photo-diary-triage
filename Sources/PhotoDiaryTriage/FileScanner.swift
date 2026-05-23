@@ -1,5 +1,10 @@
 import Foundation
 
+enum FileScannerMetadataMode {
+    case full
+    case fileAttributesOnly
+}
+
 struct FileScanner {
     let fileManager: FileManager
     let metadataExtractor: MetadataExtractor
@@ -9,7 +14,11 @@ struct FileScanner {
         self.metadataExtractor = metadataExtractor
     }
 
-    func scanFolder(_ folder: URL, settings: AppSettings) throws -> [MediaItem] {
+    func scanFolder(
+        _ folder: URL,
+        settings: AppSettings,
+        metadataMode: FileScannerMetadataMode = .full
+    ) throws -> [MediaItem] {
         let resourceKeys: Set<URLResourceKey> = [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]
         let enumerator = fileManager.enumerator(at: folder, includingPropertiesForKeys: Array(resourceKeys))!
         let baseFolder = folder.resolvingSymlinksInPath().standardizedFileURL
@@ -39,7 +48,8 @@ struct FileScanner {
                     baseName: baseName,
                     extensionName: ext,
                     fileSizeBytes: fileSize,
-                    mediaKind: mediaKind
+                    mediaKind: mediaKind,
+                    contentModificationDate: values.contentModificationDate
                 )
             )
         }
@@ -51,7 +61,7 @@ struct FileScanner {
             try Task.checkCancellation()
 
             let primary = primaryCandidate(in: group)
-            let metadata = metadataExtractor.extract(from: primary.sourceURL)
+            let metadata = metadata(for: primary, mode: metadataMode)
             let companions = group
                 .filter { $0.sourceURL != primary.sourceURL && $0.mediaKind == .raw }
                 .map {
@@ -129,6 +139,24 @@ struct FileScanner {
 
         return resolvedFileURL.lastPathComponent
     }
+
+    private func metadata(for candidate: ScanCandidate, mode: FileScannerMetadataMode) -> MediaMetadata {
+        switch mode {
+        case .full:
+            return metadataExtractor.extract(from: candidate.sourceURL)
+        case .fileAttributesOnly:
+            return MediaMetadata(
+                capturedAt: candidate.contentModificationDate,
+                pixelWidth: nil,
+                pixelHeight: nil,
+                cameraModel: nil,
+                lensModel: nil,
+                latitude: nil,
+                longitude: nil,
+                raw: [:]
+            )
+        }
+    }
 }
 
 private struct ScanCandidate {
@@ -140,4 +168,5 @@ private struct ScanCandidate {
     var extensionName: String
     var fileSizeBytes: Int64
     var mediaKind: MediaKind
+    var contentModificationDate: Date?
 }
