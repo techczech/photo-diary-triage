@@ -828,7 +828,7 @@ import Testing
 }
 
 @MainActor
-@Test func createWalkDraftFromSelectionPersistsDraftAndRemovesItemsFromInbox() async {
+@Test func createWalkDraftFromSelectionPersistsDraftAndMarksOwnedItemsInInbox() async {
     let state = AppState(testing: true)
     let root = try! makeTemporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -870,7 +870,12 @@ import Testing
     await state.openSession(for: root)
 
     #expect(state.currentSession?.sessionKind == .inbox)
-    #expect(state.currentSession?.mediaItems.map(\.relativePath) == ["2.jpg", "3.jpg"])
+    #expect(state.currentSession?.mediaItems.map(\.relativePath) == ["0.jpg", "1.jpg", "2.jpg", "3.jpg"])
+    let ownedSnapshot = state.reviewState.snapshot.visibleItems.first { $0.item.relativePath == "0.jpg" }
+    let unownedSnapshot = state.reviewState.snapshot.visibleItems.first { $0.item.relativePath == "2.jpg" }
+    #expect(ownedSnapshot?.sourceLogOwnership?.title == "Holiday Day One")
+    #expect(ownedSnapshot?.sourceLogOwnership?.statusLabel == "In Log")
+    #expect(unownedSnapshot?.sourceLogOwnership == nil)
 }
 
 @MainActor
@@ -972,7 +977,12 @@ import Testing
 
     await state.openSession(for: root)
     #expect(state.currentSession?.sessionKind == .inbox)
-    #expect(state.currentSession?.mediaItems.map(\.relativePath) == ["0.jpg", "1.jpg"])
+    #expect(state.currentSession?.mediaItems.map(\.relativePath) == ["0.jpg", "1.jpg", "2.jpg"])
+    let returnedOwnedSnapshot = state.reviewState.snapshot.visibleItems.first { $0.item.relativePath == "2.jpg" }
+    let returnedUnownedSnapshot = state.reviewState.snapshot.visibleItems.first { $0.item.relativePath == "0.jpg" }
+    #expect(returnedOwnedSnapshot?.sourceLogOwnership?.title == "Editable Log")
+    #expect(returnedOwnedSnapshot?.sourceLogOwnership?.statusLabel == "In Log")
+    #expect(returnedUnownedSnapshot?.sourceLogOwnership == nil)
 }
 
 @MainActor

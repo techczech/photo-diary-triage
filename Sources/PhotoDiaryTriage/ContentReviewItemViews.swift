@@ -153,57 +153,70 @@ struct ReviewGridCard: View {
                     .padding(.vertical, 4)
                     .background(statusBadgeColor)
                     .clipShape(Capsule())
+            }
 
-                if canMutateImportSelection {
-                    Button("S", action: includeForImport)
-                        .buttonStyle(.bordered)
-                        .controlSize(.mini)
-                        .disabled(item.selectionState.isIncluded)
-                        .shortcutHint("S / Cmd-I", help: "Select this item for import (S / Cmd-I)")
+            if let ownership = snapshot.sourceLogOwnership {
+                SourceLogOwnershipBadge(ownership: ownership)
+            }
 
-                    Button("C", action: markAsCandidate)
-                        .buttonStyle(.bordered)
-                        .controlSize(.mini)
-                        .disabled(item.selectionState.isCandidate)
-                        .shortcutHint("C", help: "Mark this item as a candidate (C)")
-
-                    Button("X", action: excludeFromImport)
-                        .buttonStyle(.bordered)
-                        .controlSize(.mini)
-                        .disabled(item.selectionState.isExcluded)
-                        .shortcutHint("X / Cmd-Shift-X", help: "Exclude this item from import (X / Cmd-Shift-X)")
-
-                    if !item.selectionState.isUndecided {
-                        Button("D", action: clearTriageState)
-                            .buttonStyle(.bordered)
-                            .controlSize(.mini)
-                            .shortcutHint("D / Cmd-Shift-I", help: "Clear this item back to undecided (D / Cmd-Shift-I)")
-                    }
-
-                    if !item.companionFiles.isEmpty {
-                        if item.importRawCompanions {
-                            Button("R") {
-                                setIncludeRaw(false)
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.mini)
-                            .shortcutHint("R / Cmd-Option-R", help: "Toggle RAW companions for this item (R / Cmd-Option-R)")
-                        } else {
-                            Button("R") {
-                                setIncludeRaw(true)
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.mini)
-                            .shortcutHint("R / Cmd-Option-R", help: "Toggle RAW companions for this item (R / Cmd-Option-R)")
-                        }
-                    }
-                }
+            if canMutateImportSelection {
+                actionRow
             }
         }
         .contentShape(RoundedRectangle(cornerRadius: 12))
         .shortcutHint("Shift-click / Cmd-click / Double-click", help: "Click to select. Shift-click extends the selection, Command-click toggles selection, and double-click opens preview.")
         .overlay {
             ReviewGridClickTarget(onClick: onClick)
+        }
+    }
+
+    @ViewBuilder
+    private var actionRow: some View {
+        HStack(spacing: 6) {
+            Button("S", action: includeForImport)
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+                .disabled(item.selectionState.isIncluded)
+                .shortcutHint("S / Cmd-I", help: "Select this item for import (S / Cmd-I)")
+
+            Button("C", action: markAsCandidate)
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+                .disabled(item.selectionState.isCandidate)
+                .shortcutHint("C", help: "Mark this item as a candidate (C)")
+
+            Button("X", action: excludeFromImport)
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+                .disabled(item.selectionState.isExcluded)
+                .shortcutHint("X / Cmd-Shift-X", help: "Exclude this item from import (X / Cmd-Shift-X)")
+
+            if !item.selectionState.isUndecided {
+                Button("D", action: clearTriageState)
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+                    .shortcutHint("D / Cmd-Shift-I", help: "Clear this item back to undecided (D / Cmd-Shift-I)")
+            }
+
+            if !item.companionFiles.isEmpty {
+                if item.importRawCompanions {
+                    Button("R") {
+                        setIncludeRaw(false)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.mini)
+                    .shortcutHint("R / Cmd-Option-R", help: "Toggle RAW companions for this item (R / Cmd-Option-R)")
+                } else {
+                    Button("R") {
+                        setIncludeRaw(true)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+                    .shortcutHint("R / Cmd-Option-R", help: "Toggle RAW companions for this item (R / Cmd-Option-R)")
+                }
+            }
+
+            Spacer(minLength: 0)
         }
     }
 
@@ -272,6 +285,10 @@ struct MediaItemRow: View {
                             .padding(.vertical, 4)
                             .background(statusBadgeColor)
                             .clipShape(Capsule())
+                    }
+
+                    if let ownership = snapshot.sourceLogOwnership {
+                        SourceLogOwnershipBadge(ownership: ownership)
                     }
                 }
             }
@@ -345,5 +362,30 @@ struct MediaItemRow: View {
         case .undecided:
             return Color.secondary.opacity(0.12)
         }
+    }
+}
+
+private struct SourceLogOwnershipBadge: View {
+    let ownership: SourceLogOwnershipSnapshot
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: ownership.isCopied ? "checkmark.seal.fill" : "tray.full.fill")
+                .imageScale(.small)
+            Text(ownership.badgeLabel)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .font(.caption2.weight(.medium))
+        .foregroundStyle(ownership.isCopied ? Color.green.opacity(0.95) : Color.blue.opacity(0.95))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(backgroundColor)
+        .clipShape(Capsule())
+        .help(ownership.helpText)
+    }
+
+    private var backgroundColor: Color {
+        ownership.isCopied ? Color.green.opacity(0.12) : Color.blue.opacity(0.12)
     }
 }
