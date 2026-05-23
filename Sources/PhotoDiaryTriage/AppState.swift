@@ -702,6 +702,11 @@ final class AppState: ObservableObject {
         canPresentPhotoLogCreation
     }
 
+    var canStartNewPhotoLogFromCurrentLog: Bool {
+        guard importOperation.isRunning == false else { return false }
+        return currentSession?.sessionKind == .walkDraft
+    }
+
     var selectedMediaItems: [MediaItem] {
         selectedMediaItemIDs.compactMap { mediaItem(for: $0) }.sorted(by: Self.mediaSort)
     }
@@ -850,6 +855,40 @@ final class AppState: ObservableObject {
 
     func openSourceInbox(for workspaceSourceFolder: URL) {
         loadSourceWorkspace(folder: workspaceSourceFolder, origin: .savedWalkInbox)
+    }
+
+    func startNewPhotoLogFromCurrentLog() {
+        guard canStartNewPhotoLogFromCurrentLog, let currentSession else {
+            statusMessage = "Open a photo log before starting a new one."
+            return
+        }
+
+        let sourceFolder = currentSession.workspaceSourceFolder.standardizedFileURL
+        let sourceFolderPath = sourceFolder.path
+        let logTitle = currentSession.walkMetadata.title.nonEmpty ?? "current photo log"
+
+        importProgress = nil
+        importOperation = .idle
+
+        if let inboxRecord = persistedSessions.first(where: {
+            $0.0.sessionKind == .inbox &&
+            $0.0.workspaceSourceFolder.standardizedFileURL.path == sourceFolderPath
+        }) {
+            invalidateInFlightSourceLoad()
+            sourceWorkspaceState = inboxRecord.0.mediaItems.isEmpty
+                ? .empty(sourcePath: sourceFolderPath)
+                : .loaded(itemCount: inboxRecord.0.mediaItems.count, sourcePath: sourceFolderPath)
+            setWorkspaceMode(.cameraTriage)
+            openPersistedSessionRecord(
+                inboxRecord,
+                status: "Closed \(logTitle). Opened the source inbox so you can start a new photo log."
+            )
+            requestVisibleThumbnails(prefetching: inboxRecord.0.mediaItems)
+            return
+        }
+
+        statusMessage = "Closing \(logTitle) and scanning the source inbox..."
+        loadSourceWorkspace(folder: sourceFolder, origin: .savedWalkInbox)
     }
 
     func openDefaultSourceWorkspace() {

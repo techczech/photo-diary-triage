@@ -241,6 +241,16 @@ struct ActionButtonsPaneView: View {
 
     private var actionButtons: some View {
         Group {
+            if appState.canStartNewPhotoLogFromCurrentLog {
+                Button {
+                    appState.startNewPhotoLogFromCurrentLog()
+                } label: {
+                    Label("Start New Photo Log", systemImage: "plus.square.on.square")
+                }
+                .buttonStyle(.borderedProminent)
+                .help("Close the current photo log and return to the source inbox to mark the next set.")
+            }
+
             Button("Copy To Archive") {
                 appState.commitImport()
             }

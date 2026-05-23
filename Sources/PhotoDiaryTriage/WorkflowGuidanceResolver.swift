@@ -156,7 +156,7 @@ struct WorkflowGuidanceResolver {
                 detail: needsBackup
                     ? "\(readiness.cleanupPendingItems) copied source photo(s) are locked until backup is confirmed."
                     : "Backup is confirmed. \(readiness.cleanupPendingItems) copied source photo(s) can now be cleaned from the SSD.",
-                nextAction: needsBackup ? "Open Archive Folder, inspect the copied photos, then Confirm Backup." : "Use Clean Source SSD.",
+                nextAction: needsBackup ? "Use Start New Photo Log, or Open Archive Folder and Confirm Backup." : "Use Start New Photo Log, or Clean Source SSD when ready.",
                 systemImage: needsBackup ? "checkmark.shield" : "externaldrive.badge.minus"
             )
         }
@@ -166,7 +166,7 @@ struct WorkflowGuidanceResolver {
                 title: "Photo Log Copied",
                 state: "Files verified in archive",
                 detail: "\(readiness.verifiedAwaitingBackupItems) copied photo(s) are verified. Source cleanup is still locked.",
-                nextAction: "Open Archive Folder, inspect the copied photos, then Confirm Backup.",
+                nextAction: "Use Start New Photo Log, or Open Archive Folder and Confirm Backup.",
                 systemImage: "checkmark.seal"
             )
         }
@@ -207,12 +207,12 @@ struct WorkflowGuidanceResolver {
         let nextAction: String
         if let readiness, readiness.cleanupPendingItems > 0 {
             nextAction = readiness.cleanupRequiresBackupConfirmation && !readiness.backupConfirmed
-                ? "Open Archive Folder, inspect the copied photos, then Confirm Backup."
-                : "Clean source files from the SSD when ready."
+                ? "Use Start New Photo Log, or Open Archive Folder and Confirm Backup."
+                : "Use Start New Photo Log, or clean source files from the SSD when ready."
         } else if let readiness, readiness.verifiedAwaitingBackupItems > 0 {
-            nextAction = "Open Archive Folder, inspect the copied photos, then Confirm Backup."
+            nextAction = "Use Start New Photo Log, or Open Archive Folder and Confirm Backup."
         } else {
-            nextAction = "Review the archive result or continue another log."
+            nextAction = "Use Start New Photo Log or continue another log."
         }
 
         return WorkflowGuidanceSnapshot(
