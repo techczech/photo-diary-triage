@@ -875,6 +875,9 @@ import Testing
     let unownedSnapshot = state.reviewState.snapshot.visibleItems.first { $0.item.relativePath == "2.jpg" }
     #expect(ownedSnapshot?.sourceLogOwnership?.title == "Holiday Day One")
     #expect(ownedSnapshot?.sourceLogOwnership?.statusLabel == "In Log")
+    #expect(ownedSnapshot?.sourceLogOwnership?.selectionState == .included)
+    #expect(ownedSnapshot?.displaySelectionState == .included)
+    #expect(ownedSnapshot?.item.selectionState == .undecided)
     #expect(unownedSnapshot?.sourceLogOwnership == nil)
 }
 
@@ -982,7 +985,28 @@ import Testing
     let returnedUnownedSnapshot = state.reviewState.snapshot.visibleItems.first { $0.item.relativePath == "0.jpg" }
     #expect(returnedOwnedSnapshot?.sourceLogOwnership?.title == "Editable Log")
     #expect(returnedOwnedSnapshot?.sourceLogOwnership?.statusLabel == "In Log")
+    #expect(returnedOwnedSnapshot?.sourceLogOwnership?.selectionState == .included)
+    #expect(returnedOwnedSnapshot?.displaySelectionState == .included)
+    #expect(returnedOwnedSnapshot?.item.selectionState == .undecided)
     #expect(returnedUnownedSnapshot?.sourceLogOwnership == nil)
+}
+
+@MainActor
+@Test func openedPhotoLogKeepsCopiedStatusVisibleOnImportedItems() {
+    let root = URL(fileURLWithPath: "/tmp/review-copied-log", isDirectory: true)
+    let item = makeTestMediaItem(
+        sourceRoot: root,
+        fileName: "copied.jpg",
+        capturedAt: Date(timeIntervalSince1970: 40_000),
+        selectionState: .included,
+        lifecycleState: .verified
+    )
+    let state = makeReviewAppState(items: [item])
+
+    let snapshot = state.reviewState.snapshot.visibleItems.first
+    #expect(snapshot?.displaySelectionState == .included)
+    #expect(snapshot?.directCopyStatus?.label == "Copied")
+    #expect(snapshot?.sourceLogOwnership == nil)
 }
 
 @MainActor
