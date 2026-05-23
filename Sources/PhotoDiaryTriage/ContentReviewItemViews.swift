@@ -147,11 +147,11 @@ struct ReviewGridCard: View {
 
                 Spacer(minLength: 0)
 
-                Text(snapshot.displaySelectionState.statusLabel)
+                Text(snapshot.displayStatusLabel)
                     .font(.caption2)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(statusBadgeColor(for: snapshot.displaySelectionState))
+                    .background(statusBadgeColor(for: snapshot.displayStatusKind))
                     .clipShape(Capsule())
             }
 
@@ -163,7 +163,11 @@ struct ReviewGridCard: View {
                 ReviewCopyStatusBadge(copyStatus: copyStatus)
             }
 
-            if canMutateImportSelection {
+            if let visibleLockNotice = snapshot.visibleLockNotice {
+                ReviewDecisionLockNotice(text: visibleLockNotice)
+            }
+
+            if canMutateImportSelection && !snapshot.isTriageActionLocked {
                 actionRow
             }
         }
@@ -224,15 +228,17 @@ struct ReviewGridCard: View {
         }
     }
 
-    private func statusBadgeColor(for selectionState: SelectionState) -> Color {
-        switch selectionState {
-        case .included:
+    private func statusBadgeColor(for statusKind: ReviewDisplayStatusKind) -> Color {
+        switch statusKind {
+        case .copied:
+            return Color.green.opacity(0.14)
+        case .selection(.included):
             return Color.accentColor.opacity(0.15)
-        case .candidate:
+        case .selection(.candidate):
             return Color.orange.opacity(0.18)
-        case .excluded:
+        case .selection(.excluded):
             return Color.red.opacity(0.14)
-        case .undecided:
+        case .selection(.undecided):
             return Color.secondary.opacity(0.12)
         }
     }
@@ -283,11 +289,11 @@ struct MediaItemRow: View {
                             .font(.caption.weight(.semibold))
                             .lineLimit(1)
                         Spacer()
-                        Text(snapshot.displaySelectionState.statusLabel)
+                        Text(snapshot.displayStatusLabel)
                             .font(.caption2)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
-                            .background(statusBadgeColor(for: snapshot.displaySelectionState))
+                            .background(statusBadgeColor(for: snapshot.displayStatusKind))
                             .clipShape(Capsule())
                     }
 
@@ -297,6 +303,10 @@ struct MediaItemRow: View {
                         SourceArchiveCopyBadge(archiveCopy: archiveCopy)
                     } else if let copyStatus = snapshot.directCopyStatus {
                         ReviewCopyStatusBadge(copyStatus: copyStatus)
+                    }
+
+                    if let visibleLockNotice = snapshot.visibleLockNotice {
+                        ReviewDecisionLockNotice(text: visibleLockNotice)
                     }
                 }
             }
@@ -317,7 +327,7 @@ struct MediaItemRow: View {
 
     @ViewBuilder
     private var compactActionRow: some View {
-        if canMutateImportSelection {
+        if canMutateImportSelection && !snapshot.isTriageActionLocked {
             HStack(spacing: 6) {
                 Button("S", action: includeForImport)
                     .buttonStyle(.bordered)
@@ -359,17 +369,31 @@ struct MediaItemRow: View {
         }
     }
 
-    private func statusBadgeColor(for selectionState: SelectionState) -> Color {
-        switch selectionState {
-        case .included:
+    private func statusBadgeColor(for statusKind: ReviewDisplayStatusKind) -> Color {
+        switch statusKind {
+        case .copied:
+            return Color.green.opacity(0.14)
+        case .selection(.included):
             return Color.accentColor.opacity(0.15)
-        case .candidate:
+        case .selection(.candidate):
             return Color.orange.opacity(0.18)
-        case .excluded:
+        case .selection(.excluded):
             return Color.red.opacity(0.14)
-        case .undecided:
+        case .selection(.undecided):
             return Color.secondary.opacity(0.12)
         }
+    }
+}
+
+private struct ReviewDecisionLockNotice: View {
+    let text: String
+
+    var body: some View {
+        Label(text, systemImage: "lock")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 

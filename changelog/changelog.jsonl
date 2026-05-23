@@ -150,3 +150,4 @@
 {"ts":"2026-05-23T07:32:40Z","item_id":"PDT-2026-05-23-061","event":"report_created","status":"implemented","title":"zoom preview sidebar navigation","file":"changelog/changelog/PDT-2026-05-23-061-zoom-preview-sidebar-navigation-report.md"}
 {"ts":"2026-05-23T07:50:34Z","item_id":"PDT-2026-05-23-062","event":"report_created","status":"implemented","title":"start new photo log primary action","file":"changelog/changelog/PDT-2026-05-23-062-start-new-photo-log-primary-action-report.md"}
 {"ts":"2026-05-23T08:05:13Z","item_id":"PDT-2026-05-23-063","event":"report_created","status":"implemented","title":"photo log main tab","file":"changelog/changelog/PDT-2026-05-23-063-photo-log-main-tab-report.md"}
+{"ts":"2026-05-23T08:24:56Z","item_id":"PDT-2026-05-23-064","event":"report_created","status":"implemented","title":"photo log mode clarity","file":"changelog/changelog/PDT-2026-05-23-064-photo-log-mode-clarity-report.md"}

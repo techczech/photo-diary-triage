@@ -40,6 +40,9 @@ final class SessionMutationCoordinator {
         guard let index = updatedSession.mediaItems.firstIndex(where: { $0.id == itemID }) else {
             return updatedSession
         }
+        guard !updatedSession.mediaItems[index].lifecycleState.isImportedOrBeyond else {
+            return updatedSession
+        }
         if enabled {
             do {
                 updatedSession.mediaItems[index].lifecycleState = try updatedSession.mediaItems[index].lifecycleState.transition(to: .selectedForImport)
@@ -86,6 +89,9 @@ final class SessionMutationCoordinator {
         var updatedSession = session
 
         for index in updatedSession.mediaItems.indices where mediaIDs.contains(updatedSession.mediaItems[index].id) {
+            guard !updatedSession.mediaItems[index].lifecycleState.isImportedOrBeyond else {
+                continue
+            }
             do {
                 let targetState: LifecycleState = selectionState.isIncluded ? .selectedForImport : .discovered
                 updatedSession.mediaItems[index].lifecycleState = try updatedSession.mediaItems[index].lifecycleState.transition(to: targetState)
@@ -110,7 +116,9 @@ final class SessionMutationCoordinator {
         var updatedSession = session
 
         for index in updatedSession.mediaItems.indices
-        where selectedIDs.contains(updatedSession.mediaItems[index].id) && !updatedSession.mediaItems[index].companionFiles.isEmpty {
+        where selectedIDs.contains(updatedSession.mediaItems[index].id)
+            && !updatedSession.mediaItems[index].companionFiles.isEmpty
+            && !updatedSession.mediaItems[index].lifecycleState.isImportedOrBeyond {
             let enabled = !updatedSession.mediaItems[index].importRawCompanions
             if enabled {
                 do {

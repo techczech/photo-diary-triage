@@ -223,10 +223,42 @@ struct ReviewItemSnapshot: Identifiable, Equatable, Sendable {
         sourceLogOwnership?.selectionState ?? item.selectionState
     }
 
+    var displayStatusLabel: String {
+        switch displayStatusKind {
+        case .copied:
+            return "Copied"
+        case .selection(let selectionState):
+            return selectionState.statusLabel
+        }
+    }
+
+    var displayStatusKind: ReviewDisplayStatusKind {
+        if sourceArchiveCopy != nil || directCopyStatus != nil || sourceLogOwnership?.isCopied == true {
+            return .copied
+        }
+        return .selection(displaySelectionState)
+    }
+
+    var isTriageActionLocked: Bool {
+        sourceArchiveCopy != nil || directCopyStatus != nil || sourceLogOwnership?.isCopied == true || item.lifecycleState.isImportedOrBeyond
+    }
+
+    var visibleLockNotice: String? {
+        if sourceArchiveCopy != nil {
+            return "Archived on disk; S/C/X is locked here."
+        }
+        return nil
+    }
+
     var directCopyStatus: ReviewCopyStatusSnapshot? {
         guard sourceLogOwnership == nil, item.lifecycleState.isImportedOrBeyond else { return nil }
         return ReviewCopyStatusSnapshot(label: "Copied", helpText: "This photo has already been copied into the archive.")
     }
+}
+
+enum ReviewDisplayStatusKind: Equatable, Sendable {
+    case selection(SelectionState)
+    case copied
 }
 
 struct SourceArchiveCopySnapshot: Equatable, Sendable {
@@ -234,7 +266,7 @@ struct SourceArchiveCopySnapshot: Equatable, Sendable {
     let sourceFileName: String
 
     var helpText: String {
-        "Archive copy found on disk at \(archivePath)."
+        "Archive copy found on disk at \(archivePath). This source item is treated as copied and is left out of new photo-log copy plans."
     }
 }
 

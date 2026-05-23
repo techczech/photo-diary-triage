@@ -454,12 +454,46 @@ final class AppState: ObservableObject {
         case .archiveView:
             return "Browse saved photowalks in the archive library."
         case .cameraTriage:
+            if currentSession?.sessionKind == .walkDraft {
+                return "Review the active photo log. S photos copy to archive; C/X stay recorded in this log."
+            }
+            if currentSession?.sessionKind == .inbox {
+                return "Review the source inbox. S/C/X decisions stay here until you create or add to a photo log."
+            }
             return "Review photos from the current camera or SSD source."
         case .photoLogs:
-            return "Manage photo logs created from source triage."
+            return "Log library. Continue opens a log; Add Marked moves source-inbox decisions into a log."
         case .archiveTriage:
             return "Review archive walks separately from source cleanup."
         }
+    }
+
+    var workspaceContextTitle: String {
+        if workspaceMode == .cameraTriage {
+            switch currentSession?.sessionKind {
+            case .inbox:
+                return "Source Inbox Triage"
+            case .walkDraft:
+                return "Active Photo Log"
+            case .none:
+                break
+            }
+        }
+        return workspaceMode.title
+    }
+
+    var workspaceContextSystemImage: String {
+        if workspaceMode == .cameraTriage {
+            switch currentSession?.sessionKind {
+            case .inbox:
+                return "tray.full"
+            case .walkDraft:
+                return "doc.text.magnifyingglass"
+            case .none:
+                break
+            }
+        }
+        return workspaceMode.systemImage
     }
 
     var workspaceModeNextAction: String {
@@ -473,10 +507,16 @@ final class AppState: ObservableObject {
             guard let currentSession else {
                 return "Open a source folder, then use S, C, and X to decide what belongs in a photo log."
             }
+            if currentSession.sessionKind == .walkDraft {
+                if canCommitImport {
+                    return "You are inside a photo log. Copy To Archive copies the uncopied S photos in this log."
+                }
+                return "You are inside a photo log. Change S/C/X here, or use Start New Photo Log to return to the source inbox."
+            }
             let counts = triageCounts(for: currentSession.mediaItems)
-            return "\(counts.included) selected, \(counts.candidate) candidate, \(counts.excluded) excluded. Create or copy the photo log when ready."
+            return "Source inbox decisions: \(counts.included) selected, \(counts.candidate) candidate, \(counts.excluded) excluded. Create Photo Log starts a log; copied/on-disk photos are locked."
         case .photoLogs:
-            return "Create a log from current source decisions, continue an existing log, or inspect its contents."
+            return "Use Continue to open a log for review/copying, or Add Marked to append current source-inbox S/C/X decisions."
         case .archiveTriage:
             return "Archive triage is separated but read-only in this build; browse the archive without changing import states."
         }
@@ -699,7 +739,7 @@ final class AppState: ObservableObject {
     }
 
     var canPresentPhotoLogCreation: Bool {
-        currentSession?.sessionKind == .inbox && proposedPhotoLogCreationPlan(mode: .decidedInScope) != nil
+        currentSession?.sessionKind == .inbox && proposedPhotoLogCreationPlan(mode: .decidedInScope)?.canCreate == true
     }
 
     var canCreateWalkDraftFromSelection: Bool {
@@ -972,18 +1012,24 @@ final class AppState: ObservableObject {
             let existingInbox = persistedSessions.first(where: {
                 $0.0.sessionKind == .inbox && $0.0.workspaceSourceFolder.standardizedFileURL.path == resolvedFolderPath
             })
-            let rebuiltInbox = rebuildInboxSession(
+            var rebuiltInbox = rebuildInboxSession(
                 from: scanned,
                 workspaceSourceFolder: resolvedFolder,
                 existingInbox: existingInbox?.0
             )
+            let archiveCopySurvey = await archiveCopySurveyor.survey(
+                items: rebuiltInbox.mediaItems,
+                archiveRoot: settings.archiveRoot
+            )
+            guard !Task.isCancelled, generation == sourceLoadGeneration else {
+                logger.log("Discarded stale source load after archive survey for \(resolvedFolder.path, privacy: .public)")
+                return
+            }
+
+            rebuiltInbox = applyArchiveCopySurvey(archiveCopySurvey, to: rebuiltInbox)
             let inboxRecord = (rebuiltInbox, scanned.bursts, scanned.clusters)
             try sessionManager.save(inboxRecord.0, bursts: inboxRecord.1, clusters: inboxRecord.2, to: sessionStore)
             storePersistedSession(inboxRecord.0, bursts: inboxRecord.1, clusters: inboxRecord.2)
-            let archiveCopySurvey = await archiveCopySurveyor.survey(
-                items: inboxRecord.0.mediaItems,
-                archiveRoot: settings.archiveRoot
-            )
 
             let message: String
             if inboxRecord.0.mediaItems.isEmpty {
@@ -2377,31 +2423,52 @@ final class AppState: ObservableObject {
     func markCurrentSelectionForImport() {
         guard canMutateImportSelection else { return }
         let selectedIDs = currentSelectionMediaIDs()
-        updateTriageState(for: selectedIDs, selectionState: .included)
-        statusMessage = "Selected \(selectedIDs.count) item(s) for import."
-        advanceAfterTriageAction(for: selectedIDs)
+        let editableIDs = editableTriageMediaIDs(from: selectedIDs)
+        guard !editableIDs.isEmpty else {
+            statusMessage = "Selected item(s) are already copied; S/C/X is locked for them."
+            return
+        }
+        updateTriageState(for: editableIDs, selectionState: .included)
+        statusMessage = triageStatusMessage(action: "Selected", editableCount: editableIDs.count, totalCount: selectedIDs.count, suffix: "for import.")
+        advanceAfterTriageAction(for: editableIDs)
     }
 
     func excludeCurrentSelectionFromImport() {
         guard canMutateImportSelection else { return }
         let selectedIDs = currentSelectionMediaIDs()
-        updateTriageState(for: selectedIDs, selectionState: .excluded)
-        statusMessage = "Excluded \(selectedIDs.count) item(s) from import."
-        advanceAfterTriageAction(for: selectedIDs)
+        let editableIDs = editableTriageMediaIDs(from: selectedIDs)
+        guard !editableIDs.isEmpty else {
+            statusMessage = "Selected item(s) are already copied; S/C/X is locked for them."
+            return
+        }
+        updateTriageState(for: editableIDs, selectionState: .excluded)
+        statusMessage = triageStatusMessage(action: "Excluded", editableCount: editableIDs.count, totalCount: selectedIDs.count, suffix: "from import.")
+        advanceAfterTriageAction(for: editableIDs)
     }
 
     func markCurrentSelectionAsCandidate() {
         guard canMutateImportSelection else { return }
         let selectedIDs = currentSelectionMediaIDs()
-        updateTriageState(for: selectedIDs, selectionState: .candidate)
-        statusMessage = "Marked \(selectedIDs.count) item(s) as candidates."
-        advanceAfterTriageAction(for: selectedIDs)
+        let editableIDs = editableTriageMediaIDs(from: selectedIDs)
+        guard !editableIDs.isEmpty else {
+            statusMessage = "Selected item(s) are already copied; S/C/X is locked for them."
+            return
+        }
+        updateTriageState(for: editableIDs, selectionState: .candidate)
+        statusMessage = triageStatusMessage(action: "Marked", editableCount: editableIDs.count, totalCount: selectedIDs.count, suffix: "as candidates.")
+        advanceAfterTriageAction(for: editableIDs)
     }
 
     func unmarkCurrentSelectionForImport() {
         guard canMutateImportSelection else { return }
-        updateTriageState(for: currentSelectionMediaIDs(), selectionState: .undecided)
-        statusMessage = "Cleared \(currentSelectionMediaIDs().count) item(s) back to undecided."
+        let selectedIDs = currentSelectionMediaIDs()
+        let editableIDs = editableTriageMediaIDs(from: selectedIDs)
+        guard !editableIDs.isEmpty else {
+            statusMessage = "Selected item(s) are already copied; S/C/X is locked for them."
+            return
+        }
+        updateTriageState(for: editableIDs, selectionState: .undecided)
+        statusMessage = triageStatusMessage(action: "Cleared", editableCount: editableIDs.count, totalCount: selectedIDs.count, suffix: "back to undecided.")
     }
 
     func toggleRawForCurrentMediaSelection() {
@@ -2472,6 +2539,21 @@ final class AppState: ObservableObject {
     private func updateTriageState(for mediaIDs: Set<UUID>, selectionState: SelectionState) {
         guard let currentSession else { return }
         save(sessionMutationCoordinator.sessionByUpdatingTriageState(currentSession, mediaIDs: mediaIDs, selectionState: selectionState))
+    }
+
+    private func editableTriageMediaIDs(from mediaIDs: Set<UUID>) -> Set<UUID> {
+        Set(mediaIDs.filter { mediaID in
+            guard let item = mediaItem(for: mediaID) else { return false }
+            return !item.lifecycleState.isImportedOrBeyond
+        })
+    }
+
+    private func triageStatusMessage(action: String, editableCount: Int, totalCount: Int, suffix: String) -> String {
+        let lockedCount = totalCount - editableCount
+        if lockedCount > 0 {
+            return "\(action) \(editableCount) item(s) \(suffix) \(lockedCount) copied item(s) were left unchanged."
+        }
+        return "\(action) \(editableCount) item(s) \(suffix)"
     }
 
     private func currentComparisonSelectionIDs() -> Set<UUID> {
@@ -3068,6 +3150,24 @@ final class AppState: ObservableObject {
         )
     }
 
+    private func applyArchiveCopySurvey(
+        _ copiesByRelativePath: [String: SourceArchiveCopySnapshot],
+        to inbox: ImportSession
+    ) -> ImportSession {
+        guard !copiesByRelativePath.isEmpty else { return inbox }
+
+        var updatedInbox = inbox
+        for index in updatedInbox.mediaItems.indices {
+            let relativePath = updatedInbox.mediaItems[index].relativePath
+            guard let archiveCopy = copiesByRelativePath[relativePath] else { continue }
+            updatedInbox.mediaItems[index].lifecycleState = .verified
+            updatedInbox.mediaItems[index].destinationURL = URL(fileURLWithPath: archiveCopy.archivePath)
+            updatedInbox.mediaItems[index].selectionState = .undecided
+            updatedInbox.mediaItems[index].importRawCompanions = false
+        }
+        return updatedInbox
+    }
+
     private func scanSourceFolder(for folder: URL, settings: AppSettings) async throws -> SessionOpenResult {
         if let testingSourceScanHandler {
             return try await testingSourceScanHandler(folder, settings)
@@ -3333,7 +3433,7 @@ final class AppState: ObservableObject {
         let photoLogCreationPlan = currentSession?.sessionKind == .inbox && !isBrowsingArchive
             ? proposedPhotoLogCreationPlan(mode: .decidedInScope)
             : nil
-        let canPresentPhotoLogCreation = currentSession?.sessionKind == .inbox && photoLogCreationPlan != nil
+        let canPresentPhotoLogCreation = currentSession?.sessionKind == .inbox && photoLogCreationPlan?.canCreate == true
         let hiddenPhotoLogSummary = photoLogHiddenSummary()
         let workflowGuidance = workflowGuidanceResolver.resolve(
             sourceWorkspaceState: sourceWorkspaceState,

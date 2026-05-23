@@ -522,6 +522,40 @@ private func archiveWalkCount(in nodes: [BrowserNode]) -> Int {
     #expect(guidance.nextAction.contains("source inbox"))
 }
 
+@MainActor
+@Test func workspaceContextNamesSourceInboxAndActivePhotoLog() {
+    let root = URL(fileURLWithPath: "/tmp/workspace-context", isDirectory: true)
+    let state = AppState(testing: true)
+    let item = makeTestMediaItem(
+        sourceRoot: root,
+        fileName: "IMG_0001.jpg",
+        capturedAt: Date(timeIntervalSince1970: 10_000)
+    )
+
+    state.currentSession = makeTestSession(
+        sourceRoot: root,
+        archiveRoot: root.appendingPathComponent("archive", isDirectory: true),
+        items: [item],
+        workspaceSourceFolder: root,
+        sessionKind: .inbox
+    )
+    state.setWorkspaceMode(.cameraTriage)
+    #expect(state.workspaceContextTitle == "Source Inbox Triage")
+    #expect(state.workspaceModeNextAction.contains("Source inbox decisions"))
+
+    state.currentSession = makeTestSession(
+        sourceRoot: root,
+        archiveRoot: root.appendingPathComponent("archive", isDirectory: true),
+        items: [item],
+        workspaceSourceFolder: root,
+        sessionKind: .walkDraft
+    )
+    state.setWorkspaceMode(.cameraTriage)
+    #expect(state.workspaceContextTitle == "Active Photo Log")
+    #expect(state.workspaceModeDetail.contains("active photo log"))
+    #expect(state.workspaceModeNextAction.contains("inside a photo log"))
+}
+
 private func makeWorkflowSummary(
     sessionKind: SessionKind,
     status: String = "draft",

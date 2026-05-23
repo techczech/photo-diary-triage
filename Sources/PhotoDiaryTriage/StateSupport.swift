@@ -134,23 +134,29 @@ struct PhotoLogCreationResolver {
         )
 
         let counts = selectionCounts(for: scopeResolution.items)
+        let availableItems = scopeResolution.items.filter { !$0.lifecycleState.isImportedOrBeyond }
+        let copiedItemCount = scopeResolution.items.count - availableItems.count
         let candidateItems: [MediaItem]
         let disabledReason: String?
 
         switch mode {
         case .decidedInScope:
-            candidateItems = scopeResolution.items.filter { !$0.selectionState.isUndecided }
+            candidateItems = availableItems.filter { !$0.selectionState.isUndecided }
             if let scopeReason = scopeResolution.disabledReason {
                 disabledReason = scopeReason
+            } else if candidateItems.isEmpty, copiedItemCount > 0 {
+                disabledReason = "Marked photos in this scope are already copied on disk. Choose uncopied source photos before creating a photo log."
             } else if candidateItems.isEmpty {
                 disabledReason = "Mark included, candidate, or excluded photos in this scope before creating a photo log."
             } else {
                 disabledReason = nil
             }
         case .selectedOnly:
-            candidateItems = scopeResolution.items.filter { selectedMediaItemIDs.contains($0.id) }
+            candidateItems = availableItems.filter { selectedMediaItemIDs.contains($0.id) }
             if let scopeReason = scopeResolution.disabledReason {
                 disabledReason = scopeReason
+            } else if candidateItems.isEmpty, copiedItemCount > 0 {
+                disabledReason = "Selected photos in this scope are already copied on disk. Select uncopied source photos before creating a photo log."
             } else if candidateItems.isEmpty {
                 disabledReason = "Select one or more photos in this scope before creating a photo log."
             } else {
