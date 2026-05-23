@@ -1,0 +1,15 @@
+{
+  "source_jpgs": 884,
+  "source_on1": 884,
+  "sd_jpgs": 2772,
+  "exact_hash_matches": 884,
+  "size_mismatches": 0,
+  "hash_mismatches_same_size": 0,
+  "missing_on_sd_by_token": 0,
+  "ambiguous_token": 0,
+  "no_source_token": 0,
+  "sidecar_on1_for_exact_matches": 884,
+  "source_root": "/Users/dominiklukes/Library/CloudStorage/OneDrive-Personal/Pictures/2025/07",
+  "sd_root": "/Volumes/EOS_DIGITAL/DCIM",
+  "generated_at": "2026-05-23T10:32:00Z"
+}
