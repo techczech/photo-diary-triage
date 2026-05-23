@@ -905,21 +905,21 @@ final class AppState: ObservableObject {
                 workspaceSourceFolder: resolvedFolder,
                 existingInbox: existingInbox?.0
             )
-            let normalizedInbox = normalizeInboxRecord((rebuiltInbox, scanned.bursts, scanned.clusters))
-            try sessionManager.save(normalizedInbox.0, bursts: normalizedInbox.1, clusters: normalizedInbox.2, to: sessionStore)
-            storePersistedSession(normalizedInbox.0, bursts: normalizedInbox.1, clusters: normalizedInbox.2)
+            let inboxRecord = (rebuiltInbox, scanned.bursts, scanned.clusters)
+            try sessionManager.save(inboxRecord.0, bursts: inboxRecord.1, clusters: inboxRecord.2, to: sessionStore)
+            storePersistedSession(inboxRecord.0, bursts: inboxRecord.1, clusters: inboxRecord.2)
 
             let message: String
-            if normalizedInbox.0.mediaItems.isEmpty {
+            if inboxRecord.0.mediaItems.isEmpty {
                 sourceWorkspaceState = .empty(sourcePath: resolvedFolder.path)
                 message = sourceLoadStatusMessage(
-                    base: "Loaded inbox for \(resolvedFolder.lastPathComponent); no unassigned supported media are currently visible.",
+                    base: "Loaded inbox for \(resolvedFolder.lastPathComponent); no supported media are currently visible.",
                     sourcePath: resolvedFolder.path
                 )
             } else {
-                sourceWorkspaceState = .loaded(itemCount: normalizedInbox.0.mediaItems.count, sourcePath: resolvedFolder.path)
+                sourceWorkspaceState = .loaded(itemCount: inboxRecord.0.mediaItems.count, sourcePath: resolvedFolder.path)
                 message = sourceLoadStatusMessage(
-                    base: "Loaded inbox with \(normalizedInbox.0.mediaItems.count) unassigned items from \(resolvedFolder.lastPathComponent).",
+                    base: "Loaded inbox with \(inboxRecord.0.mediaItems.count) items from \(resolvedFolder.lastPathComponent).",
                     sourcePath: resolvedFolder.path
                 )
             }
@@ -927,10 +927,10 @@ final class AppState: ObservableObject {
                 setWorkspaceMode(.cameraTriage)
             }
             openPersistedSessionRecord(
-                normalizedInbox,
+                inboxRecord,
                 status: message
             )
-            requestVisibleThumbnails(prefetching: normalizedInbox.0.mediaItems)
+            requestVisibleThumbnails(prefetching: inboxRecord.0.mediaItems)
         } catch {
             guard generation == sourceLoadGeneration else { return }
             logger.error("Failed to open session for \(folder.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
@@ -2678,40 +2678,37 @@ final class AppState: ObservableObject {
         }
     }
 
-    private func ownedRelativePaths(
+    private func sourceLogOwnershipByRelativePath(
         for workspaceSourceFolder: URL,
         excludingSessionIDs: Set<UUID> = []
-    ) -> Set<String> {
+    ) -> [String: SourceLogOwnershipSnapshot] {
         let standardizedFolderPath = workspaceSourceFolder.standardizedFileURL.path
-        return Set(
-            persistedSessions
-                .filter {
-                    $0.0.sessionKind == .walkDraft &&
-                    $0.0.sessionKindWasExplicit &&
-                    !excludingSessionIDs.contains($0.0.id) &&
-                    $0.0.workspaceSourceFolder.standardizedFileURL.path == standardizedFolderPath
-                }
-                .flatMap { $0.0.mediaItems.map(\.relativePath) }
-        )
+        var ownershipByPath: [String: SourceLogOwnershipSnapshot] = [:]
+
+        for record in persistedSessions where
+            record.0.sessionKind == .walkDraft &&
+            record.0.sessionKindWasExplicit &&
+            !excludingSessionIDs.contains(record.0.id) &&
+            record.0.workspaceSourceFolder.standardizedFileURL.path == standardizedFolderPath {
+            let title = record.0.walkMetadata.title.nonEmpty ?? "Untitled Photo Log"
+            for item in record.0.mediaItems where ownershipByPath[item.relativePath] == nil {
+                ownershipByPath[item.relativePath] = SourceLogOwnershipSnapshot(
+                    title: title,
+                    statusLabel: item.lifecycleState.isImportedOrBeyond ? "Copied" : "In Log",
+                    isCopied: item.lifecycleState.isImportedOrBeyond
+                )
+            }
+        }
+
+        return ownershipByPath
     }
 
-    private func normalizeInboxRecord(
-        _ record: (ImportSession, [BurstGroup], [TimeCluster])
-    ) -> (ImportSession, [BurstGroup], [TimeCluster]) {
-        var session = record.0
-        let assignedPaths = ownedRelativePaths(
-            for: session.workspaceSourceFolder,
-            excludingSessionIDs: [session.id]
+    private func currentSourceLogOwnershipByRelativePath() -> [String: SourceLogOwnershipSnapshot] {
+        guard let currentSession, currentSession.sessionKind == .inbox else { return [:] }
+        return sourceLogOwnershipByRelativePath(
+            for: currentSession.workspaceSourceFolder,
+            excludingSessionIDs: [currentSession.id]
         )
-        guard !assignedPaths.isEmpty else { return record }
-
-        let filteredItems = session.mediaItems.filter { !assignedPaths.contains($0.relativePath) }
-        guard filteredItems.count != session.mediaItems.count else { return record }
-
-        let regrouped = groupingService.group(items: filteredItems, settings: settings)
-        session.mediaItems = regrouped.items
-        session.lastUpdatedAt = Date()
-        return (session, regrouped.burstGroups, regrouped.timeClusters)
     }
 
     private func rebuildInboxSession(
@@ -3138,7 +3135,10 @@ final class AppState: ObservableObject {
     }
 
     private func refreshReviewState() {
-        let snapshots = visibleMediaItems.map(makeReviewItemSnapshot)
+        let ownershipByPath = currentSourceLogOwnershipByRelativePath()
+        let snapshots = visibleMediaItems.map {
+            makeReviewItemSnapshot($0, sourceLogOwnership: ownershipByPath[$0.relativePath])
+        }
         let itemSnapshotsByID = Dictionary(uniqueKeysWithValues: snapshots.map { ($0.id, $0) })
 
         let snapshot = ReviewSnapshot(
@@ -3217,7 +3217,10 @@ final class AppState: ObservableObject {
     }
 
     private func refreshCompareState() {
-        let snapshots = comparingMediaItems.map(makeReviewItemSnapshot)
+        let ownershipByPath = currentSourceLogOwnershipByRelativePath()
+        let snapshots = comparingMediaItems.map {
+            makeReviewItemSnapshot($0, sourceLogOwnership: ownershipByPath[$0.relativePath])
+        }
         let snapshot = CompareSnapshot(
             title: compareSheetTitle,
             itemIDs: comparingMediaItemIDs,
@@ -3238,10 +3241,14 @@ final class AppState: ObservableObject {
         presentationState.update(snapshot)
     }
 
-    private func makeReviewItemSnapshot(_ item: MediaItem) -> ReviewItemSnapshot {
+    private func makeReviewItemSnapshot(
+        _ item: MediaItem,
+        sourceLogOwnership: SourceLogOwnershipSnapshot? = nil
+    ) -> ReviewItemSnapshot {
         ReviewItemSnapshot(
             item: item,
             archivePreview: archivePreview(for: item),
+            sourceLogOwnership: sourceLogOwnership,
             isSelected: selectedMediaItemIDs.contains(item.id),
             isFocused: focusedReviewItemID == item.id,
             thumbnailFailed: thumbnailFailures.contains(item.id)

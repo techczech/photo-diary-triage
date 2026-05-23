@@ -205,11 +205,32 @@ struct SidebarTreeSnapshot: Equatable, Sendable {
 struct ReviewItemSnapshot: Identifiable, Equatable, Sendable {
     let item: MediaItem
     let archivePreview: String
+    let sourceLogOwnership: SourceLogOwnershipSnapshot?
     let isSelected: Bool
     let isFocused: Bool
     let thumbnailFailed: Bool
 
     var id: UUID { item.id }
+}
+
+struct SourceLogOwnershipSnapshot: Equatable, Sendable {
+    let title: String
+    let statusLabel: String
+    let isCopied: Bool
+
+    var badgeLabel: String {
+        if isCopied {
+            return "Copied to \(title)"
+        }
+        return "In Log: \(title)"
+    }
+
+    var helpText: String {
+        if isCopied {
+            return "This source photo was already copied into \(title)."
+        }
+        return "This source photo already belongs to \(title)."
+    }
 }
 
 struct WorkflowGuidanceSnapshot: Equatable, Sendable {
