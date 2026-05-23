@@ -4,6 +4,7 @@ struct PhotoLogLibraryPane: View {
     let appState: AppState
     let groups: [PhotoLogGroupSnapshot]
     let canPresentPhotoLogCreation: Bool
+    var maxListHeight: CGFloat? = 340
 
     private var logCount: Int {
         groups.reduce(0) { $0 + $1.logs.count }
@@ -48,10 +49,30 @@ struct PhotoLogLibraryPane: View {
                     }
                     .padding(.vertical, 2)
                 }
-                .frame(maxHeight: 340)
+                .frame(maxHeight: maxListHeight)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct PhotoLogLibraryMainPane: View {
+    let appState: AppState
+    @ObservedObject var state: SidebarState
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            PhotoLogLibraryPane(
+                appState: appState,
+                groups: state.snapshot.photoLogGroups,
+                canPresentPhotoLogCreation: state.snapshot.canPresentPhotoLogCreation,
+                maxListHeight: nil
+            )
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.28), in: RoundedRectangle(cornerRadius: 8))
     }
 }
 

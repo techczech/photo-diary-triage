@@ -233,7 +233,10 @@ enum StartupSelectionPolicy: String, Equatable, Sendable {
 enum WorkspaceMode: String, CaseIterable, Equatable, Sendable {
     case archiveView
     case cameraTriage
+    case photoLogs
     case archiveTriage
+
+    static let displayOrder: [WorkspaceMode] = [.archiveView, .cameraTriage, .photoLogs, .archiveTriage]
 
     var title: String {
         switch self {
@@ -241,6 +244,8 @@ enum WorkspaceMode: String, CaseIterable, Equatable, Sendable {
             return "Archive View"
         case .cameraTriage:
             return "Camera Triage"
+        case .photoLogs:
+            return "Photo Logs"
         case .archiveTriage:
             return "Archive Triage"
         }
@@ -252,13 +257,20 @@ enum WorkspaceMode: String, CaseIterable, Equatable, Sendable {
             return "photo.stack"
         case .cameraTriage:
             return "externaldrive.badge.checkmark"
+        case .photoLogs:
+            return "books.vertical"
         case .archiveTriage:
             return "archivebox"
         }
     }
 
     var showsArchiveLibrary: Bool {
-        self != .cameraTriage
+        switch self {
+        case .archiveView, .archiveTriage:
+            return true
+        case .cameraTriage, .photoLogs:
+            return false
+        }
     }
 
     var allowsImportSelectionMutation: Bool {

@@ -74,7 +74,8 @@ struct ContentView: View {
         BrowserOrReviewPaneView(
             appState: appState,
             state: reviewState,
-            navigationState: reviewNavigationState
+            navigationState: reviewNavigationState,
+            sidebarState: sidebarState
         )
         .frame(minWidth: 720, maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
