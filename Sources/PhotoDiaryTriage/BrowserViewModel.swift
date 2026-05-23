@@ -124,12 +124,16 @@ final class BrowserViewModel {
         settings: AppSettings
     ) throws -> ArchiveLoadResult? {
         guard let nodeID, archiveMediaCache[nodeID] == nil, let node = browserNodeMap[nodeID] else { return nil }
+        return try loadArchiveMedia(for: node, settings: settings)
+    }
+
+    func loadArchiveMedia(for node: BrowserNode, settings: AppSettings) throws -> ArchiveLoadResult? {
         guard (node.children?.isEmpty ?? true), let folderURL = node.folderURL, node.kind == .archiveWalkFolder else { return nil }
 
         let items = try scanner.scanFolder(folderURL, settings: settings)
         logger.log("Loaded \(items.count) archived items from \(folderURL.path, privacy: .public)")
         return ArchiveLoadResult(
-            nodeID: nodeID,
+            nodeID: node.id,
             items: items,
             statusMessage: "Loaded \(items.count) archived item(s) from \(folderURL.lastPathComponent)."
         )

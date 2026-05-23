@@ -109,6 +109,20 @@ import Testing
     #expect(plan.entries.contains(where: { $0.isCompanion }))
 }
 
+@Test func fileScannerKeepsRawCompanionWithPrimaryJPEG() throws {
+    let root = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    try writeTestFile(root.appendingPathComponent("IMG_0001.jpg"), contents: "jpeg")
+    try writeTestFile(root.appendingPathComponent("IMG_0001.cr3"), contents: "raw")
+
+    let items = try FileScanner().scanFolder(root, settings: makeTestSettings(root: root))
+
+    let item = try #require(items.first)
+    #expect(items.count == 1)
+    #expect(item.fileName == "IMG_0001.jpg")
+    #expect(item.companionFiles.map(\.fileName) == ["IMG_0001.cr3"])
+}
+
 @Test func groupingSeparatesBurstAndTimeClusters() {
     let base = Date(timeIntervalSince1970: 1000)
     let metadata = MediaMetadata(capturedAt: base, pixelWidth: nil, pixelHeight: nil, cameraModel: nil, lensModel: nil, latitude: nil, longitude: nil, raw: [:])

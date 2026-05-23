@@ -332,6 +332,8 @@ final class AppState: ObservableObject {
     private var lastMeasuredReviewPaneWidth: Double = 0
     private var lastMeasuredReviewPaneHeight: Double = 0
     private var reviewKeyboardTarget: ReviewKeyboardTarget = .items
+    private var archiveMediaLoadTask: Task<Void, Never>?
+    private var archiveMediaLoadGeneration: Int = 0
     private var currentSessionUpdateKind: CurrentSessionUpdateKind = .full
     private var pendingSessionPersistenceWorkItem: DispatchWorkItem?
     private var estimatedVisibleReviewIndexRange: ClosedRange<Int>?
@@ -391,6 +393,7 @@ final class AppState: ObservableObject {
     }
 
     deinit {
+        archiveMediaLoadTask?.cancel()
         if let volumeMountObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(volumeMountObserver)
         }
@@ -1636,6 +1639,7 @@ final class AppState: ObservableObject {
     }
 
     func setArchiveRoot(_ archiveRoot: URL) {
+        cancelArchiveMediaLoad()
         settings.archiveRoot = archiveRoot
         archiveYearFolders = ArchiveLibraryInspector.existingYearFolders(in: archiveRoot)
         archiveMediaCache.removeAll()
@@ -2113,6 +2117,7 @@ final class AppState: ObservableObject {
 
     func openFocusedReviewItem() {
         guard let focusedID = focusedReviewItemID ?? selectedMediaItemIDs.first else { return }
+        preheatDisplayImages(around: focusedID, in: reviewInteractionItems, radius: 2)
         previewingMediaItemID = focusedID
     }
 
@@ -2137,6 +2142,7 @@ final class AppState: ObservableObject {
 
     func navigatePreview(by offset: Int) {
         guard let targetID = previewNavigationOffset(offset) else { return }
+        preheatDisplayImages(around: targetID, in: reviewInteractionItems, radius: 2)
         previewingMediaItemID = targetID
         focusedReviewItemID = targetID
         selectedMediaItemIDs = [targetID]
@@ -2175,6 +2181,7 @@ final class AppState: ObservableObject {
         }
         compareGridColumnCount = CompareGridMetrics.defaultColumnCount(for: deduplicatedIDs.count)
         compareSheetTitle = title
+        preheatDisplayImages(for: deduplicatedIDs, limit: 12)
         comparingMediaItemIDs = deduplicatedIDs
         statusMessage = "Opened compare view for \(deduplicatedIDs.count) item(s)."
         DispatchQueue.main.async { [weak self] in
@@ -2228,6 +2235,7 @@ final class AppState: ObservableObject {
 
     func focusComparisonItem(_ itemID: UUID, extendingSelection _: Bool = false) {
         guard comparingMediaItemIDs.contains(itemID) else { return }
+        preheatDisplayImages(around: itemID, in: comparingMediaItemIDs, radius: 3)
         selectedMediaItemIDs = [itemID]
         focusedReviewItemID = itemID
         reviewSelectionAnchorID = itemID
@@ -3903,6 +3911,41 @@ final class AppState: ObservableObject {
         return Array(items.lazy.filter { !visibleIDs.contains($0.id) }.prefix(limit))
     }
 
+    private func preheatDisplayImages(around itemID: UUID, in items: [MediaItem], radius: Int) {
+        guard let index = items.firstIndex(where: { $0.id == itemID }) else {
+            preheatDisplayImages(for: [itemID], limit: 1)
+            return
+        }
+
+        let lowerBound = max(items.startIndex, index - radius)
+        let upperBound = min(items.index(before: items.endIndex), index + radius)
+        preheatDisplayImages(for: items[lowerBound...upperBound].map(\.id), limit: (radius * 2) + 1)
+    }
+
+    private func preheatDisplayImages(around itemID: UUID, in itemIDs: [UUID], radius: Int) {
+        guard let index = itemIDs.firstIndex(of: itemID) else {
+            preheatDisplayImages(for: [itemID], limit: 1)
+            return
+        }
+
+        let lowerBound = max(itemIDs.startIndex, index - radius)
+        let upperBound = min(itemIDs.index(before: itemIDs.endIndex), index + radius)
+        preheatDisplayImages(for: Array(itemIDs[lowerBound...upperBound]), limit: (radius * 2) + 1)
+    }
+
+    private func preheatDisplayImages(for itemIDs: [UUID], limit: Int) {
+        let requests = itemIDs
+            .prefix(max(limit, 0))
+            .compactMap { mediaItem(for: $0) }
+            .filter { fileManager.fileExists(atPath: $0.sourceURL.path) }
+            .map { DecodedImageRequest.interactiveDisplay($0.sourceURL, priority: .userInitiated) }
+
+        guard !requests.isEmpty else { return }
+        Task {
+            await DecodedImagePipeline.shared.preheat(requests)
+        }
+    }
+
     private func configurePersistence() {
         let configuration = sessionLifecycleCoordinator.configurePersistence(settings: settings)
         sessionStore = configuration.sessionStore
@@ -3916,20 +3959,60 @@ final class AppState: ObservableObject {
     }
 
     private func loadArchiveMediaIfNeeded(for nodeID: String?) {
-        do {
-            guard let loadResult = try browserViewModel.loadArchiveMediaIfNeeded(
-                for: nodeID,
-                browserNodeMap: browserNodeMap,
-                archiveMediaCache: archiveMediaCache,
-                settings: settings
-            ) else { return }
-            let sortedItems = loadResult.items.sorted(by: Self.mediaSort)
-            archiveMediaCache[loadResult.nodeID] = sortedItems
-            requestVisibleThumbnails(prefetching: sortedItems)
-            statusMessage = loadResult.statusMessage
-        } catch {
-            statusMessage = "Failed to load archive folder: \(error.localizedDescription)"
+        guard let nodeID,
+              let node = browserNodeMap[nodeID],
+              (node.children?.isEmpty ?? true),
+              node.folderURL != nil,
+              node.kind == .archiveWalkFolder else {
+            cancelArchiveMediaLoad()
+            return
         }
+
+        cancelArchiveMediaLoad()
+
+        if let cachedItems = archiveMediaCache[nodeID] {
+            requestVisibleThumbnails(prefetching: cachedItems)
+            return
+        }
+
+        archiveMediaLoadGeneration &+= 1
+        let generation = archiveMediaLoadGeneration
+        let settings = settings
+        statusMessage = "Loading archive photos from \(node.title)..."
+
+        archiveMediaLoadTask = Task.detached(priority: .userInitiated) { [node, settings] in
+            let result: Result<ArchiveLoadResult?, Error>
+            do {
+                let loader = BrowserViewModel(scanner: FileScanner())
+                result = .success(try loader.loadArchiveMedia(for: node, settings: settings))
+            } catch {
+                result = .failure(error)
+            }
+
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                guard !Task.isCancelled, generation == self.archiveMediaLoadGeneration else { return }
+                self.archiveMediaLoadTask = nil
+
+                switch result {
+                case .success(let loadResult):
+                    guard let loadResult else { return }
+                    let sortedItems = loadResult.items.sorted(by: Self.mediaSort)
+                    self.archiveMediaCache[loadResult.nodeID] = sortedItems
+                    self.requestVisibleThumbnails(prefetching: sortedItems)
+                    self.preheatDisplayImages(for: sortedItems.map(\.id), limit: 6)
+                    self.statusMessage = loadResult.statusMessage
+                case .failure(let error):
+                    self.statusMessage = "Failed to load archive folder: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    private func cancelArchiveMediaLoad() {
+        archiveMediaLoadTask?.cancel()
+        archiveMediaLoadTask = nil
+        archiveMediaLoadGeneration &+= 1
     }
 
     private static func mediaSort(lhs: MediaItem, rhs: MediaItem) -> Bool {
