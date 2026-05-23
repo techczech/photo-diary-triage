@@ -157,6 +157,8 @@ struct ReviewGridCard: View {
 
             if let ownership = snapshot.sourceLogOwnership {
                 SourceLogOwnershipBadge(ownership: ownership)
+            } else if let archiveCopy = snapshot.sourceArchiveCopy {
+                SourceArchiveCopyBadge(archiveCopy: archiveCopy)
             } else if let copyStatus = snapshot.directCopyStatus {
                 ReviewCopyStatusBadge(copyStatus: copyStatus)
             }
@@ -291,6 +293,8 @@ struct MediaItemRow: View {
 
                     if let ownership = snapshot.sourceLogOwnership {
                         SourceLogOwnershipBadge(ownership: ownership)
+                    } else if let archiveCopy = snapshot.sourceArchiveCopy {
+                        SourceArchiveCopyBadge(archiveCopy: archiveCopy)
                     } else if let copyStatus = snapshot.directCopyStatus {
                         ReviewCopyStatusBadge(copyStatus: copyStatus)
                     }
@@ -412,5 +416,26 @@ private struct ReviewCopyStatusBadge: View {
         .background(Color.green.opacity(0.12))
         .clipShape(Capsule())
         .help(copyStatus.helpText)
+    }
+}
+
+private struct SourceArchiveCopyBadge: View {
+    let archiveCopy: SourceArchiveCopySnapshot
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "externaldrive.fill")
+                .imageScale(.small)
+            Text("On Disk")
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .font(.caption2.weight(.medium))
+        .foregroundStyle(Color.teal.opacity(0.95))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color.teal.opacity(0.12))
+        .clipShape(Capsule())
+        .help(archiveCopy.helpText)
     }
 }

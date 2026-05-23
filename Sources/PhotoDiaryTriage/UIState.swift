@@ -206,6 +206,7 @@ struct ReviewItemSnapshot: Identifiable, Equatable, Sendable {
     let item: MediaItem
     let archivePreview: String
     let sourceLogOwnership: SourceLogOwnershipSnapshot?
+    let sourceArchiveCopy: SourceArchiveCopySnapshot?
     let isSelected: Bool
     let isFocused: Bool
     let thumbnailFailed: Bool
@@ -219,6 +220,15 @@ struct ReviewItemSnapshot: Identifiable, Equatable, Sendable {
     var directCopyStatus: ReviewCopyStatusSnapshot? {
         guard sourceLogOwnership == nil, item.lifecycleState.isImportedOrBeyond else { return nil }
         return ReviewCopyStatusSnapshot(label: "Copied", helpText: "This photo has already been copied into the archive.")
+    }
+}
+
+struct SourceArchiveCopySnapshot: Equatable, Sendable {
+    let archivePath: String
+    let sourceFileName: String
+
+    var helpText: String {
+        "Archive copy found on disk at \(archivePath)."
     }
 }
 

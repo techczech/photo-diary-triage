@@ -290,6 +290,7 @@ final class AppState: ObservableObject {
     private let persistedSessionNormalizer = PersistedSessionNormalizer()
     private let photoLogCreationResolver = PhotoLogCreationResolver()
     private let workflowGuidanceResolver = WorkflowGuidanceResolver()
+    private let archiveCopySurveyor = ArchiveCopySurveyor()
     private let fileManager: FileManager
     private let sourceWorkspaceFolderResolver: SourceWorkspaceFolderResolver
     private let supportRoot: URL
@@ -307,6 +308,7 @@ final class AppState: ObservableObject {
     private var sessionMediaByID: [UUID: MediaItem] = [:]
     private var sessionVisibleMediaCacheByNodeID: [String: [MediaItem]] = [:]
     private var archivePreviewByMediaItemID: [UUID: String] = [:]
+    private var sourceArchiveCopiesByRelativePath: [String: SourceArchiveCopySnapshot] = [:]
     private var missingThumbnailPaths: Set<String> = []
     private var thumbnailTasks: [UUID: Task<Void, Never>] = [:]
     private var volumeMountObserver: NSObjectProtocol?
@@ -908,6 +910,10 @@ final class AppState: ObservableObject {
             let inboxRecord = (rebuiltInbox, scanned.bursts, scanned.clusters)
             try sessionManager.save(inboxRecord.0, bursts: inboxRecord.1, clusters: inboxRecord.2, to: sessionStore)
             storePersistedSession(inboxRecord.0, bursts: inboxRecord.1, clusters: inboxRecord.2)
+            let archiveCopySurvey = await archiveCopySurveyor.survey(
+                items: inboxRecord.0.mediaItems,
+                archiveRoot: settings.archiveRoot
+            )
 
             let message: String
             if inboxRecord.0.mediaItems.isEmpty {
@@ -928,7 +934,8 @@ final class AppState: ObservableObject {
             }
             openPersistedSessionRecord(
                 inboxRecord,
-                status: message
+                status: message,
+                sourceArchiveCopiesByRelativePath: archiveCopySurvey
             )
             requestVisibleThumbnails(prefetching: inboxRecord.0.mediaItems)
         } catch {
@@ -2626,10 +2633,12 @@ final class AppState: ObservableObject {
 
     private func openPersistedSessionRecord(
         _ record: (ImportSession, [BurstGroup], [TimeCluster]),
-        status: String
+        status: String,
+        sourceArchiveCopiesByRelativePath: [String: SourceArchiveCopySnapshot] = [:]
     ) {
         let previousSidebarNodeID = selectedSidebarNodeID
         activePhotoLogMembershipEditID = nil
+        self.sourceArchiveCopiesByRelativePath = sourceArchiveCopiesByRelativePath
         setCurrentSession(record.0, updateKind: .full)
         burstGroups = record.1
         timeClusters = record.2
@@ -3137,8 +3146,13 @@ final class AppState: ObservableObject {
 
     private func refreshReviewState() {
         let ownershipByPath = currentSourceLogOwnershipByRelativePath()
+        let archiveCopiesByPath = currentSession?.sessionKind == .inbox ? sourceArchiveCopiesByRelativePath : [:]
         let snapshots = visibleMediaItems.map {
-            makeReviewItemSnapshot($0, sourceLogOwnership: ownershipByPath[$0.relativePath])
+            makeReviewItemSnapshot(
+                $0,
+                sourceLogOwnership: ownershipByPath[$0.relativePath],
+                sourceArchiveCopy: archiveCopiesByPath[$0.relativePath]
+            )
         }
         let itemSnapshotsByID = Dictionary(uniqueKeysWithValues: snapshots.map { ($0.id, $0) })
 
@@ -3219,8 +3233,13 @@ final class AppState: ObservableObject {
 
     private func refreshCompareState() {
         let ownershipByPath = currentSourceLogOwnershipByRelativePath()
+        let archiveCopiesByPath = currentSession?.sessionKind == .inbox ? sourceArchiveCopiesByRelativePath : [:]
         let snapshots = comparingMediaItems.map {
-            makeReviewItemSnapshot($0, sourceLogOwnership: ownershipByPath[$0.relativePath])
+            makeReviewItemSnapshot(
+                $0,
+                sourceLogOwnership: ownershipByPath[$0.relativePath],
+                sourceArchiveCopy: archiveCopiesByPath[$0.relativePath]
+            )
         }
         let snapshot = CompareSnapshot(
             title: compareSheetTitle,
@@ -3244,12 +3263,14 @@ final class AppState: ObservableObject {
 
     private func makeReviewItemSnapshot(
         _ item: MediaItem,
-        sourceLogOwnership: SourceLogOwnershipSnapshot? = nil
+        sourceLogOwnership: SourceLogOwnershipSnapshot? = nil,
+        sourceArchiveCopy: SourceArchiveCopySnapshot? = nil
     ) -> ReviewItemSnapshot {
         ReviewItemSnapshot(
             item: item,
             archivePreview: archivePreview(for: item),
             sourceLogOwnership: sourceLogOwnership,
+            sourceArchiveCopy: sourceArchiveCopy,
             isSelected: selectedMediaItemIDs.contains(item.id),
             isFocused: focusedReviewItemID == item.id,
             thumbnailFailed: thumbnailFailures.contains(item.id)
