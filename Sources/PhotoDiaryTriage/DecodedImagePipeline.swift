@@ -2,7 +2,9 @@ import AppKit
 import Foundation
 import ImageIO
 
-struct DecodedImageRequest {
+struct DecodedImageRequest: Sendable {
+    static let interactiveMaxPixelSize = 4096
+
     let url: URL
     let cacheKey: String
     let maxPixelSize: Int?
@@ -16,13 +18,36 @@ struct DecodedImageRequest {
             priority: priority
         )
     }
+
+    static func interactiveDisplay(
+        _ url: URL,
+        maxPixelSize: Int = interactiveMaxPixelSize,
+        priority: TaskPriority = .userInitiated
+    ) -> DecodedImageRequest {
+        DecodedImageRequest(
+            url: url,
+            cacheKey: "display:\(maxPixelSize):\(url.path)",
+            maxPixelSize: maxPixelSize,
+            priority: priority
+        )
+    }
 }
 
 actor DecodedImagePipeline {
     static let shared = DecodedImagePipeline()
 
+    private struct InFlightDecode {
+        let id: UUID
+        let task: Task<NSImage?, Never>
+    }
+
     private let cache = NSCache<NSString, NSImage>()
-    private var inFlightTasks: [String: Task<NSImage?, Never>] = [:]
+    private var inFlightTasks: [String: InFlightDecode] = [:]
+
+    init() {
+        cache.countLimit = 96
+        cache.totalCostLimit = 512 * 1024 * 1024
+    }
 
     func image(
         at url: URL,
@@ -36,28 +61,75 @@ actor DecodedImagePipeline {
         }
 
         if let inFlight = inFlightTasks[cacheKey] {
-            return await inFlight.value
+            return await inFlight.task.value
         }
 
-        let task = Task.detached(priority: priority) {
-            Self.decodeImage(at: url, maxPixelSize: maxPixelSize)
+        let inFlight = beginDecode(
+            request: DecodedImageRequest(
+                url: url,
+                cacheKey: cacheKey,
+                maxPixelSize: maxPixelSize,
+                priority: priority
+            ),
+            key: key
+        )
+        return await inFlight.task.value
+    }
+
+    func image(_ request: DecodedImageRequest) async -> NSImage? {
+        await image(
+            at: request.url,
+            cacheKey: request.cacheKey,
+            maxPixelSize: request.maxPixelSize,
+            priority: request.priority
+        )
+    }
+
+    func preheat(_ requests: [DecodedImageRequest]) {
+        for request in requests {
+            let key = request.cacheKey as NSString
+            guard cache.object(forKey: key) == nil else { continue }
+            guard inFlightTasks[request.cacheKey] == nil else { continue }
+            _ = beginDecode(request: request, key: key)
         }
-        inFlightTasks[cacheKey] = task
-
-        let image = await task.value
-        inFlightTasks[cacheKey] = nil
-
-        if let image {
-            cache.setObject(image, forKey: key)
-        }
-
-        return image
     }
 
     func removeCachedImage(for cacheKey: String) {
         cache.removeObject(forKey: cacheKey as NSString)
-        inFlightTasks[cacheKey]?.cancel()
+        inFlightTasks[cacheKey]?.task.cancel()
         inFlightTasks[cacheKey] = nil
+    }
+
+    private func beginDecode(request: DecodedImageRequest, key: NSString) -> InFlightDecode {
+        let decodeID = UUID()
+        let task = Task.detached(priority: request.priority) {
+            Self.decodeImage(at: request.url, maxPixelSize: request.maxPixelSize)
+        }
+        let inFlight = InFlightDecode(id: decodeID, task: task)
+        inFlightTasks[request.cacheKey] = inFlight
+
+        Task {
+            let image = await task.value
+            self.finishDecode(cacheKey: request.cacheKey, key: key, decodeID: decodeID, image: image)
+        }
+
+        return inFlight
+    }
+
+    private func finishDecode(cacheKey: String, key: NSString, decodeID: UUID, image: NSImage?) {
+        guard inFlightTasks[cacheKey]?.id == decodeID else { return }
+        inFlightTasks[cacheKey] = nil
+
+        if let image {
+            cache.setObject(image, forKey: key, cost: Self.cacheCost(for: image))
+        }
+    }
+
+    private static func cacheCost(for image: NSImage) -> Int {
+        let representation = image.representations.first
+        let width = representation?.pixelsWide ?? Int(image.size.width)
+        let height = representation?.pixelsHigh ?? Int(image.size.height)
+        return max(width, 1) * max(height, 1) * 4
     }
 
     private static func decodeImage(at url: URL, maxPixelSize: Int?) -> NSImage? {

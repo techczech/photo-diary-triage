@@ -1111,7 +1111,7 @@ struct ZoomableImageCanvas: View {
             }
         }
         .task(id: imageURL) {
-            imageModel.load(.fullSize(imageURL))
+            imageModel.load(.interactiveDisplay(imageURL))
         }
     }
 }
@@ -1143,7 +1143,7 @@ struct LoadedLockedCompareImageCanvas: View {
             }
         }
         .task(id: imageURL) {
-            imageModel.load(.fullSize(imageURL))
+            imageModel.load(.interactiveDisplay(imageURL))
         }
     }
 }

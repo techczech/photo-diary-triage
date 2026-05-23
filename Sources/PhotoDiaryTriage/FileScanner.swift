@@ -16,13 +16,14 @@ struct FileScanner {
         var candidates: [ScanCandidate] = []
 
         for case let fileURL as URL in enumerator {
+            try Task.checkCancellation()
+
             let values = try fileURL.resourceValues(forKeys: resourceKeys)
             guard values.isRegularFile == true else { continue }
 
             let ext = fileURL.pathExtension.lowercased()
             guard settings.supportedExtensions.contains(ext) else { continue }
 
-            let metadata = metadataExtractor.extract(from: fileURL)
             let relativePath = relativePath(for: fileURL, relativeTo: baseFolder)
             let fileSize = Int64(values.fileSize ?? 0)
             let baseName = fileURL.deletingPathExtension().lastPathComponent
@@ -38,8 +39,6 @@ struct FileScanner {
                     baseName: baseName,
                     extensionName: ext,
                     fileSizeBytes: fileSize,
-                    capturedAt: metadata.capturedAt,
-                    metadata: metadata,
                     mediaKind: mediaKind
                 )
             )
@@ -49,7 +48,10 @@ struct FileScanner {
         let groupedCandidates = Dictionary(grouping: candidates) { "\($0.relativeDirectory)|\($0.baseName.lowercased())" }
 
         for (_, group) in groupedCandidates {
+            try Task.checkCancellation()
+
             let primary = primaryCandidate(in: group)
+            let metadata = metadataExtractor.extract(from: primary.sourceURL)
             let companions = group
                 .filter { $0.sourceURL != primary.sourceURL && $0.mediaKind == .raw }
                 .map {
@@ -71,8 +73,8 @@ struct FileScanner {
                     baseName: primary.baseName,
                     mediaKind: primary.mediaKind,
                     fileSizeBytes: primary.fileSizeBytes,
-                    capturedAt: primary.capturedAt,
-                    metadata: primary.metadata,
+                    capturedAt: metadata.capturedAt,
+                    metadata: metadata,
                     thumbnailCacheKey: CacheKeyBuilder.key(for: primary.sourceURL),
                     companionFiles: companions
                 )
@@ -137,7 +139,5 @@ private struct ScanCandidate {
     var baseName: String
     var extensionName: String
     var fileSizeBytes: Int64
-    var capturedAt: Date?
-    var metadata: MediaMetadata
     var mediaKind: MediaKind
 }
