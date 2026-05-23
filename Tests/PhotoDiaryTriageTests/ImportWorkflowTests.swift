@@ -107,6 +107,51 @@ import Testing
     #expect(result.walkManifest.summary.cleanupPendingFiles == 1)
 }
 
+@Test func importCoordinatorCommitSkipsAlreadyCopiedIncludedItems() async throws {
+    let root = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let sourceRoot = root.appendingPathComponent("source", isDirectory: true)
+    let archiveRoot = root.appendingPathComponent("archive", isDirectory: true)
+    try writeTestFile(sourceRoot.appendingPathComponent("IMG_0001.jpg"), contents: "already copied")
+    try writeTestFile(sourceRoot.appendingPathComponent("IMG_0002.jpg"), contents: "new copy")
+
+    var copiedItem = makeTestMediaItem(
+        sourceRoot: sourceRoot,
+        fileName: "IMG_0001.jpg",
+        capturedAt: Date(timeIntervalSince1970: 13_100),
+        selectionState: .included,
+        lifecycleState: .sourceCleanupPending
+    )
+    let copiedDestination = archiveRoot.appendingPathComponent("existing/IMG_0001.jpg")
+    try writeTestFile(copiedDestination, contents: "already copied")
+    copiedItem.destinationURL = copiedDestination
+
+    let newItem = makeTestMediaItem(
+        sourceRoot: sourceRoot,
+        fileName: "IMG_0002.jpg",
+        capturedAt: Date(timeIntervalSince1970: 13_200),
+        selectionState: .included,
+        lifecycleState: .selectedForImport
+    )
+    let session = makeTestSession(
+        sourceRoot: sourceRoot,
+        archiveRoot: archiveRoot,
+        items: [copiedItem, newItem],
+        title: "Continued Copy"
+    )
+
+    let result = try await ImportCoordinator().commit(session: session)
+    let refreshedCopiedItem = try #require(result.session.mediaItems.first { $0.id == copiedItem.id })
+    let refreshedNewItem = try #require(result.session.mediaItems.first { $0.id == newItem.id })
+
+    #expect(refreshedCopiedItem.lifecycleState == .sourceCleanupPending)
+    #expect(refreshedCopiedItem.destinationURL == copiedDestination)
+    #expect(refreshedNewItem.lifecycleState == .verified)
+    #expect(refreshedNewItem.destinationURL != nil)
+    #expect(result.fileManifests.count == 2)
+}
+
 @Test func importCoordinatorCleanupSkipsWhenSelectedItemsAreNotCleanupPending() async throws {
     let root = try makeTemporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }

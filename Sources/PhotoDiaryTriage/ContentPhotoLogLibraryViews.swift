@@ -195,6 +195,14 @@ private struct PhotoLogActionGrid: View {
             .disabled(log.isMembershipLocked)
             .help(log.membershipLockMessage ?? PhotoLogStatusPolicy.editLogHelp)
 
+            if appState.canAddCurrentSourceDecisions(to: log.sessionID) {
+                Button("Add Marked") {
+                    appState.addCurrentSourceDecisions(to: log.sessionID)
+                }
+                .buttonStyle(.borderedProminent)
+                .help("Add the current source-inbox S/C/X choices to this photo log.")
+            }
+
             Button("Delete") {
                 appState.deletePhotoLog(log.sessionID)
             }

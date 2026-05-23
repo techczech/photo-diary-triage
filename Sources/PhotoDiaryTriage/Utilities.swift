@@ -82,6 +82,14 @@ enum DateFormatting {
         formatter.dateFormat = "dd MMM HH:mm"
         return formatter
     }()
+
+    static let automaticPhotoLogTitle: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_GB_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd EEEE"
+        return formatter
+    }()
 }
 
 enum ArchiveLibraryInspector {

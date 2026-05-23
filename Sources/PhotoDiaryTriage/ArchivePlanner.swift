@@ -9,7 +9,7 @@ struct ArchivePlanner {
 
     func plan(for session: ImportSession) -> ArchiveCommitPlan {
         let selectedItems = session.mediaItems
-            .filter { $0.selectionState.isIncluded }
+            .filter { $0.selectionState.isIncluded && !$0.lifecycleState.isImportedOrBeyond }
             .sorted(by: Self.mediaSort)
         let walkDate = selectedItems.compactMap(\.capturedAt).min() ?? session.startedAt
         let titleSource = session.walkMetadata.title.nonEmpty ?? session.walkMetadata.location.nonEmpty ?? "photo-walk"

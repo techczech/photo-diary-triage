@@ -1140,6 +1140,127 @@ import Testing
 }
 
 @MainActor
+@Test func copyFromSourceInboxCreatesAutomaticDatedPhotoLog() async throws {
+    let state = AppState(testing: true)
+    let root = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let sourceRoot = root.appendingPathComponent("source", isDirectory: true)
+    let archiveRoot = root.appendingPathComponent("archive", isDirectory: true)
+    try writeTestFile(sourceRoot.appendingPathComponent("IMG_0001.jpg"), contents: "keeper")
+    try writeTestFile(sourceRoot.appendingPathComponent("IMG_0002.jpg"), contents: "excluded")
+    let capturedAt = Date(timeIntervalSince1970: 1_779_532_200)
+    let items = [
+        makeTestMediaItem(
+            sourceRoot: sourceRoot,
+            fileName: "IMG_0001.jpg",
+            capturedAt: capturedAt,
+            selectionState: .included,
+            lifecycleState: .selectedForImport
+        ),
+        makeTestMediaItem(
+            sourceRoot: sourceRoot,
+            fileName: "IMG_0002.jpg",
+            capturedAt: capturedAt.addingTimeInterval(60),
+            selectionState: .excluded
+        )
+    ]
+    state.currentSession = makeTestSession(
+        sourceRoot: sourceRoot,
+        archiveRoot: archiveRoot,
+        items: items,
+        title: "",
+        location: "",
+        notes: "",
+        workspaceSourceFolder: sourceRoot,
+        sessionKind: .inbox
+    )
+    state.setWorkspaceMode(.cameraTriage)
+    if let leafID = state.browserNodeMap.values.first(where: { ($0.children?.isEmpty ?? true) && $0.mediaItemIDs.count == items.count })?.id {
+        state.selectedSidebarNodeID = leafID
+    }
+    state.activePane = .media
+
+    state.commitImport()
+    for _ in 0..<60 {
+        if state.currentSession?.status == "imported" || state.importOperation.phase == .failed {
+            break
+        }
+        try await Task.sleep(for: .milliseconds(50))
+    }
+
+    #expect(state.currentSession?.sessionKind == .walkDraft)
+    #expect(state.currentSession?.walkMetadata.title == "2026-05-23 Saturday")
+    #expect(state.currentSession?.status == "imported")
+    #expect(state.currentSession?.mediaItems.count == 2)
+    #expect(state.currentSession?.mediaItems.first { $0.fileName == "IMG_0001.jpg" }?.lifecycleState == .verified)
+    #expect(state.currentSession?.mediaItems.first { $0.fileName == "IMG_0002.jpg" }?.selectionState == .excluded)
+    #expect(state.statusMessage.contains("Imported 1 marked items"))
+}
+
+@MainActor
+@Test func sourceInboxCanAddMarkedPhotosToExistingCopiedLog() async throws {
+    let state = AppState(testing: true)
+    let root = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let sourceRoot = root.appendingPathComponent("source", isDirectory: true)
+    let archiveRoot = root.appendingPathComponent("archive", isDirectory: true)
+    for fileName in ["IMG_0001.jpg", "IMG_0002.jpg", "IMG_0003.jpg"] {
+        try writeTestFile(sourceRoot.appendingPathComponent(fileName), contents: fileName)
+    }
+    let capturedAt = Date(timeIntervalSince1970: 1_779_532_200)
+    let items = [
+        makeTestMediaItem(sourceRoot: sourceRoot, fileName: "IMG_0001.jpg", capturedAt: capturedAt, selectionState: .included, lifecycleState: .selectedForImport),
+        makeTestMediaItem(sourceRoot: sourceRoot, fileName: "IMG_0002.jpg", capturedAt: capturedAt.addingTimeInterval(60)),
+        makeTestMediaItem(sourceRoot: sourceRoot, fileName: "IMG_0003.jpg", capturedAt: capturedAt.addingTimeInterval(120))
+    ]
+    state.currentSession = makeTestSession(
+        sourceRoot: sourceRoot,
+        archiveRoot: archiveRoot,
+        items: items,
+        title: "",
+        location: "",
+        notes: "",
+        workspaceSourceFolder: sourceRoot,
+        sessionKind: .inbox
+    )
+    state.setWorkspaceMode(.cameraTriage)
+    if let leafID = state.browserNodeMap.values.first(where: { ($0.children?.isEmpty ?? true) && $0.mediaItemIDs.count == items.count })?.id {
+        state.selectedSidebarNodeID = leafID
+    }
+    state.activePane = .media
+
+    state.commitImport()
+    for _ in 0..<60 {
+        if state.currentSession?.status == "imported" || state.importOperation.phase == .failed {
+            break
+        }
+        try await Task.sleep(for: .milliseconds(50))
+    }
+    let copiedLogID = try #require(state.currentSession?.id)
+
+    await state.openSession(for: sourceRoot)
+    let second = try #require(state.currentSession?.mediaItems.first { $0.relativePath == "IMG_0002.jpg" })
+    let third = try #require(state.currentSession?.mediaItems.first { $0.relativePath == "IMG_0003.jpg" })
+    state.selectMediaItems([second.id])
+    state.markCurrentSelectionForImport()
+    state.selectMediaItems([third.id])
+    state.excludeCurrentSelectionFromImport()
+
+    #expect(state.canAddCurrentSourceDecisions(to: copiedLogID))
+    state.addCurrentSourceDecisions(to: copiedLogID)
+
+    #expect(state.currentSession?.id == copiedLogID)
+    #expect(state.currentSession?.status == "imported")
+    #expect(state.currentSession?.mediaItems.map(\.relativePath).sorted() == ["IMG_0001.jpg", "IMG_0002.jpg", "IMG_0003.jpg"])
+    #expect(state.currentSession?.mediaItems.first { $0.relativePath == "IMG_0001.jpg" }?.lifecycleState == .verified)
+    #expect(state.currentSession?.mediaItems.first { $0.relativePath == "IMG_0002.jpg" }?.lifecycleState == .selectedForImport)
+    #expect(state.currentSession?.mediaItems.first { $0.relativePath == "IMG_0003.jpg" }?.selectionState == .excluded)
+    #expect(state.canCommitImport)
+}
+
+@MainActor
 @Test func filterChangeReconcilesSelectionWhenHiddenItemsDropOut() {
     let sourceRoot = URL(fileURLWithPath: "/tmp/review-filter-reconcile", isDirectory: true)
     let base = Date(timeIntervalSince1970: 20_000)

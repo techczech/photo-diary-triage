@@ -57,6 +57,9 @@ struct ImportCoordinator: ImportCoordinating {
                 }
             } else {
                 updatedSession.mediaItems[index].destinationURL = entry.destinationURL
+                if updatedSession.mediaItems[index].lifecycleState == .discovered {
+                    updatedSession.mediaItems[index].lifecycleState = try updatedSession.mediaItems[index].lifecycleState.transition(to: .selectedForImport)
+                }
                 updatedSession.mediaItems[index].lifecycleState = try updatedSession.mediaItems[index].lifecycleState.transition(to: .imported)
                 updatedSession.mediaItems[index].importedAt = Date()
             }
@@ -113,7 +116,7 @@ struct ImportCoordinator: ImportCoordinating {
     }
 
     private func verifyImportedFiles(in session: inout ImportSession, events: inout [SessionLogEvent]) throws {
-        for index in session.mediaItems.indices where session.mediaItems[index].selectionState.isIncluded {
+        for index in session.mediaItems.indices where session.mediaItems[index].selectionState.isIncluded && session.mediaItems[index].lifecycleState == .imported {
             guard let destinationURL = session.mediaItems[index].destinationURL else { continue }
             let sourceAttributes = try fileManager.attributesOfItem(atPath: session.mediaItems[index].sourceURL.path)
             let destinationAttributes = try fileManager.attributesOfItem(atPath: destinationURL.path)
