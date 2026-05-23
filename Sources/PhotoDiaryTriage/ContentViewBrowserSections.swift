@@ -11,14 +11,14 @@ struct HeaderPaneView: View {
                     get: { appState.workspaceMode },
                     set: { appState.setWorkspaceMode($0) }
                 )) {
-                    ForEach(WorkspaceMode.allCases, id: \.self) { mode in
+                    ForEach(WorkspaceMode.displayOrder, id: \.self) { mode in
                         Label(mode.title, systemImage: mode.systemImage)
                             .tag(mode)
                     }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(width: 430)
+                .frame(width: 560)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Label(appState.workspaceMode.title, systemImage: appState.workspaceMode.systemImage)
@@ -82,13 +82,16 @@ struct BrowserOrReviewPaneView: View {
     let appState: AppState
     @ObservedObject var state: ReviewState
     @ObservedObject var navigationState: ReviewNavigationState
+    @ObservedObject var sidebarState: SidebarState
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HeaderPaneView(appState: appState)
 
             Group {
-                if state.snapshot.contextMediaItemCount > 0 {
+                if appState.workspaceMode == .photoLogs {
+                    PhotoLogLibraryMainPane(appState: appState, state: sidebarState)
+                } else if state.snapshot.contextMediaItemCount > 0 {
                     DayContextPaneView(appState: appState, state: state, navigationState: navigationState)
                 } else if !state.snapshot.detailFolderNodes.isEmpty {
                     FolderBrowserPaneView(appState: appState, state: state)
@@ -110,6 +113,8 @@ struct BrowserOrReviewPaneView: View {
             return "Choose an archive walk"
         case .cameraTriage:
             return "No source selected"
+        case .photoLogs:
+            return "No photo logs"
         case .archiveTriage:
             return "Choose an archive walk"
         }
@@ -121,6 +126,8 @@ struct BrowserOrReviewPaneView: View {
             return "Pick a year, month, or photowalk in the archive library, or open the selected folder in Finder."
         case .cameraTriage:
             return "Open the default source or choose a camera folder before starting triage."
+        case .photoLogs:
+            return "Create a photo log from source triage, then continue it here."
         case .archiveTriage:
             return "Archive triage is separate from camera triage; in this build it stays read-only while you browse."
         }

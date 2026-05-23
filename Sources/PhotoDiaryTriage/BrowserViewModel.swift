@@ -35,7 +35,7 @@ final class BrowserViewModel {
         switch workspaceMode {
         case .archiveView, .archiveTriage:
             return [cachedArchiveSection(rootURL: archiveRoot)]
-        case .cameraTriage:
+        case .cameraTriage, .photoLogs:
             return [buildCurrentSessionSection(currentSession: currentSession, bursts: bursts, clusters: clusters, sourceWorkspaceState: sourceWorkspaceState)]
         }
     }

@@ -42,7 +42,6 @@ struct DetailsInspectorView: View {
     @Binding var walkLocation: String
     @Binding var walkNotes: String
     let summary: String
-    @State private var isPhotoLogLibraryExpanded = false
     @State private var isStorageDetailsExpanded = false
 
     var body: some View {
@@ -68,7 +67,6 @@ struct DetailsInspectorView: View {
                         sessionSection
                         photoSection
                         walkDetailsSection
-                        photoLogsDisclosureSection
                         storageDetailsSection
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -133,22 +131,6 @@ struct DetailsInspectorView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-    }
-
-    private var photoLogsDisclosureSection: some View {
-        GroupBox {
-            DisclosureGroup(isExpanded: $isPhotoLogLibraryExpanded) {
-                PhotoLogLibraryPane(
-                    appState: appState,
-                    groups: sidebarState.snapshot.photoLogGroups,
-                    canPresentPhotoLogCreation: sidebarState.snapshot.canPresentPhotoLogCreation
-                )
-                .padding(.top, 8)
-            } label: {
-                Label("Photo Logs", systemImage: "books.vertical")
-                    .font(.subheadline.weight(.semibold))
             }
         }
     }

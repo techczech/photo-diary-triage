@@ -455,6 +455,8 @@ final class AppState: ObservableObject {
             return "Browse saved photowalks in the archive library."
         case .cameraTriage:
             return "Review photos from the current camera or SSD source."
+        case .photoLogs:
+            return "Manage photo logs created from source triage."
         case .archiveTriage:
             return "Review archive walks separately from source cleanup."
         }
@@ -473,6 +475,8 @@ final class AppState: ObservableObject {
             }
             let counts = triageCounts(for: currentSession.mediaItems)
             return "\(counts.included) selected, \(counts.candidate) candidate, \(counts.excluded) excluded. Create or copy the photo log when ready."
+        case .photoLogs:
+            return "Create a log from current source decisions, continue an existing log, or inspect its contents."
         case .archiveTriage:
             return "Archive triage is separated but read-only in this build; browse the archive without changing import states."
         }
@@ -825,15 +829,19 @@ final class AppState: ObservableObject {
 
     func setWorkspaceMode(_ mode: WorkspaceMode) {
         guard workspaceMode != mode else { return }
+        let previousMode = workspaceMode
+        let preserveSourceReviewContext = mode == .photoLogs && previousMode == .cameraTriage && !isBrowsingArchive
         workspaceMode = mode
         rebuildBrowserCaches()
-        selectedSidebarNodeID = preferredSidebarNodeID(for: mode)
-        activePane = .sidebar
-        dayDetailDisplayMode = .review
-        reviewKeyboardTarget = .items
-        drilledInlineSectionID = nil
-        drilledInlineSectionMediaItemIDs = []
-        clearDetailSelections()
+        if !preserveSourceReviewContext {
+            selectedSidebarNodeID = preferredSidebarNodeID(for: mode)
+            activePane = .sidebar
+            dayDetailDisplayMode = .review
+            reviewKeyboardTarget = .items
+            drilledInlineSectionID = nil
+            drilledInlineSectionMediaItemIDs = []
+            clearDetailSelections()
+        }
         loadArchiveMediaIfNeeded(for: selectedSidebarNodeID)
         resetInlineExpansionState()
         requestVisibleThumbnails()
@@ -3213,7 +3221,7 @@ final class AppState: ObservableObject {
                 return "section-archive-library"
             }
             return browserRoots.first?.id
-        case .cameraTriage:
+        case .cameraTriage, .photoLogs:
             let preferred = browserViewModel.preferredInitialSidebarNodeID(
                 for: currentSession,
                 bursts: burstGroups,
@@ -3232,6 +3240,8 @@ final class AppState: ObservableObject {
                 return "Camera Triage. Open a source folder to sort new photos into a photo log."
             }
             return "Camera Triage. Use S, C, and X to decide which source photos belong in the log."
+        case .photoLogs:
+            return "Photo Logs. Continue existing logs, add marked source decisions, or create a log from source triage."
         case .archiveTriage:
             return "Archive Triage. This mode is separated from source cleanup and is read-only in this build."
         }
