@@ -376,8 +376,9 @@ import Testing
 
     state.openComparison(for: [items[0].id, items[2].id], title: "Compare Pair")
     state.selectAllVisibleMedia()
-    #expect(state.selectedMediaItemIDs == Set(items.map(\.id)))
+    #expect(state.selectedMediaItemIDs == [items[0].id, items[2].id])
 
+    state.selectedMediaItemIDs = Set(items.map(\.id))
     state.selectAllComparisonItems()
 
     #expect(state.selectedMediaItemIDs == [items[0].id, items[2].id])
@@ -386,8 +387,132 @@ import Testing
     state.selectedMediaItemIDs.insert(items[3].id)
     state.deselectComparisonItems()
 
-    #expect(state.selectedMediaItemIDs == [items[3].id])
+    #expect(state.selectedMediaItemIDs.isEmpty)
     #expect(state.focusedReviewItemID == items[0].id)
+}
+
+@MainActor
+@Test func compareClickSelectionNeverExtendsThroughFolderItems() {
+    let items = makeSelectionItems(count: 5)
+    let state = makeReviewAppState(items: items)
+
+    state.openComparison(for: [items[0].id, items[2].id, items[4].id], title: "Compare Alternates")
+    state.handleGridSelection(for: items[0].id, click: ReviewGridClickContext(modifiers: [], clickCount: 1))
+    state.handleGridSelection(for: items[4].id, click: ReviewGridClickContext(modifiers: [.shift], clickCount: 1))
+
+    #expect(state.selectedMediaItemIDs == [items[0].id, items[2].id, items[4].id])
+
+    state.selectedMediaItemIDs = Set(items.map(\.id))
+    state.handleGridSelection(for: items[2].id, click: ReviewGridClickContext(modifiers: [.command], clickCount: 1))
+
+    #expect(state.selectedMediaItemIDs == [items[0].id, items[4].id])
+    #expect(state.focusedReviewItemID == items[2].id)
+}
+
+@MainActor
+@Test func compareSpaceToggleDropsStaleOutsideSelection() {
+    let items = makeSelectionItems(count: 4)
+    let state = makeReviewAppState(items: items)
+
+    state.openComparison(for: [items[1].id, items[3].id], title: "Compare Pair")
+    state.selectedMediaItemIDs = Set(items.map(\.id))
+    state.focusedReviewItemID = items[1].id
+
+    state.toggleFocusedReviewItemSelection()
+
+    #expect(state.selectedMediaItemIDs == [items[3].id])
+    #expect(state.focusedReviewItemID == items[1].id)
+}
+
+@MainActor
+@Test func compareGenericExcludeWithStaleFolderSelectionMutatesOnlyCompareItems() {
+    let sourceRoot = URL(fileURLWithPath: "/tmp/review-compare-stale-exclude", isDirectory: true)
+    let base = Date(timeIntervalSince1970: 31_000)
+    let items = [
+        makeTestMediaItem(sourceRoot: sourceRoot, fileName: "outside-0.jpg", capturedAt: base, selectionState: .included, lifecycleState: .selectedForImport),
+        makeTestMediaItem(sourceRoot: sourceRoot, fileName: "outside-1.jpg", capturedAt: base.addingTimeInterval(1), selectionState: .included, lifecycleState: .selectedForImport),
+        makeTestMediaItem(sourceRoot: sourceRoot, fileName: "compare-0.jpg", capturedAt: base.addingTimeInterval(2), selectionState: .included, lifecycleState: .selectedForImport),
+        makeTestMediaItem(sourceRoot: sourceRoot, fileName: "compare-1.jpg", capturedAt: base.addingTimeInterval(3), selectionState: .included, lifecycleState: .selectedForImport)
+    ]
+    let state = makeReviewAppState(items: items)
+
+    state.openComparison(for: [items[2].id, items[3].id], title: "Compare Pair")
+    state.selectedMediaItemIDs = Set(items.map(\.id))
+    state.excludeCurrentSelectionFromImport()
+
+    #expect(state.currentSession?.mediaItems.first(where: { $0.id == items[0].id })?.selectionState == .included)
+    #expect(state.currentSession?.mediaItems.first(where: { $0.id == items[1].id })?.selectionState == .included)
+    #expect(state.currentSession?.mediaItems.first(where: { $0.id == items[2].id })?.selectionState == .excluded)
+    #expect(state.currentSession?.mediaItems.first(where: { $0.id == items[3].id })?.selectionState == .excluded)
+    #expect(state.comparingMediaItemIDs.isEmpty)
+}
+
+@MainActor
+@Test func compareGenericTriageActionsIgnoreStaleOutsideSelection() {
+    let sourceRoot = URL(fileURLWithPath: "/tmp/review-compare-stale-actions", isDirectory: true)
+    let base = Date(timeIntervalSince1970: 32_000)
+    let items = [
+        makeTestMediaItem(sourceRoot: sourceRoot, fileName: "outside.jpg", capturedAt: base, selectionState: .excluded),
+        makeTestMediaItem(sourceRoot: sourceRoot, fileName: "compare-0.jpg", capturedAt: base.addingTimeInterval(1)),
+        makeTestMediaItem(sourceRoot: sourceRoot, fileName: "compare-1.jpg", capturedAt: base.addingTimeInterval(2)),
+        makeTestMediaItem(sourceRoot: sourceRoot, fileName: "compare-2.jpg", capturedAt: base.addingTimeInterval(3), selectionState: .included, lifecycleState: .selectedForImport)
+    ]
+    let state = makeReviewAppState(items: items)
+
+    state.openComparison(for: [items[1].id, items[2].id, items[3].id], title: "Compare Trio")
+    state.selectedMediaItemIDs = [items[0].id]
+    state.focusedReviewItemID = items[1].id
+    state.markCurrentSelectionForImport()
+
+    #expect(state.currentSession?.mediaItems.first(where: { $0.id == items[0].id })?.selectionState == .excluded)
+    #expect(state.currentSession?.mediaItems.first(where: { $0.id == items[1].id })?.selectionState == .included)
+    #expect(state.focusedReviewItemID == items[2].id)
+
+    state.selectedMediaItemIDs = [items[0].id, items[2].id]
+    state.markCurrentSelectionAsCandidate()
+
+    #expect(state.currentSession?.mediaItems.first(where: { $0.id == items[0].id })?.selectionState == .excluded)
+    #expect(state.currentSession?.mediaItems.first(where: { $0.id == items[2].id })?.selectionState == .candidate)
+
+    state.selectedMediaItemIDs = [items[0].id, items[3].id]
+    state.unmarkCurrentSelectionForImport()
+
+    #expect(state.currentSession?.mediaItems.first(where: { $0.id == items[0].id })?.selectionState == .excluded)
+    #expect(state.currentSession?.mediaItems.first(where: { $0.id == items[3].id })?.selectionState == .undecided)
+}
+
+@MainActor
+@Test func compareRawToggleWithStaleFolderSelectionMutatesOnlyCompareItems() {
+    let sourceRoot = URL(fileURLWithPath: "/tmp/review-compare-stale-raw", isDirectory: true)
+    let base = Date(timeIntervalSince1970: 33_000)
+    let outsideCompanion = CompanionFile(
+        sourceURL: sourceRoot.appendingPathComponent("outside.cr3"),
+        relativePath: "outside.cr3",
+        fileName: "outside.cr3",
+        fileSizeBytes: 1,
+        kind: .raw
+    )
+    let compareCompanion = CompanionFile(
+        sourceURL: sourceRoot.appendingPathComponent("compare.cr3"),
+        relativePath: "compare.cr3",
+        fileName: "compare.cr3",
+        fileSizeBytes: 1,
+        kind: .raw
+    )
+    let items = [
+        makeTestMediaItem(sourceRoot: sourceRoot, fileName: "outside.jpg", capturedAt: base, companionFiles: [outsideCompanion]),
+        makeTestMediaItem(sourceRoot: sourceRoot, fileName: "compare.jpg", capturedAt: base.addingTimeInterval(1), companionFiles: [compareCompanion]),
+        makeTestMediaItem(sourceRoot: sourceRoot, fileName: "compare-peer.jpg", capturedAt: base.addingTimeInterval(2))
+    ]
+    let state = makeReviewAppState(items: items)
+
+    state.openComparison(for: [items[1].id, items[2].id], title: "Compare Pair")
+    state.selectedMediaItemIDs = Set(items.map(\.id))
+    state.toggleRawForCurrentMediaSelection()
+
+    #expect(state.currentSession?.mediaItems.first(where: { $0.id == items[0].id })?.importRawCompanions == false)
+    #expect(state.currentSession?.mediaItems.first(where: { $0.id == items[1].id })?.importRawCompanions == true)
+    #expect(state.currentSession?.mediaItems.first(where: { $0.id == items[1].id })?.selectionState == .included)
 }
 
 @MainActor

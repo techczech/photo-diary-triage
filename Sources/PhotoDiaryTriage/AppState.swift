@@ -708,6 +708,9 @@ final class AppState: ObservableObject {
     }
 
     var canClearCurrentSelection: Bool {
+        if !comparingMediaItemIDs.isEmpty {
+            return selectedMediaItemIDs.contains { comparingMediaItemIDs.contains($0) }
+        }
         switch activePane {
         case .sidebar:
             return false
@@ -735,7 +738,9 @@ final class AppState: ObservableObject {
     }
 
     var canToggleRawForSelection: Bool {
-        canMutateImportSelection && selectedMediaItems.contains { !$0.companionFiles.isEmpty }
+        canMutateImportSelection && currentSelectionMediaIDs().contains { mediaID in
+            mediaItem(for: mediaID)?.companionFiles.isEmpty == false
+        }
     }
 
     var canPresentPhotoLogCreation: Bool {
@@ -2200,6 +2205,10 @@ final class AppState: ObservableObject {
 
     func handleGridSelection(for itemID: UUID, click: ReviewGridClickContext) {
         guard let _ = currentSession else { return }
+        if !comparingMediaItemIDs.isEmpty, comparingMediaItemIDs.contains(itemID) {
+            handleComparisonSelection(for: itemID, click: click)
+            return
+        }
         var state = reviewSelectionState()
         selectionManager.handleGridSelection(
             for: itemID,
@@ -2247,24 +2256,43 @@ final class AppState: ObservableObject {
     }
 
     func selectAllVisibleMedia() {
+        if !comparingMediaItemIDs.isEmpty {
+            selectAllComparisonItems()
+            return
+        }
         var state = reviewSelectionState()
         selectionManager.selectAllVisibleMedia(reviewInteractionItems, state: &state)
         applyReviewSelectionState(state)
     }
 
     func deselectAllVisibleMedia() {
+        if !comparingMediaItemIDs.isEmpty {
+            deselectComparisonItems()
+            return
+        }
         var state = reviewSelectionState()
         selectionManager.deselectAllVisibleMedia(reviewInteractionItems, state: &state)
         applyReviewSelectionState(state)
     }
 
     func toggleFocusedReviewItemSelection() {
+        if !comparingMediaItemIDs.isEmpty,
+           let focusedID = focusedReviewItemID ?? comparingMediaItemIDs.first {
+            toggleSelectionForComparisonItem(focusedID)
+            return
+        }
         var state = reviewSelectionState()
         selectionManager.toggleFocusedReviewItemSelection(reviewInteractionItems, state: &state)
         applyReviewSelectionState(state)
     }
 
     func selectFocusedReviewItemOnly() {
+        if !comparingMediaItemIDs.isEmpty {
+            guard let focusedID = focusedReviewItemID ?? comparingMediaItemIDs.first,
+                  comparingMediaItemIDs.contains(focusedID) else { return }
+            focusComparisonItem(focusedID)
+            return
+        }
         var state = reviewSelectionState()
         selectionManager.selectFocusedReviewItemOnly(reviewInteractionItems, state: &state)
         applyReviewSelectionState(state)
@@ -2428,7 +2456,7 @@ final class AppState: ObservableObject {
 
     func deselectComparisonItems() {
         guard !comparingMediaItemIDs.isEmpty else { return }
-        selectedMediaItemIDs.subtract(Set(comparingMediaItemIDs))
+        selectedMediaItemIDs.removeAll()
         reviewSelectionAnchorID = nil
         if let focusedReviewItemID, comparingMediaItemIDs.contains(focusedReviewItemID) {
             // Keep compare keyboard focus on the current image even when selection is empty.
@@ -2442,7 +2470,60 @@ final class AppState: ObservableObject {
     }
 
     func toggleSelectionForComparisonItem(_ itemID: UUID) {
-        handleGridSelection(for: itemID, modifiers: [.command])
+        guard comparingMediaItemIDs.contains(itemID) else { return }
+        var selectedCompareIDs = selectedMediaItemIDs.intersection(Set(comparingMediaItemIDs))
+        if selectedCompareIDs.contains(itemID) {
+            selectedCompareIDs.remove(itemID)
+        } else {
+            selectedCompareIDs.insert(itemID)
+        }
+        selectedMediaItemIDs = selectedCompareIDs
+        focusedReviewItemID = itemID
+        reviewSelectionAnchorID = itemID
+        reviewKeyboardTarget = .items
+        reviewGridHasFocus = true
+        activePane = .media
+    }
+
+    private func handleComparisonSelection(for itemID: UUID, click: ReviewGridClickContext) {
+        guard comparingMediaItemIDs.contains(itemID) else { return }
+        let compareIDSet = Set(comparingMediaItemIDs)
+
+        if click.isShiftPressed {
+            let anchorID = [reviewSelectionAnchorID, focusedReviewItemID]
+                .compactMap { $0 }
+                .first(where: { compareIDSet.contains($0) }) ?? itemID
+            if let anchorIndex = comparingMediaItemIDs.firstIndex(of: anchorID),
+               let targetIndex = comparingMediaItemIDs.firstIndex(of: itemID) {
+                let lower = min(anchorIndex, targetIndex)
+                let upper = max(anchorIndex, targetIndex)
+                selectedMediaItemIDs = Set(comparingMediaItemIDs[lower...upper])
+                reviewSelectionAnchorID = anchorID
+            } else {
+                selectedMediaItemIDs = [itemID]
+                reviewSelectionAnchorID = itemID
+            }
+        } else if click.isCommandPressed {
+            var selectedCompareIDs = selectedMediaItemIDs.intersection(compareIDSet)
+            if selectedCompareIDs.contains(itemID) {
+                selectedCompareIDs.remove(itemID)
+            } else {
+                selectedCompareIDs.insert(itemID)
+            }
+            selectedMediaItemIDs = selectedCompareIDs
+            reviewSelectionAnchorID = itemID
+        } else {
+            selectedMediaItemIDs = [itemID]
+            reviewSelectionAnchorID = itemID
+        }
+
+        focusedReviewItemID = itemID
+        reviewKeyboardTarget = .items
+        reviewGridHasFocus = true
+        activePane = .media
+        if click.isDoubleClick {
+            openFocusedReviewItem()
+        }
     }
 
     func performCompareShortcut(_ key: String) {
@@ -2489,6 +2570,10 @@ final class AppState: ObservableObject {
     }
 
     func clearCurrentSelection() {
+        if !comparingMediaItemIDs.isEmpty {
+            deselectComparisonItems()
+            return
+        }
         switch activePane {
         case .sidebar:
             break
@@ -2501,6 +2586,10 @@ final class AppState: ObservableObject {
     }
 
     func markCurrentSelectionForImport() {
+        if !comparingMediaItemIDs.isEmpty {
+            markCurrentComparisonSelectionForImport()
+            return
+        }
         guard canMutateImportSelection else { return }
         let selectedIDs = currentSelectionMediaIDs()
         let editableIDs = editableTriageMediaIDs(from: selectedIDs)
@@ -2514,6 +2603,10 @@ final class AppState: ObservableObject {
     }
 
     func excludeCurrentSelectionFromImport() {
+        if !comparingMediaItemIDs.isEmpty {
+            excludeCurrentComparisonSelectionFromImport()
+            return
+        }
         guard canMutateImportSelection else { return }
         let selectedIDs = currentSelectionMediaIDs()
         let editableIDs = editableTriageMediaIDs(from: selectedIDs)
@@ -2527,6 +2620,10 @@ final class AppState: ObservableObject {
     }
 
     func markCurrentSelectionAsCandidate() {
+        if !comparingMediaItemIDs.isEmpty {
+            markCurrentComparisonSelectionAsCandidate()
+            return
+        }
         guard canMutateImportSelection else { return }
         let selectedIDs = currentSelectionMediaIDs()
         let editableIDs = editableTriageMediaIDs(from: selectedIDs)
@@ -2540,6 +2637,10 @@ final class AppState: ObservableObject {
     }
 
     func unmarkCurrentSelectionForImport() {
+        if !comparingMediaItemIDs.isEmpty {
+            unmarkCurrentComparisonSelectionForImport()
+            return
+        }
         guard canMutateImportSelection else { return }
         let selectedIDs = currentSelectionMediaIDs()
         let editableIDs = editableTriageMediaIDs(from: selectedIDs)
@@ -2554,7 +2655,7 @@ final class AppState: ObservableObject {
     func toggleRawForCurrentMediaSelection() {
         guard canMutateImportSelection else { return }
         guard let currentSession else { return }
-        save(sessionMutationCoordinator.sessionByTogglingRawCompanions(currentSession, selectedIDs: selectedMediaItemIDs))
+        save(sessionMutationCoordinator.sessionByTogglingRawCompanions(currentSession, selectedIDs: currentSelectionMediaIDs()))
     }
 
     func markComparisonItemForImport(_ itemID: UUID) {
@@ -2796,6 +2897,18 @@ final class AppState: ObservableObject {
     }
 
     private func currentSelectionMediaIDs() -> Set<UUID> {
+        if !comparingMediaItemIDs.isEmpty {
+            let compareIDSet = Set(comparingMediaItemIDs)
+            let selectedCompareIDs = selectedMediaItemIDs.intersection(compareIDSet)
+            if !selectedCompareIDs.isEmpty {
+                return selectedCompareIDs
+            }
+            if let focusedReviewItemID, compareIDSet.contains(focusedReviewItemID) {
+                return [focusedReviewItemID]
+            }
+            return []
+        }
+
         switch activePane {
         case .media:
             if !selectedMediaItemIDs.isEmpty {
