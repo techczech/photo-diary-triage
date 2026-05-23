@@ -503,7 +503,8 @@ private func archiveWalkCount(in nodes: [BrowserNode]) -> Int {
     #expect(cleanupLocked.nextAction.contains("Confirm Backup"))
     #expect(cleanupReady.state.contains("Ready for source cleanup"))
     #expect(cleanupReady.detail.contains("Backup is confirmed"))
-    #expect(cleanupReady.nextAction == "Use Clean Source SSD.")
+    #expect(cleanupReady.nextAction.contains("Start New Photo Log"))
+    #expect(cleanupReady.nextAction.contains("Clean Source SSD"))
 }
 
 @Test func workflowGuidanceShowsArchiveBrowsingAsReadOnly() {

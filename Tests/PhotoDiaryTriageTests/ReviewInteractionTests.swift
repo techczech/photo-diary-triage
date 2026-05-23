@@ -1315,7 +1315,14 @@ import Testing
     }
     let copiedLogID = try #require(state.currentSession?.id)
 
-    await state.openSession(for: sourceRoot)
+    #expect(state.canStartNewPhotoLogFromCurrentLog)
+    state.startNewPhotoLogFromCurrentLog()
+    #expect(state.currentSession?.sessionKind == .inbox)
+    #expect(state.currentSession?.workspaceSourceFolder.standardizedFileURL == sourceRoot.standardizedFileURL)
+    #expect(state.currentSession?.mediaItems.map(\.relativePath).sorted() == ["IMG_0002.jpg", "IMG_0003.jpg"])
+    #expect(state.importOperation.phase == .idle)
+    #expect(state.statusMessage.contains("Opened the source inbox"))
+
     let second = try #require(state.currentSession?.mediaItems.first { $0.relativePath == "IMG_0002.jpg" })
     let third = try #require(state.currentSession?.mediaItems.first { $0.relativePath == "IMG_0003.jpg" })
     state.selectMediaItems([second.id])

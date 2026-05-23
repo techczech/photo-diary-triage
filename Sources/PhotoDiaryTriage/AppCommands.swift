@@ -190,6 +190,11 @@ struct PhotoDiaryCommands: Commands {
             .keyboardShortcut("w", modifiers: [.command, .shift])
             .disabled(!appState.canPresentPhotoLogCreation)
 
+            Button("Start New Photo Log") {
+                appState.startNewPhotoLogFromCurrentLog()
+            }
+            .disabled(!appState.canStartNewPhotoLogFromCurrentLog)
+
             Button("Compare Selection") {
                 appState.openComparisonForCurrentSelection()
             }
