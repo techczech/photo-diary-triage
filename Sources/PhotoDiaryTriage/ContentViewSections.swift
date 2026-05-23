@@ -5,24 +5,125 @@ struct SidebarPaneView: View {
     let appState: AppState
     @ObservedObject var state: SidebarState
     let appRelease: AppRelease
+    @State private var expandedNodeIDs: Set<String> = []
+    @State private var expansionSignature = ""
 
     var body: some View {
         let snapshot = state.snapshot
 
         VStack(alignment: .leading, spacing: 8) {
-            List(snapshot.tree.browserRoots, children: \.children, selection: Binding(
+            List(selection: Binding(
                 get: { state.snapshot.tree.selectedSidebarNodeID },
                 set: { appState.selectSidebarNode($0) }
-            )) { node in
-                SidebarNodeRow(node: node)
+            )) {
+                ForEach(snapshot.tree.browserRoots) { node in
+                    SidebarNodeTreeItem(
+                        appState: appState,
+                        node: node,
+                        expandedNodeIDs: $expandedNodeIDs
+                    )
+                }
             }
             .listStyle(.sidebar)
+            .onAppear {
+                applyAutomaticExpansion(to: snapshot.tree.browserRoots)
+            }
+            .onChange(of: snapshot.tree.browserRoots) { _, roots in
+                applyAutomaticExpansion(to: roots)
+            }
 
             SidebarStatusView(state: state, appRelease: appRelease)
                 .padding(.horizontal, 12)
                 .padding(.bottom, 10)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func applyAutomaticExpansion(to roots: [BrowserNode]) {
+        let automaticNodeIDs = SidebarTreeExpansion.defaultExpandedNodeIDs(for: roots)
+        let signature = SidebarTreeExpansion.signature(for: automaticNodeIDs)
+        guard signature != expansionSignature else { return }
+        expandedNodeIDs.formUnion(automaticNodeIDs)
+        expansionSignature = signature
+    }
+}
+
+struct SidebarNodeTreeItem: View {
+    let appState: AppState
+    let node: BrowserNode
+    @Binding var expandedNodeIDs: Set<String>
+
+    var body: some View {
+        if let children = node.children, !children.isEmpty {
+            DisclosureGroup(isExpanded: isExpanded) {
+                ForEach(children) { child in
+                    SidebarNodeTreeItem(
+                        appState: appState,
+                        node: child,
+                        expandedNodeIDs: $expandedNodeIDs
+                    )
+                }
+            } label: {
+                SidebarNodeRow(node: node)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        appState.selectSidebarNode(node.id)
+                    }
+            }
+            .tag(node.id)
+        } else {
+            SidebarNodeRow(node: node)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    appState.selectSidebarNode(node.id)
+                }
+                .tag(node.id)
+        }
+    }
+
+    private var isExpanded: Binding<Bool> {
+        Binding(
+            get: { expandedNodeIDs.contains(node.id) },
+            set: { isExpanded in
+                if isExpanded {
+                    expandedNodeIDs.insert(node.id)
+                } else {
+                    expandedNodeIDs.remove(node.id)
+                }
+            }
+        )
+    }
+}
+
+enum SidebarTreeExpansion {
+    static func defaultExpandedNodeIDs(for roots: [BrowserNode]) -> Set<String> {
+        var ids = Set<String>()
+        for root in roots {
+            collectDefaultExpandedNodeIDs(from: root, into: &ids)
+        }
+        return ids
+    }
+
+    static func signature(for nodeIDs: Set<String>) -> String {
+        nodeIDs.sorted().joined(separator: "|")
+    }
+
+    private static func collectDefaultExpandedNodeIDs(from node: BrowserNode, into ids: inout Set<String>) {
+        if shouldAutoExpand(node) {
+            ids.insert(node.id)
+        }
+        for child in node.children ?? [] {
+            collectDefaultExpandedNodeIDs(from: child, into: &ids)
+        }
+    }
+
+    private static func shouldAutoExpand(_ node: BrowserNode) -> Bool {
+        switch node.kind {
+        case .archiveSection, .archiveRoot, .sessionSection, .sessionRoot, .year:
+            return !(node.children?.isEmpty ?? true)
+        case .month, .day, .unknownDate, .photosFolder, .burstsFolder, .timeClustersFolder, .burstGroup, .timeCluster, .archiveWalkFolder:
+            return false
+        }
     }
 }
 

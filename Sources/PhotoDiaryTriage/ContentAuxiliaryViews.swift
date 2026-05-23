@@ -671,44 +671,116 @@ struct FullPhotoSheet: View {
     let appState: AppState
     let item: MediaItem
     @State private var zoom: CGFloat = 1
+    @State private var viewport = CompareViewport.zero
+    @State private var panCommand = ComparePanCommand.idle
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(item.fileName)
-                        .font(.title3.weight(.semibold))
-                    Text(item.relativePath)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button("Previous") {
-                    appState.navigatePreview(by: -1)
-                }
-                .disabled(!appState.canNavigatePreviewBackward)
-                .keyboardShortcut(.leftArrow, modifiers: [])
-                .shortcutHint("Left", help: "Show the previous visible photo (Left Arrow)")
-
-                Button("Next") {
-                    appState.navigatePreview(by: 1)
-                }
-                .disabled(!appState.canNavigatePreviewForward)
-                .keyboardShortcut(.rightArrow, modifiers: [])
-                .shortcutHint("Right", help: "Show the next visible photo (Right Arrow)")
-
-                ZoomToolbar(zoom: $zoom)
-                Button("Close") {
+        ZStack {
+            ReviewKeyInputView(
+                isFocused: true,
+                onArrow: { dx, _, _ in
+                    if dx < 0 {
+                        appState.navigatePreview(by: -1)
+                    } else if dx > 0 {
+                        appState.navigatePreview(by: 1)
+                    }
+                },
+                onSectionArrow: { _, _ in },
+                onSectionExpandCollapse: { _ in },
+                onSingleKey: { _ in },
+                onPan: { dx, dy in
+                    guard zoom > 1 else { return }
+                    panCommand = ComparePanCommand(
+                        targetItemID: item.id,
+                        dx: dx,
+                        dy: dy,
+                        revision: panCommand.revision &+ 1
+                    )
+                },
+                onSpace: { },
+                onOpen: { },
+                onCommandOpen: { },
+                onEscape: {
                     dismiss()
+                },
+                onSelectAll: { },
+                onDeselectAll: { },
+                onZoomIn: {
+                    zoom = min(4, zoom + 0.25)
+                },
+                onZoomOut: {
+                    zoom = max(0.25, zoom - 0.25)
+                },
+                onZoomReset: {
+                    zoom = 1
+                    viewport = .zero
+                },
+                onToggleSidebar: {
+                    appState.toggleSidebarVisibility()
+                },
+                onToggleInspector: {
+                    appState.toggleDetailsInspector()
                 }
-                .keyboardShortcut(.cancelAction)
-                .shortcutHint("Escape", help: "Close preview (Escape)")
-            }
+            )
+            .frame(width: 1, height: 1)
 
-            FullPhotoPreviewCanvas(appState: appState, item: item, zoom: zoom)
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(item.fileName)
+                            .font(.title3.weight(.semibold))
+                        Text(item.relativePath)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Previous") {
+                        appState.navigatePreview(by: -1)
+                    }
+                    .disabled(!appState.canNavigatePreviewBackward)
+                    .keyboardShortcut(.leftArrow, modifiers: [])
+                    .shortcutHint("Left", help: "Show the previous visible photo (Left Arrow)")
+
+                    Button("Next") {
+                        appState.navigatePreview(by: 1)
+                    }
+                    .disabled(!appState.canNavigatePreviewForward)
+                    .keyboardShortcut(.rightArrow, modifiers: [])
+                    .shortcutHint("Right", help: "Show the next visible photo (Right Arrow)")
+
+                    ZoomToolbar(zoom: $zoom)
+                    Button("Close") {
+                        dismiss()
+                    }
+                    .keyboardShortcut(.cancelAction)
+                    .shortcutHint("Escape", help: "Close preview (Escape)")
+                }
+
+                FullPhotoPreviewCanvas(
+                    appState: appState,
+                    item: item,
+                    zoom: zoom,
+                    viewport: $viewport,
+                    panCommand: panCommand
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
-        .padding(20)
-        .frame(minWidth: 900, minHeight: 650)
+        .padding(14)
+        .frame(width: preferredSheetSize.width, height: preferredSheetSize.height)
+        .onChange(of: item.id) { _, _ in
+            zoom = 1
+            viewport = .zero
+            panCommand = .idle
+        }
+    }
+
+    private var preferredSheetSize: CGSize {
+        let visibleSize = NSScreen.main?.visibleFrame.size ?? CGSize(width: 1_440, height: 900)
+        return CGSize(
+            width: max(1_100, visibleSize.width * 0.92),
+            height: max(760, visibleSize.height * 0.9)
+        )
     }
 }
 
@@ -716,13 +788,23 @@ struct FullPhotoPreviewCanvas: View {
     let appState: AppState
     let item: MediaItem
     let zoom: CGFloat
+    @Binding var viewport: CompareViewport
+    let panCommand: ComparePanCommand
 
     @ObservedObject private var thumbnailSlot: ThumbnailSlot
 
-    init(appState: AppState, item: MediaItem, zoom: CGFloat) {
+    init(
+        appState: AppState,
+        item: MediaItem,
+        zoom: CGFloat,
+        viewport: Binding<CompareViewport>,
+        panCommand: ComparePanCommand
+    ) {
         self.appState = appState
         self.item = item
         self.zoom = zoom
+        _viewport = viewport
+        self.panCommand = panCommand
         _thumbnailSlot = ObservedObject(wrappedValue: appState.thumbnailSlot(for: item))
     }
 
@@ -730,6 +812,9 @@ struct FullPhotoPreviewCanvas: View {
         ZoomableImageCanvas(
             imageURL: item.sourceURL,
             zoom: zoom,
+            itemID: item.id,
+            viewport: $viewport,
+            panCommand: panCommand,
             placeholderImage: thumbnailSlot.image
         )
         .task(id: item.id) {
@@ -1044,6 +1129,7 @@ struct CompareItemCard: View {
                     ReviewGridClickTarget { click in
                         appState.handleGridSelection(for: item.id, click: click)
                     }
+                    .allowsHitTesting(zoom <= 1)
                 }
         }
         .padding(12)
@@ -1109,29 +1195,23 @@ struct ZoomToolbar: View {
 struct ZoomableImageCanvas: View {
     let imageURL: URL
     let zoom: CGFloat
+    let itemID: UUID
+    @Binding var viewport: CompareViewport
+    let panCommand: ComparePanCommand
     var placeholderImage: NSImage?
     @StateObject private var imageModel = DecodedImageModel()
 
     var body: some View {
-        GeometryReader { proxy in
+        Group {
             if let image = imageModel.image {
-                let imageSize = image.size
-                let fitScale = min(
-                    proxy.size.width / max(imageSize.width, 1),
-                    proxy.size.height / max(imageSize.height, 1)
+                LockedCompareImageCanvas(
+                    itemID: itemID,
+                    image: image,
+                    zoom: zoom,
+                    synchronizedViewport: $viewport,
+                    panCommand: panCommand,
+                    isPanLocked: false
                 )
-                let displayScale = max(fitScale, 0.01) * zoom
-
-                ScrollView([.horizontal, .vertical]) {
-                    Image(nsImage: image)
-                        .resizable()
-                        .interpolation(.high)
-                        .frame(
-                            width: max(1, imageSize.width * displayScale),
-                            height: max(1, imageSize.height * displayScale)
-                        )
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let placeholderImage {
                 Image(nsImage: placeholderImage)
                     .resizable()
@@ -1150,6 +1230,7 @@ struct ZoomableImageCanvas: View {
                     .overlay(ProgressView())
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task(id: imageURL) {
             imageModel.load(.interactiveDisplay(imageURL))
         }
