@@ -191,9 +191,9 @@ struct PhotoDiaryCommands: Commands {
             .disabled(!appState.canPresentPhotoLogCreation)
 
             Button("Start New Photo Log") {
-                appState.startNewPhotoLogFromCurrentLog()
+                appState.startNewPhotoLogSession()
             }
-            .disabled(!appState.canStartNewPhotoLogFromCurrentLog)
+            .disabled(!appState.canStartNewPhotoLogSession)
 
             Button("Compare Selection") {
                 appState.openComparisonForCurrentSelection()

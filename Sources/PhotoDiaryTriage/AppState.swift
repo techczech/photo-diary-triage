@@ -751,6 +751,25 @@ final class AppState: ObservableObject {
         return currentSession?.sessionKind == .walkDraft
     }
 
+    var canStartNewPhotoLogSession: Bool {
+        guard importOperation.isRunning == false else { return false }
+        if currentSession?.sessionKind == .walkDraft {
+            return true
+        }
+        return canPresentPhotoLogCreation
+    }
+
+    var photoLogSessionStartActionTitle: String {
+        currentSession?.sessionKind == .walkDraft ? "Save & Start Next Log" : "Start New Photo Log"
+    }
+
+    var photoLogSessionStartActionHelp: String {
+        if currentSession?.sessionKind == .walkDraft {
+            return "Save the current log details, close this log, and reopen the source inbox for the next selection."
+        }
+        return "Create a new photo log from the currently marked source photos."
+    }
+
     var selectedMediaItems: [MediaItem] {
         selectedMediaItemIDs.compactMap { mediaItem(for: $0) }.sorted(by: Self.mediaSort)
     }
@@ -937,6 +956,36 @@ final class AppState: ObservableObject {
 
         statusMessage = "Closing \(logTitle) and scanning the source inbox..."
         loadSourceWorkspace(folder: sourceFolder, origin: .savedWalkInbox)
+    }
+
+    func startNewPhotoLogSession() {
+        guard importOperation.isRunning == false else {
+            statusMessage = "Wait for the current copy operation to finish before starting another photo log."
+            return
+        }
+        guard let currentSession else {
+            statusMessage = "Open a source inbox or photo log before starting a new photo log."
+            return
+        }
+
+        switch currentSession.sessionKind {
+        case .walkDraft:
+            startNewPhotoLogFromCurrentLog()
+        case .inbox:
+            presentPhotoLogCreation()
+        }
+    }
+
+    func saveCurrentLogDetailsAndStartNext(title: String, location: String, notes: String) {
+        if currentSession != nil {
+            updateWalkMetadata(title: title, location: location, notes: notes)
+        }
+        startNewPhotoLogSession()
+    }
+
+    func openPhotoLogLibrary() {
+        setWorkspaceMode(.photoLogs)
+        statusMessage = "Opened Photo Logs. Continue, inspect, or return to the source inbox from the Current Log controls."
     }
 
     func openDefaultSourceWorkspace() {
@@ -2361,6 +2410,37 @@ final class AppState: ObservableObject {
         focusComparisonItem(comparingMediaItemIDs[targetIndex])
     }
 
+    func selectAllComparisonItems() {
+        guard !comparingMediaItemIDs.isEmpty else { return }
+        let compareIDSet = Set(comparingMediaItemIDs)
+        selectedMediaItemIDs = compareIDSet
+        if let focusedReviewItemID, compareIDSet.contains(focusedReviewItemID) {
+            reviewSelectionAnchorID = focusedReviewItemID
+        } else if let firstID = comparingMediaItemIDs.first {
+            focusedReviewItemID = firstID
+            reviewSelectionAnchorID = firstID
+        }
+        reviewKeyboardTarget = .items
+        reviewGridHasFocus = true
+        activePane = .media
+        statusMessage = "Selected \(comparingMediaItemIDs.count) compare item(s)."
+    }
+
+    func deselectComparisonItems() {
+        guard !comparingMediaItemIDs.isEmpty else { return }
+        selectedMediaItemIDs.subtract(Set(comparingMediaItemIDs))
+        reviewSelectionAnchorID = nil
+        if let focusedReviewItemID, comparingMediaItemIDs.contains(focusedReviewItemID) {
+            // Keep compare keyboard focus on the current image even when selection is empty.
+        } else {
+            focusedReviewItemID = comparingMediaItemIDs.first
+        }
+        reviewKeyboardTarget = .items
+        reviewGridHasFocus = true
+        activePane = .media
+        statusMessage = "Deselected compare item(s)."
+    }
+
     func toggleSelectionForComparisonItem(_ itemID: UUID) {
         handleGridSelection(for: itemID, modifiers: [.command])
     }
@@ -2497,6 +2577,40 @@ final class AppState: ObservableObject {
         unmarkCurrentComparisonSelectionForImport()
     }
 
+    func markPreviewItemForImport(_ itemID: UUID) {
+        updatePreviewItemTriageState(itemID, selectionState: .included, action: "Selected", suffix: "for import.")
+    }
+
+    func markPreviewItemAsCandidate(_ itemID: UUID) {
+        updatePreviewItemTriageState(itemID, selectionState: .candidate, action: "Marked", suffix: "as candidate.")
+    }
+
+    func excludePreviewItemFromImport(_ itemID: UUID) {
+        updatePreviewItemTriageState(itemID, selectionState: .excluded, action: "Excluded", suffix: "from import.")
+    }
+
+    func clearPreviewItemTriageState(_ itemID: UUID) {
+        updatePreviewItemTriageState(itemID, selectionState: .undecided, action: "Cleared", suffix: "back to undecided.")
+    }
+
+    func toggleRawForPreviewItem(_ itemID: UUID) {
+        guard canMutateImportSelection else { return }
+        guard let item = currentSession?.mediaItems.first(where: { $0.id == itemID }) else { return }
+        guard !item.companionFiles.isEmpty else { return }
+        guard !item.lifecycleState.isImportedOrBeyond else {
+            statusMessage = "This photo is already copied; RAW changes are locked."
+            return
+        }
+        setImportRawCompanions(for: item, enabled: !item.importRawCompanions)
+        selectedMediaItemIDs = [itemID]
+        focusedReviewItemID = itemID
+        reviewSelectionAnchorID = itemID
+        activePane = .media
+        reviewKeyboardTarget = .items
+        reviewGridHasFocus = true
+        statusMessage = item.importRawCompanions ? "RAW companion import cleared for this photo." : "RAW companion import enabled for this photo."
+    }
+
     func exportBackup() {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.json]
@@ -2539,6 +2653,25 @@ final class AppState: ObservableObject {
     private func updateTriageState(for mediaIDs: Set<UUID>, selectionState: SelectionState) {
         guard let currentSession else { return }
         save(sessionMutationCoordinator.sessionByUpdatingTriageState(currentSession, mediaIDs: mediaIDs, selectionState: selectionState))
+    }
+
+    private func updatePreviewItemTriageState(_ itemID: UUID, selectionState: SelectionState, action: String, suffix: String) {
+        guard canMutateImportSelection else { return }
+        guard currentSession?.mediaItems.contains(where: { $0.id == itemID }) == true else { return }
+        let editableIDs = editableTriageMediaIDs(from: [itemID])
+        guard !editableIDs.isEmpty else {
+            statusMessage = "This photo is already copied; S/C/X is locked for it."
+            return
+        }
+        updateTriageState(for: editableIDs, selectionState: selectionState)
+        selectedMediaItemIDs = [itemID]
+        focusedReviewItemID = itemID
+        reviewSelectionAnchorID = itemID
+        previewingMediaItemID = itemID
+        activePane = .media
+        reviewKeyboardTarget = .items
+        reviewGridHasFocus = true
+        statusMessage = "\(action) previewed photo \(suffix)"
     }
 
     private func editableTriageMediaIDs(from mediaIDs: Set<UUID>) -> Set<UUID> {
