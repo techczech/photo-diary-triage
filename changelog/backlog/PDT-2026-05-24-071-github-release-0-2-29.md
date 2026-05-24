@@ -36,7 +36,7 @@
 
 ## Current Status
 
-- status: approved_for_implementation
+- status: implemented
 
 ## Target Release
 
