@@ -28,6 +28,7 @@ struct ImportCoordinator: ImportCoordinating {
         progress: (@Sendable (ImportProgress) async -> Void)? = nil
     ) async throws -> ImportResult {
         let plan = archivePlanner.plan(for: session)
+        let relativePathResolver = ArchiveRelativePathResolver(root: session.oneDrivePicturesRoot)
         try AppDirectories.ensureExists(plan.archiveFolder, fileManager: fileManager)
 
         var updatedSession = session
@@ -53,10 +54,12 @@ struct ImportCoordinator: ImportCoordinating {
             if entry.isCompanion {
                 if let companionIndex = updatedSession.mediaItems[index].companionFiles.firstIndex(where: { $0.id == entry.companionFileID }) {
                     updatedSession.mediaItems[index].companionFiles[companionIndex].destinationURL = entry.destinationURL
+                    updatedSession.mediaItems[index].companionFiles[companionIndex].archiveRelativePath = relativePathResolver.relativePath(for: entry.destinationURL)
                     updatedSession.mediaItems[index].companionFiles[companionIndex].importedAt = Date()
                 }
             } else {
                 updatedSession.mediaItems[index].destinationURL = entry.destinationURL
+                updatedSession.mediaItems[index].archiveRelativePath = relativePathResolver.relativePath(for: entry.destinationURL)
                 if updatedSession.mediaItems[index].lifecycleState == .discovered {
                     updatedSession.mediaItems[index].lifecycleState = try updatedSession.mediaItems[index].lifecycleState.transition(to: .selectedForImport)
                 }
@@ -82,6 +85,7 @@ struct ImportCoordinator: ImportCoordinating {
         updatedSession.status = "imported"
 
         try verifyImportedFiles(in: &updatedSession, events: &events)
+        refreshArchiveRelativePaths(in: &updatedSession)
 
         let fileManifests = buildFileManifests(for: updatedSession)
         let walkManifest = buildWalkManifest(for: updatedSession, archiveFolder: plan.archiveFolder, fileManifests: fileManifests)
@@ -91,6 +95,8 @@ struct ImportCoordinator: ImportCoordinating {
     }
 
     func cleanupImportedSources(in session: ImportSession) async throws -> ImportSession {
+        guard session.archiveMachineRole.allowsSourceCleanup else { return session }
+
         var updatedSession = session
         let cleanupAllowed = !session.mediaItems.contains {
             $0.selectionState.isIncluded && $0.lifecycleState != .sourceCleanupPending && $0.lifecycleState != .sourceCleaned
@@ -135,7 +141,7 @@ struct ImportCoordinator: ImportCoordinating {
             session.mediaItems[index].lifecycleState = try session.mediaItems[index].lifecycleState.transition(to: .verified)
             session.mediaItems[index].verifiedAt = Date()
 
-            if session.walkMetadata.backupConfirmedAt != nil {
+            if session.walkMetadata.backupConfirmedAt != nil && session.archiveMachineRole.allowsSourceCleanup {
                 session.mediaItems[index].lifecycleState = try session.mediaItems[index].lifecycleState.transition(to: .sourceCleanupPending)
             }
 
@@ -186,8 +192,10 @@ struct ImportCoordinator: ImportCoordinating {
                 return FileManifest(
                     mediaItemID: item.id,
                     archivePath: destinationURL.path,
+                    archiveRelativePath: item.archiveRelativePath,
                     sourceFileName: item.fileName,
                     companionArchivePaths: item.companionFiles.compactMap(\.destinationURL?.path),
+                    companionArchiveRelativePaths: item.companionFiles.compactMap(\.archiveRelativePath),
                     capturedAt: item.capturedAt,
                     cameraModel: item.metadata.cameraModel,
                     lensModel: item.metadata.lensModel,
@@ -223,6 +231,7 @@ struct ImportCoordinator: ImportCoordinating {
             walkDate: session.mediaItems.compactMap(\.capturedAt).min(),
             sourceFolder: session.sourceFolder,
             archiveFolder: archiveFolder,
+            archiveFolderRelativePath: ArchiveRelativePathResolver(root: session.oneDrivePicturesRoot).relativePath(for: archiveFolder),
             title: session.walkMetadata.title.nonEmpty ?? "Photo Walk",
             location: session.walkMetadata.location,
             notes: session.walkMetadata.notes,
@@ -240,6 +249,19 @@ struct ImportCoordinator: ImportCoordinating {
             importedFiles: fileManifests,
             excludedFiles: excludedFiles
         )
+    }
+
+    private func refreshArchiveRelativePaths(in session: inout ImportSession) {
+        let resolver = ArchiveRelativePathResolver(root: session.oneDrivePicturesRoot)
+        for index in session.mediaItems.indices {
+            if let destinationURL = session.mediaItems[index].destinationURL {
+                session.mediaItems[index].archiveRelativePath = resolver.relativePath(for: destinationURL)
+            }
+            for companionIndex in session.mediaItems[index].companionFiles.indices {
+                guard let destinationURL = session.mediaItems[index].companionFiles[companionIndex].destinationURL else { continue }
+                session.mediaItems[index].companionFiles[companionIndex].archiveRelativePath = resolver.relativePath(for: destinationURL)
+            }
+        }
     }
 
     private func writeManifests(walkManifest: WalkManifest, fileManifests: [FileManifest], archiveFolder: URL, events: [SessionLogEvent]) throws {

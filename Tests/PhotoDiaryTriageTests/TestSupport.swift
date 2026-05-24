@@ -11,6 +11,8 @@ func makeTestSettings(root: URL) -> AppSettings {
     AppSettings(
         defaultSourceRoot: root.appendingPathComponent("source-default", isDirectory: true),
         archiveRoot: root.appendingPathComponent("archive", isDirectory: true),
+        oneDrivePicturesRoot: root.appendingPathComponent("archive", isDirectory: true),
+        archiveMachineRole: .mainArchive,
         cacheRoot: root.appendingPathComponent("cache", isDirectory: true),
         supportedExtensions: ["jpg", "jpeg", "cr3", "cr2", "dng"],
         burstThresholdSeconds: 2,
@@ -99,6 +101,7 @@ func makeTestSession(
         sourceFolder: sourceRoot,
         workspaceSourceFolder: workspaceSourceFolder ?? sourceRoot,
         archiveRoot: archiveRoot,
+        oneDrivePicturesRoot: archiveRoot,
         sessionKind: sessionKind,
         status: status
     )

@@ -127,6 +127,7 @@ struct CompanionFile: Identifiable, Codable, Hashable, Sendable {
     var fileSizeBytes: Int64
     var kind: MediaKind
     var destinationURL: URL?
+    var archiveRelativePath: String?
     var importedAt: Date?
     var verifiedAt: Date?
     var sourceCleanedAt: Date?
@@ -139,6 +140,7 @@ struct CompanionFile: Identifiable, Codable, Hashable, Sendable {
         fileSizeBytes: Int64,
         kind: MediaKind,
         destinationURL: URL? = nil,
+        archiveRelativePath: String? = nil,
         importedAt: Date? = nil,
         verifiedAt: Date? = nil,
         sourceCleanedAt: Date? = nil
@@ -150,6 +152,7 @@ struct CompanionFile: Identifiable, Codable, Hashable, Sendable {
         self.fileSizeBytes = fileSizeBytes
         self.kind = kind
         self.destinationURL = destinationURL
+        self.archiveRelativePath = archiveRelativePath
         self.importedAt = importedAt
         self.verifiedAt = verifiedAt
         self.sourceCleanedAt = sourceCleanedAt
@@ -278,6 +281,24 @@ enum WorkspaceMode: String, CaseIterable, Equatable, Sendable {
     }
 }
 
+enum ArchiveMachineRole: String, Codable, CaseIterable, Hashable, Sendable {
+    case mainArchive = "main_archive"
+    case travel
+
+    var title: String {
+        switch self {
+        case .mainArchive:
+            return "Main Archive"
+        case .travel:
+            return "Travel"
+        }
+    }
+
+    var allowsSourceCleanup: Bool {
+        self == .mainArchive
+    }
+}
+
 enum SourceLoadOrigin: String, Equatable, Sendable {
     case launchDefault
     case mountedDefault
@@ -326,6 +347,8 @@ enum SourceWorkspaceState: Equatable, Sendable {
 struct AppSettings: Codable, Hashable, Sendable {
     var defaultSourceRoot: URL
     var archiveRoot: URL
+    var oneDrivePicturesRoot: URL
+    var archiveMachineRole: ArchiveMachineRole
     var cacheRoot: URL
     var supportedExtensions: Set<String>
     var burstThresholdSeconds: TimeInterval
@@ -345,6 +368,8 @@ struct AppSettings: Codable, Hashable, Sendable {
         return AppSettings(
             defaultSourceRoot: defaultSourceRoot,
             archiveRoot: archiveRoot,
+            oneDrivePicturesRoot: archiveRoot,
+            archiveMachineRole: .mainArchive,
             cacheRoot: cacheRoot,
             supportedExtensions: ["jpg", "jpeg", "png", "heic", "tif", "tiff", "dng", "raf", "cr2", "cr3", "nef"],
             burstThresholdSeconds: 2,
@@ -359,6 +384,10 @@ struct AppSettings: Codable, Hashable, Sendable {
         archiveRoot.path
     }
 
+    var oneDrivePicturesRootDisplayPath: String {
+        oneDrivePicturesRoot.path
+    }
+
     var defaultSourceRootDisplayPath: String {
         defaultSourceRoot.path
     }
@@ -366,6 +395,8 @@ struct AppSettings: Codable, Hashable, Sendable {
     init(
         defaultSourceRoot: URL,
         archiveRoot: URL,
+        oneDrivePicturesRoot: URL? = nil,
+        archiveMachineRole: ArchiveMachineRole = .mainArchive,
         cacheRoot: URL,
         supportedExtensions: Set<String>,
         burstThresholdSeconds: TimeInterval,
@@ -376,6 +407,8 @@ struct AppSettings: Codable, Hashable, Sendable {
     ) {
         self.defaultSourceRoot = defaultSourceRoot
         self.archiveRoot = archiveRoot
+        self.oneDrivePicturesRoot = oneDrivePicturesRoot ?? archiveRoot
+        self.archiveMachineRole = archiveMachineRole
         self.cacheRoot = cacheRoot
         self.supportedExtensions = supportedExtensions
         self.burstThresholdSeconds = burstThresholdSeconds
@@ -391,6 +424,8 @@ struct AppSettings: Codable, Hashable, Sendable {
         let defaults = AppSettings.default()
         defaultSourceRoot = try container.decodeIfPresent(URL.self, forKey: .defaultSourceRoot) ?? defaults.defaultSourceRoot
         archiveRoot = try container.decodeIfPresent(URL.self, forKey: .archiveRoot) ?? defaults.archiveRoot
+        oneDrivePicturesRoot = try container.decodeIfPresent(URL.self, forKey: .oneDrivePicturesRoot) ?? archiveRoot
+        archiveMachineRole = try container.decodeIfPresent(ArchiveMachineRole.self, forKey: .archiveMachineRole) ?? defaults.archiveMachineRole
         cacheRoot = try container.decodeIfPresent(URL.self, forKey: .cacheRoot) ?? defaults.cacheRoot
         supportedExtensions = try container.decodeIfPresent(Set<String>.self, forKey: .supportedExtensions) ?? defaults.supportedExtensions
         burstThresholdSeconds = try container.decodeIfPresent(TimeInterval.self, forKey: .burstThresholdSeconds) ?? defaults.burstThresholdSeconds
@@ -410,6 +445,8 @@ struct AppSettings: Codable, Hashable, Sendable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(defaultSourceRoot, forKey: .defaultSourceRoot)
         try container.encode(archiveRoot, forKey: .archiveRoot)
+        try container.encode(oneDrivePicturesRoot, forKey: .oneDrivePicturesRoot)
+        try container.encode(archiveMachineRole, forKey: .archiveMachineRole)
         try container.encode(cacheRoot, forKey: .cacheRoot)
         try container.encode(supportedExtensions, forKey: .supportedExtensions)
         try container.encode(burstThresholdSeconds, forKey: .burstThresholdSeconds)
@@ -422,6 +459,8 @@ struct AppSettings: Codable, Hashable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case defaultSourceRoot
         case archiveRoot
+        case oneDrivePicturesRoot
+        case archiveMachineRole
         case cacheRoot
         case supportedExtensions
         case burstThresholdSeconds
@@ -445,6 +484,8 @@ struct ImportSession: Identifiable, Codable, Hashable, Sendable {
     var walkMetadata: WalkMetadata
     var photoLogScope: PhotoLogScopeDescriptor?
     var archiveRoot: URL
+    var oneDrivePicturesRoot: URL
+    var archiveMachineRole: ArchiveMachineRole
     var sessionKind: SessionKind
     var sessionKindWasExplicit: Bool
     var status: String
@@ -459,6 +500,8 @@ struct ImportSession: Identifiable, Codable, Hashable, Sendable {
         walkMetadata: WalkMetadata = .empty,
         photoLogScope: PhotoLogScopeDescriptor? = nil,
         archiveRoot: URL,
+        oneDrivePicturesRoot: URL? = nil,
+        archiveMachineRole: ArchiveMachineRole = .mainArchive,
         sessionKind: SessionKind = .walkDraft,
         sessionKindWasExplicit: Bool = true,
         status: String = "draft",
@@ -472,6 +515,8 @@ struct ImportSession: Identifiable, Codable, Hashable, Sendable {
         self.walkMetadata = walkMetadata
         self.photoLogScope = photoLogScope
         self.archiveRoot = archiveRoot
+        self.oneDrivePicturesRoot = oneDrivePicturesRoot ?? archiveRoot
+        self.archiveMachineRole = archiveMachineRole
         self.sessionKind = sessionKind
         self.sessionKindWasExplicit = sessionKindWasExplicit
         self.status = status
@@ -487,6 +532,8 @@ struct ImportSession: Identifiable, Codable, Hashable, Sendable {
         case walkMetadata
         case photoLogScope
         case archiveRoot
+        case oneDrivePicturesRoot
+        case archiveMachineRole
         case sessionKind
         case status
         case mediaItems
@@ -502,6 +549,8 @@ struct ImportSession: Identifiable, Codable, Hashable, Sendable {
         walkMetadata = try container.decodeIfPresent(WalkMetadata.self, forKey: .walkMetadata) ?? .empty
         photoLogScope = try container.decodeIfPresent(PhotoLogScopeDescriptor.self, forKey: .photoLogScope)
         archiveRoot = try container.decode(URL.self, forKey: .archiveRoot)
+        oneDrivePicturesRoot = try container.decodeIfPresent(URL.self, forKey: .oneDrivePicturesRoot) ?? archiveRoot
+        archiveMachineRole = try container.decodeIfPresent(ArchiveMachineRole.self, forKey: .archiveMachineRole) ?? .mainArchive
         sessionKindWasExplicit = container.contains(.sessionKind)
         sessionKind = try container.decodeIfPresent(SessionKind.self, forKey: .sessionKind) ?? .inbox
         status = try container.decodeIfPresent(String.self, forKey: .status) ?? "draft"
@@ -518,6 +567,8 @@ struct ImportSession: Identifiable, Codable, Hashable, Sendable {
         try container.encode(walkMetadata, forKey: .walkMetadata)
         try container.encodeIfPresent(photoLogScope, forKey: .photoLogScope)
         try container.encode(archiveRoot, forKey: .archiveRoot)
+        try container.encode(oneDrivePicturesRoot, forKey: .oneDrivePicturesRoot)
+        try container.encode(archiveMachineRole, forKey: .archiveMachineRole)
         try container.encode(sessionKind, forKey: .sessionKind)
         try container.encode(status, forKey: .status)
         try container.encode(mediaItems, forKey: .mediaItems)
@@ -553,6 +604,7 @@ struct MediaItem: Identifiable, Codable, Hashable, Sendable {
     var burstGroupID: UUID?
     var timeClusterID: UUID?
     var destinationURL: URL?
+    var archiveRelativePath: String?
     var importedAt: Date?
     var verifiedAt: Date?
     var sourceCleanedAt: Date?
@@ -575,6 +627,7 @@ struct MediaItem: Identifiable, Codable, Hashable, Sendable {
         burstGroupID: UUID? = nil,
         timeClusterID: UUID? = nil,
         destinationURL: URL? = nil,
+        archiveRelativePath: String? = nil,
         importedAt: Date? = nil,
         verifiedAt: Date? = nil,
         sourceCleanedAt: Date? = nil
@@ -596,6 +649,7 @@ struct MediaItem: Identifiable, Codable, Hashable, Sendable {
         self.burstGroupID = burstGroupID
         self.timeClusterID = timeClusterID
         self.destinationURL = destinationURL
+        self.archiveRelativePath = archiveRelativePath
         self.importedAt = importedAt
         self.verifiedAt = verifiedAt
         self.sourceCleanedAt = sourceCleanedAt
@@ -681,12 +735,39 @@ struct WalkManifest: Codable, Hashable, Sendable {
     var walkDate: Date?
     var sourceFolder: URL
     var archiveFolder: URL
+    var archiveFolderRelativePath: String?
     var title: String
     var location: String
     var notes: String
     var summary: Summary
     var importedFiles: [FileManifest]
     var excludedFiles: [RejectedFileManifest] = []
+
+    init(
+        sessionID: UUID,
+        walkDate: Date?,
+        sourceFolder: URL,
+        archiveFolder: URL,
+        archiveFolderRelativePath: String? = nil,
+        title: String,
+        location: String,
+        notes: String,
+        summary: Summary,
+        importedFiles: [FileManifest],
+        excludedFiles: [RejectedFileManifest] = []
+    ) {
+        self.sessionID = sessionID
+        self.walkDate = walkDate
+        self.sourceFolder = sourceFolder
+        self.archiveFolder = archiveFolder
+        self.archiveFolderRelativePath = archiveFolderRelativePath
+        self.title = title
+        self.location = location
+        self.notes = notes
+        self.summary = summary
+        self.importedFiles = importedFiles
+        self.excludedFiles = excludedFiles
+    }
 }
 
 struct RejectedFileManifest: Codable, Hashable, Sendable {
@@ -699,8 +780,10 @@ struct RejectedFileManifest: Codable, Hashable, Sendable {
 struct FileManifest: Codable, Hashable, Sendable {
     var mediaItemID: UUID
     var archivePath: String
+    var archiveRelativePath: String?
     var sourceFileName: String
     var companionArchivePaths: [String]
+    var companionArchiveRelativePaths: [String]
     var capturedAt: Date?
     var cameraModel: String?
     var lensModel: String?
@@ -711,6 +794,42 @@ struct FileManifest: Codable, Hashable, Sendable {
     var walkTitle: String
     var walkLocation: String
     var notes: String
+
+    init(
+        mediaItemID: UUID,
+        archivePath: String,
+        archiveRelativePath: String? = nil,
+        sourceFileName: String,
+        companionArchivePaths: [String],
+        companionArchiveRelativePaths: [String] = [],
+        capturedAt: Date?,
+        cameraModel: String?,
+        lensModel: String?,
+        pixelWidth: Int?,
+        pixelHeight: Int?,
+        latitude: Double?,
+        longitude: Double?,
+        walkTitle: String,
+        walkLocation: String,
+        notes: String
+    ) {
+        self.mediaItemID = mediaItemID
+        self.archivePath = archivePath
+        self.archiveRelativePath = archiveRelativePath
+        self.sourceFileName = sourceFileName
+        self.companionArchivePaths = companionArchivePaths
+        self.companionArchiveRelativePaths = companionArchiveRelativePaths
+        self.capturedAt = capturedAt
+        self.cameraModel = cameraModel
+        self.lensModel = lensModel
+        self.pixelWidth = pixelWidth
+        self.pixelHeight = pixelHeight
+        self.latitude = latitude
+        self.longitude = longitude
+        self.walkTitle = walkTitle
+        self.walkLocation = walkLocation
+        self.notes = notes
+    }
 }
 
 struct SessionLogEvent: Codable, Hashable, Sendable {

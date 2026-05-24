@@ -8,6 +8,9 @@ struct ManifestRenderer {
         lines.append("- Session ID: `\(manifest.sessionID.uuidString)`")
         lines.append("- Source folder: `\(manifest.sourceFolder.path)`")
         lines.append("- Archive folder: `\(manifest.archiveFolder.path)`")
+        if let relativePath = manifest.archiveFolderRelativePath {
+            lines.append("- OneDrive Pictures relative folder: `\(relativePath)`")
+        }
         if let walkDate = manifest.walkDate {
             lines.append("- Walk date: \(DateFormatting.iso8601.string(from: walkDate))")
         }
@@ -38,7 +41,8 @@ struct ManifestRenderer {
             lines.append("_No imported files._")
         } else {
             for file in manifest.importedFiles {
-                lines.append("- `\(file.sourceFileName)` -> `\(file.archivePath)`")
+                let portablePath = file.archiveRelativePath.map { " (`\($0)`)" } ?? ""
+                lines.append("- `\(file.sourceFileName)` -> `\(file.archivePath)`\(portablePath)")
             }
         }
 
@@ -61,10 +65,19 @@ struct ManifestRenderer {
         var lines: [String] = ["---"]
         lines.append("media_item_id: \(manifest.mediaItemID.uuidString)")
         lines.append("archive_path: \(manifest.archivePath)")
+        if let archiveRelativePath = manifest.archiveRelativePath {
+            lines.append("archive_relative_path: \(escapeYAML(archiveRelativePath))")
+        }
         lines.append("source_file_name: \(manifest.sourceFileName)")
         if !manifest.companionArchivePaths.isEmpty {
             lines.append("companion_archive_paths:")
             for path in manifest.companionArchivePaths {
+                lines.append("  - \(escapeYAML(path))")
+            }
+        }
+        if !manifest.companionArchiveRelativePaths.isEmpty {
+            lines.append("companion_archive_relative_paths:")
+            for path in manifest.companionArchiveRelativePaths {
                 lines.append("  - \(escapeYAML(path))")
             }
         }
