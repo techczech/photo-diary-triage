@@ -298,6 +298,7 @@ final class AppState: ObservableObject {
     private var browserViewModel: BrowserViewModel
     private let selectionManager = SelectionManager()
     private let backupStore = BackupStore()
+    private let photoLogSyncStore = PhotoLogSyncStore()
     private let persistedSessionNormalizer = PersistedSessionNormalizer()
     private let photoLogCreationResolver = PhotoLogCreationResolver()
     private let workflowGuidanceResolver = WorkflowGuidanceResolver()
@@ -838,6 +839,7 @@ final class AppState: ObservableObject {
     var canCleanupImportedSources: Bool {
         guard importOperation.isRunning == false else { return false }
         guard let currentSession else { return false }
+        guard currentSession.archiveMachineRole.allowsSourceCleanup else { return false }
         if settings.cleanupRequiresBackupConfirmation && currentSession.walkMetadata.backupConfirmedAt == nil {
             return false
         }
@@ -1013,6 +1015,20 @@ final class AppState: ObservableObject {
 
         if panel.runModal() == .OK, let folder = panel.urls.first {
             setArchiveRoot(folder)
+        }
+    }
+
+    func pickOneDrivePicturesRoot() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Set OneDrive Pictures Root"
+        panel.message = "Choose the OneDrive Pictures folder whose relative paths should match across your Macs."
+        panel.directoryURL = settings.oneDrivePicturesRoot
+
+        if panel.runModal() == .OK, let folder = panel.urls.first {
+            setOneDrivePicturesRoot(folder)
         }
     }
 
@@ -1285,6 +1301,8 @@ final class AppState: ObservableObject {
             walkMetadata: updatedMetadata,
             photoLogScope: photoLogScope(from: editor, fallback: plan.scope),
             archiveRoot: currentSession.archiveRoot,
+            oneDrivePicturesRoot: currentSession.oneDrivePicturesRoot,
+            archiveMachineRole: currentSession.archiveMachineRole,
             sessionKind: .walkDraft,
             status: "draft",
             mediaItems: draftGrouped.items
@@ -1481,6 +1499,8 @@ final class AppState: ObservableObject {
                 endDate: plan.scope.endDate
             ),
             archiveRoot: inbox.archiveRoot,
+            oneDrivePicturesRoot: inbox.oneDrivePicturesRoot,
+            archiveMachineRole: inbox.archiveMachineRole,
             sessionKind: .walkDraft,
             status: "draft",
             mediaItems: draftGrouped.items
@@ -1692,6 +1712,17 @@ final class AppState: ObservableObject {
                 }
                 setCurrentSession(result.session, updateKind: .sessionOnly)
                 persistCurrentSession(immediately: true)
+                do {
+                    let syncURL = try photoLogSyncStore.export(
+                        session: result.session,
+                        bursts: burstGroups,
+                        timeClusters: timeClusters,
+                        to: settings.oneDrivePicturesRoot
+                    )
+                    statusMessage = "Imported \(result.fileManifests.count) marked items and synced log state to \(syncURL.lastPathComponent)."
+                } catch {
+                    statusMessage = "Copied files, but OneDrive log state sync failed: \(error.localizedDescription)"
+                }
                 importProgress = nil
                 importOperation = ImportOperationSnapshot(
                     phase: .completed,
@@ -1702,7 +1733,6 @@ final class AppState: ObservableObject {
                 )
                 archiveYearFolders = ArchiveLibraryInspector.existingYearFolders(in: settings.archiveRoot)
                 browserViewModel.invalidateArchiveTreeCache()
-                statusMessage = "Imported \(result.fileManifests.count) marked items and wrote manifests."
             } catch {
                 let message = userFacingCopyFailureMessage(for: error)
                 importProgress = nil
@@ -1798,7 +1828,11 @@ final class AppState: ObservableObject {
 
     func setArchiveRoot(_ archiveRoot: URL) {
         cancelArchiveMediaLoad()
+        let shouldFollowArchiveRoot = settings.oneDrivePicturesRoot.standardizedFileURL == settings.archiveRoot.standardizedFileURL
         settings.archiveRoot = archiveRoot
+        if shouldFollowArchiveRoot {
+            settings.oneDrivePicturesRoot = archiveRoot
+        }
         archiveYearFolders = ArchiveLibraryInspector.existingYearFolders(in: archiveRoot)
         archiveMediaCache.removeAll()
         browserViewModel.invalidateArchiveTreeCache()
@@ -1806,12 +1840,35 @@ final class AppState: ObservableObject {
 
         if var session = currentSession {
             session.archiveRoot = archiveRoot
+            if shouldFollowArchiveRoot {
+                session.oneDrivePicturesRoot = archiveRoot
+            }
             save(session)
         }
 
         persistSettings()
         let existingYears = archiveYearFolders.isEmpty ? "no existing 202x folders detected yet" : "found year folders: \(archiveYearFolders.joined(separator: ", "))"
         statusMessage = "Archive root set to \(archiveRoot.path); \(existingYears)."
+    }
+
+    func setOneDrivePicturesRoot(_ root: URL) {
+        settings.oneDrivePicturesRoot = root
+        if var session = currentSession {
+            session.oneDrivePicturesRoot = root
+            save(session)
+        }
+        persistSettings()
+        statusMessage = "OneDrive Pictures root set to \(root.path)."
+    }
+
+    func setArchiveMachineRole(_ role: ArchiveMachineRole) {
+        settings.archiveMachineRole = role
+        if var session = currentSession {
+            session.archiveMachineRole = role
+            save(session)
+        }
+        persistSettings()
+        statusMessage = "Machine role set to \(role.title)."
     }
 
     func setDefaultSourceRoot(_ sourceRoot: URL) {
@@ -2751,6 +2808,42 @@ final class AppState: ObservableObject {
         }
     }
 
+    func importOneDrivePhotoLogState() {
+        do {
+            let records = try photoLogSyncStore.importRecords(
+                from: settings.oneDrivePicturesRoot,
+                localArchiveRoot: settings.archiveRoot,
+                localOneDrivePicturesRoot: settings.oneDrivePicturesRoot,
+                localMachineRole: settings.archiveMachineRole
+            )
+            guard !records.isEmpty else {
+                statusMessage = "No synced photo-log state files found in \(settings.oneDrivePicturesRoot.path)."
+                return
+            }
+
+            let existing = try sessionStore.loadSessions()
+            var existingByID = Dictionary(uniqueKeysWithValues: existing.map { ($0.0.id, $0) })
+            var importedCount = 0
+            for record in records {
+                let incoming = record.document.session
+                if let current = existingByID[incoming.id],
+                   current.0.lastUpdatedAt > incoming.lastUpdatedAt {
+                    continue
+                }
+                let replacement = (incoming, record.document.bursts, record.document.timeClusters)
+                existingByID[incoming.id] = replacement
+                try sessionManager.save(incoming, bursts: record.document.bursts, clusters: record.document.timeClusters, to: sessionStore)
+                importedCount += 1
+            }
+
+            try reloadPersistedSessionsFromStore()
+            browserViewModel.invalidateArchiveTreeCache()
+            loadMostRecentSession(statusPrefix: "Imported \(importedCount) synced photo-log state file(s) from OneDrive.")
+        } catch {
+            statusMessage = "OneDrive photo-log state import failed: \(error.localizedDescription)"
+        }
+    }
+
     private func updateTriageState(for mediaIDs: Set<UUID>, selectionState: SelectionState) {
         guard let currentSession else { return }
         save(sessionMutationCoordinator.sessionByUpdatingTriageState(currentSession, mediaIDs: mediaIDs, selectionState: selectionState))
@@ -2883,6 +2976,8 @@ final class AppState: ObservableObject {
             sourceFolder: deletedLog.sourceFolder,
             workspaceSourceFolder: deletedLog.workspaceSourceFolder,
             archiveRoot: deletedLog.archiveRoot,
+            oneDrivePicturesRoot: deletedLog.oneDrivePicturesRoot,
+            archiveMachineRole: deletedLog.archiveMachineRole,
             sessionKind: .inbox,
             status: "draft"
         )
@@ -3188,6 +3283,8 @@ final class AppState: ObservableObject {
             sourceFolder: editingSession.sourceFolder,
             workspaceSourceFolder: editingSession.workspaceSourceFolder,
             archiveRoot: editingSession.archiveRoot,
+            oneDrivePicturesRoot: editingSession.oneDrivePicturesRoot,
+            archiveMachineRole: editingSession.archiveMachineRole,
             sessionKind: .inbox,
             status: "draft"
         )
@@ -3390,6 +3487,8 @@ final class AppState: ObservableObject {
             lastUpdatedAt: Date(),
             walkMetadata: existing?.walkMetadata ?? scanned.session.walkMetadata,
             archiveRoot: scanned.session.archiveRoot,
+            oneDrivePicturesRoot: scanned.session.oneDrivePicturesRoot,
+            archiveMachineRole: scanned.session.archiveMachineRole,
             sessionKind: .inbox,
             status: "draft",
             mediaItems: scanned.session.mediaItems
@@ -3408,6 +3507,7 @@ final class AppState: ObservableObject {
             guard let archiveCopy = copiesByRelativePath[relativePath] else { continue }
             updatedInbox.mediaItems[index].lifecycleState = .verified
             updatedInbox.mediaItems[index].destinationURL = URL(fileURLWithPath: archiveCopy.archivePath)
+            updatedInbox.mediaItems[index].archiveRelativePath = archiveCopy.archiveRelativePath
             updatedInbox.mediaItems[index].selectionState = .undecided
             updatedInbox.mediaItems[index].importRawCompanions = false
         }

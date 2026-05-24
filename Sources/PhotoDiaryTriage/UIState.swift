@@ -263,7 +263,14 @@ enum ReviewDisplayStatusKind: Equatable, Sendable {
 
 struct SourceArchiveCopySnapshot: Equatable, Sendable {
     let archivePath: String
+    let archiveRelativePath: String?
     let sourceFileName: String
+
+    init(archivePath: String, archiveRelativePath: String? = nil, sourceFileName: String) {
+        self.archivePath = archivePath
+        self.archiveRelativePath = archiveRelativePath
+        self.sourceFileName = sourceFileName
+    }
 
     var helpText: String {
         "Archive copy found on disk at \(archivePath). This source item is treated as copied and is left out of new photo-log copy plans."

@@ -33,6 +33,36 @@ struct SettingsView: View {
                         appState.pickArchiveRoot()
                     }
                 }
+
+                Section("Travel Sync") {
+                    Picker("Machine Role", selection: Binding(
+                        get: { appState.settings.archiveMachineRole },
+                        set: { appState.setArchiveMachineRole($0) }
+                    )) {
+                        ForEach(ArchiveMachineRole.allCases, id: \.self) { role in
+                            Text(role.title).tag(role)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 260)
+
+                    Text(appState.settings.oneDrivePicturesRootDisplayPath)
+                        .textSelection(.enabled)
+
+                    HStack {
+                        Button("Use Archive Root") {
+                            appState.setOneDrivePicturesRoot(appState.settings.archiveRoot)
+                        }
+
+                        Button("Choose OneDrive Pictures Root") {
+                            appState.pickOneDrivePicturesRoot()
+                        }
+                    }
+
+                    Button("Import Synced Photo Log State") {
+                        appState.importOneDrivePhotoLogState()
+                    }
+                }
             }
             .formStyle(.grouped)
             .tabItem {

@@ -53,6 +53,7 @@ struct ArchiveCopySurveyor: Sendable {
 
                     copiesByRelativePath[item.relativePath] = SourceArchiveCopySnapshot(
                         archivePath: manifest.archivePath,
+                        archiveRelativePath: manifest.archiveRelativePath,
                         sourceFileName: manifest.sourceFileName
                     )
                 }
@@ -110,6 +111,7 @@ private struct ArchiveCopySurveySourceItem: Sendable {
 
 private struct ArchiveCopyManifest {
     let archivePath: String
+    let archiveRelativePath: String?
     let sourceFileName: String
     let capturedAt: Date?
 
@@ -120,6 +122,7 @@ private struct ArchiveCopyManifest {
         guard let sourceFileName = frontMatter["source_file_name"]?.nonEmpty else { return nil }
 
         self.archivePath = archivePath
+        self.archiveRelativePath = frontMatter["archive_relative_path"]?.nonEmpty
         self.sourceFileName = sourceFileName
         if let captured = frontMatter["captured_at"] {
             self.capturedAt = DateFormatting.iso8601.date(from: captured)

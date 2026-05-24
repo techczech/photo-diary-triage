@@ -429,6 +429,8 @@ final class SessionManager {
             sourceFolder: folder,
             workspaceSourceFolder: folder,
             archiveRoot: settings.archiveRoot,
+            oneDrivePicturesRoot: settings.oneDrivePicturesRoot,
+            archiveMachineRole: settings.archiveMachineRole,
             sessionKind: .inbox
         )
         session.mediaItems = grouped.items

@@ -156,3 +156,4 @@
 {"ts":"2026-05-23T10:44:55Z","item_id":"PDT-2026-05-23-067","event":"report_created","status":"implemented","title":"scoped preview and compare selection","file":"changelog/changelog/PDT-2026-05-23-067-scoped-preview-compare-selection-report.md"}
 {"ts":"2026-05-23T11:27:47Z","item_id":"PDT-2026-05-23-068","event":"report_created","status":"implemented","title":"compare action hard scope","file":"changelog/changelog/PDT-2026-05-23-068-compare-action-hard-scope-report.md"}
 {"ts":"2026-05-23T11:34:05Z","item_id":"PDT-2026-05-23-069","event":"report_created","status":"implemented","title":"GitHub release 0.2.28","file":"changelog/changelog/PDT-2026-05-23-069-github-release-0-2-28-report.md"}
+{"ts":"2026-05-24T16:24:21Z","item_id":"PDT-2026-05-24-070","event":"report_created","status":"implemented","title":"travel mode sync and cloud workflow","file":"changelog/changelog/PDT-2026-05-24-070-travel-mode-sync-cloud-workflow-report.md"}
