@@ -586,6 +586,58 @@ struct MediaMetadata: Codable, Hashable, Sendable {
     var raw: [String: String]
 }
 
+enum CropRelationshipRole: String, Codable, Hashable, Sendable {
+    case original
+    case crop
+}
+
+struct CropRelationship: Codable, Hashable, Sendable {
+    var role: CropRelationshipRole
+    var originalRelativePath: String
+    var originalFileName: String
+    var cropRelativePaths: [String]
+    var cropFileNames: [String]
+    var manifestRelativePath: String?
+    var latestCropRelativePath: String?
+    var latestCropFileName: String?
+
+    var isCrop: Bool {
+        role == .crop
+    }
+
+    var hasCrops: Bool {
+        !cropRelativePaths.isEmpty
+    }
+
+    var linkedPreviewRelativePath: String? {
+        switch role {
+        case .original:
+            return latestCropRelativePath
+        case .crop:
+            return originalRelativePath
+        }
+    }
+
+    var badgeLabel: String {
+        switch role {
+        case .original:
+            return cropRelativePaths.count == 1 ? "Has Crop" : "Has \(cropRelativePaths.count) Crops"
+        case .crop:
+            return "Crop"
+        }
+    }
+
+    var helpText: String {
+        switch role {
+        case .original:
+            return latestCropFileName.map { "This original has crop output \($0). Click to preview the latest crop." }
+                ?? "This original has crop outputs. Click to preview a crop."
+        case .crop:
+            return "This is a crop of \(originalFileName). Click to preview the original."
+        }
+    }
+}
+
 struct MediaItem: Identifiable, Codable, Hashable, Sendable {
     let id: UUID
     var sourceURL: URL
@@ -608,6 +660,7 @@ struct MediaItem: Identifiable, Codable, Hashable, Sendable {
     var importedAt: Date?
     var verifiedAt: Date?
     var sourceCleanedAt: Date?
+    var cropRelationship: CropRelationship?
 
     init(
         id: UUID = UUID(),
@@ -630,7 +683,8 @@ struct MediaItem: Identifiable, Codable, Hashable, Sendable {
         archiveRelativePath: String? = nil,
         importedAt: Date? = nil,
         verifiedAt: Date? = nil,
-        sourceCleanedAt: Date? = nil
+        sourceCleanedAt: Date? = nil,
+        cropRelationship: CropRelationship? = nil
     ) {
         self.id = id
         self.sourceURL = sourceURL
@@ -653,6 +707,7 @@ struct MediaItem: Identifiable, Codable, Hashable, Sendable {
         self.importedAt = importedAt
         self.verifiedAt = verifiedAt
         self.sourceCleanedAt = sourceCleanedAt
+        self.cropRelationship = cropRelationship
     }
 }
 
@@ -685,6 +740,20 @@ extension MediaItem {
     var compactCapturedAtLabel: String? {
         guard let capturedAt else { return nil }
         return DateFormatting.reviewCardTimestamp.string(from: capturedAt)
+    }
+
+    var cropSortFamilyKey: String {
+        cropRelationship?.originalRelativePath.lowercased() ?? relativePath.lowercased()
+    }
+
+    var cropSortPriority: Int {
+        if cropRelationship?.role == .crop {
+            return 0
+        }
+        if cropRelationship?.role == .original {
+            return 1
+        }
+        return 2
     }
 }
 

@@ -105,6 +105,10 @@ struct ImportCoordinator: ImportCoordinating {
 
         for index in updatedSession.mediaItems.indices {
             guard updatedSession.mediaItems[index].lifecycleState == .sourceCleanupPending else { continue }
+            if updatedSession.mediaItems[index].cropRelationship?.role == .original,
+               updatedSession.mediaItems[index].cropRelationship?.hasCrops == true {
+                continue
+            }
             try fileManager.removeItem(at: updatedSession.mediaItems[index].sourceURL)
             if updatedSession.mediaItems[index].importRawCompanions {
                 for companionIndex in updatedSession.mediaItems[index].companionFiles.indices where updatedSession.mediaItems[index].companionFiles[companionIndex].destinationURL != nil {
@@ -117,7 +121,7 @@ struct ImportCoordinator: ImportCoordinating {
         }
 
         updatedSession.lastUpdatedAt = Date()
-        updatedSession.status = "source_cleaned"
+        updatedSession.status = updatedSession.mediaItems.contains { $0.lifecycleState == .sourceCleanupPending } ? "source_cleanup_pending" : "source_cleaned"
         return updatedSession
     }
 

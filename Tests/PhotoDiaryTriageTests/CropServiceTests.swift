@@ -53,6 +53,81 @@ import UniformTypeIdentifiers
     #expect(manifest.crops[0].appVersion == "test")
 }
 
+@Test func fileScannerMarksOriginalAndCropFromManifest() throws {
+    let root = try makeTemporaryDirectory()
+    let sourceURL = root.appendingPathComponent("IMG_0001.jpg")
+    try writeTestImage(sourceURL, width: 100, height: 80)
+    let item = MediaItem(
+        sourceURL: sourceURL,
+        relativePath: "IMG_0001.jpg",
+        fileName: "IMG_0001.jpg",
+        baseName: "IMG_0001",
+        mediaKind: .jpeg,
+        fileSizeBytes: Int64((try Data(contentsOf: sourceURL)).count),
+        capturedAt: Date(timeIntervalSince1970: 0),
+        metadata: makeTestMetadata(capturedAt: Date(timeIntervalSince1970: 0)),
+        thumbnailCacheKey: "crop-scan"
+    )
+    _ = try CropService().crop(
+        item: item,
+        normalizedRect: CropNormalizedRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5),
+        trigger: .visibleZoom,
+        appRelease: AppRelease(version: "test", build: "1", featureSlug: "crop-scan")
+    )
+
+    let scanned = try FileScanner().scanFolder(root, settings: makeTestSettings(root: root))
+    let crop = try #require(scanned.first)
+    let original = try #require(scanned.last)
+
+    #expect(scanned.map(\.fileName) == ["IMG_0001-cropped.jpg", "IMG_0001.jpg"])
+    #expect(crop.cropRelationship?.role == .crop)
+    #expect(crop.cropRelationship?.originalRelativePath == "IMG_0001.jpg")
+    #expect(original.cropRelationship?.role == .original)
+    #expect(original.cropRelationship?.cropRelativePaths == ["IMG_0001-cropped.jpg"])
+    #expect(original.cropRelationship?.latestCropFileName == "IMG_0001-cropped.jpg")
+}
+
+@Test func cleanupKeepsOriginalWhenCropExists() async throws {
+    let root = try makeTemporaryDirectory()
+    let sourceURL = root.appendingPathComponent("IMG_0002.jpg")
+    let cropURL = root.appendingPathComponent("IMG_0002-cropped.jpg")
+    try writeTestFile(sourceURL, contents: "original")
+    try writeTestFile(cropURL, contents: "crop")
+    var item = makeTestMediaItem(
+        sourceRoot: root,
+        fileName: "IMG_0002.jpg",
+        capturedAt: Date(timeIntervalSince1970: 0),
+        selectionState: .included,
+        lifecycleState: .sourceCleanupPending
+    )
+    item.cropRelationship = CropRelationship(
+        role: .original,
+        originalRelativePath: "IMG_0002.jpg",
+        originalFileName: "IMG_0002.jpg",
+        cropRelativePaths: ["IMG_0002-cropped.jpg"],
+        cropFileNames: ["IMG_0002-cropped.jpg"],
+        manifestRelativePath: "IMG_0002.crops.json",
+        latestCropRelativePath: "IMG_0002-cropped.jpg",
+        latestCropFileName: "IMG_0002-cropped.jpg"
+    )
+    let archiveRoot = root.appendingPathComponent("archive", isDirectory: true)
+    let session = makeTestSession(
+        sourceRoot: root,
+        archiveRoot: archiveRoot,
+        items: [item],
+        backupConfirmedAt: Date(timeIntervalSince1970: 10),
+        sessionKind: .walkDraft,
+        status: "source_cleanup_pending"
+    )
+
+    let cleaned = try await ImportCoordinator().cleanupImportedSources(in: session)
+
+    #expect(FileManager.default.fileExists(atPath: sourceURL.path))
+    #expect(FileManager.default.fileExists(atPath: cropURL.path))
+    #expect(cleaned.mediaItems.first?.lifecycleState == .sourceCleanupPending)
+    #expect(cleaned.status == "source_cleanup_pending")
+}
+
 @Test func normalizedCropRectClampsToSourcePixels() {
     let rect = CropNormalizedRect(x: 0.9, y: 0.9, width: 0.5, height: 0.5)
     #expect(rect == CropNormalizedRect(x: 0.9, y: 0.9, width: 0.1, height: 0.1))

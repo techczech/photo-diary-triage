@@ -23,6 +23,7 @@ struct FileScanner {
         let enumerator = fileManager.enumerator(at: folder, includingPropertiesForKeys: Array(resourceKeys))!
         let baseFolder = folder.resolvingSymlinksInPath().standardizedFileURL
         var candidates: [ScanCandidate] = []
+        var cropManifestURLs: [URL] = []
 
         for case let fileURL as URL in enumerator {
             try Task.checkCancellation()
@@ -31,6 +32,10 @@ struct FileScanner {
             guard values.isRegularFile == true else { continue }
 
             let ext = fileURL.pathExtension.lowercased()
+            if fileURL.lastPathComponent.hasSuffix(".crops.json") {
+                cropManifestURLs.append(fileURL)
+                continue
+            }
             guard settings.supportedExtensions.contains(ext) else { continue }
 
             let relativePath = relativePath(for: fileURL, relativeTo: baseFolder)
@@ -49,9 +54,19 @@ struct FileScanner {
                     extensionName: ext,
                     fileSizeBytes: fileSize,
                     mediaKind: mediaKind,
-                    contentModificationDate: values.contentModificationDate
+                    contentModificationDate: values.contentModificationDate,
+                    cropRelationship: nil
                 )
             )
+        }
+
+        let cropRelationships = cropRelationships(
+            for: candidates,
+            manifestURLs: cropManifestURLs,
+            baseFolder: baseFolder
+        )
+        for index in candidates.indices {
+            candidates[index].cropRelationship = cropRelationships[canonicalPath(candidates[index].sourceURL)]
         }
 
         var items: [MediaItem] = []
@@ -86,19 +101,13 @@ struct FileScanner {
                     capturedAt: metadata.capturedAt,
                     metadata: metadata,
                     thumbnailCacheKey: CacheKeyBuilder.key(for: primary.sourceURL),
-                    companionFiles: companions
+                    companionFiles: companions,
+                    cropRelationship: primary.cropRelationship
                 )
             )
         }
 
-        return items.sorted {
-            let lhsDate = $0.capturedAt ?? .distantPast
-            let rhsDate = $1.capturedAt ?? .distantPast
-            if lhsDate == rhsDate {
-                return $0.fileName.localizedCaseInsensitiveCompare($1.fileName) == .orderedAscending
-            }
-            return lhsDate < rhsDate
-        }
+        return items.sorted(by: Self.mediaSort)
     }
 
     private func mediaKind(for extensionName: String) -> MediaKind {
@@ -157,6 +166,84 @@ struct FileScanner {
             )
         }
     }
+
+    private func cropRelationships(
+        for candidates: [ScanCandidate],
+        manifestURLs: [URL],
+        baseFolder: URL
+    ) -> [String: CropRelationship] {
+        let candidatesByPath = Dictionary(uniqueKeysWithValues: candidates.map { (canonicalPath($0.sourceURL), $0) })
+        var relationships: [String: CropRelationship] = [:]
+        let decoder = JSONDecoder()
+
+        for manifestURL in manifestURLs {
+            guard let data = try? Data(contentsOf: manifestURL),
+                  let manifest = try? decoder.decode(CropManifest.self, from: data) else { continue }
+
+            let manifestFolder = manifestURL.deletingLastPathComponent()
+            let sourceURL = URL(fileURLWithPath: manifest.sourcePath)
+            let sourceCandidate = candidatesByPath[canonicalPath(sourceURL)]
+                ?? candidatesByPath[canonicalPath(manifestFolder.appendingPathComponent(manifest.sourceFileName))]
+            guard let sourceCandidate else { continue }
+
+            let cropCandidates = manifest.crops.compactMap { entry -> ScanCandidate? in
+                let outputURL = URL(fileURLWithPath: entry.outputPath)
+                if let candidate = candidatesByPath[canonicalPath(outputURL)] {
+                    return candidate
+                }
+                return candidatesByPath[canonicalPath(manifestFolder.appendingPathComponent(entry.outputFileName))]
+            }
+            guard !cropCandidates.isEmpty else { continue }
+
+            let manifestRelativePath = relativePath(for: manifestURL, relativeTo: baseFolder)
+            let cropRelativePaths = cropCandidates.map(\.relativePath)
+            let cropFileNames = cropCandidates.map(\.fileName)
+            let latestCrop = cropCandidates.last
+            let originalRelationship = CropRelationship(
+                role: .original,
+                originalRelativePath: sourceCandidate.relativePath,
+                originalFileName: sourceCandidate.fileName,
+                cropRelativePaths: cropRelativePaths,
+                cropFileNames: cropFileNames,
+                manifestRelativePath: manifestRelativePath,
+                latestCropRelativePath: latestCrop?.relativePath,
+                latestCropFileName: latestCrop?.fileName
+            )
+            relationships[canonicalPath(sourceCandidate.sourceURL)] = originalRelationship
+
+            for cropCandidate in cropCandidates {
+                relationships[canonicalPath(cropCandidate.sourceURL)] = CropRelationship(
+                    role: .crop,
+                    originalRelativePath: sourceCandidate.relativePath,
+                    originalFileName: sourceCandidate.fileName,
+                    cropRelativePaths: cropRelativePaths,
+                    cropFileNames: cropFileNames,
+                    manifestRelativePath: manifestRelativePath,
+                    latestCropRelativePath: cropCandidate.relativePath,
+                    latestCropFileName: cropCandidate.fileName
+                )
+            }
+        }
+
+        return relationships
+    }
+
+    private func canonicalPath(_ url: URL) -> String {
+        url.resolvingSymlinksInPath().standardizedFileURL.path
+    }
+
+    private static func mediaSort(lhs: MediaItem, rhs: MediaItem) -> Bool {
+        let lhsDate = lhs.capturedAt ?? .distantPast
+        let rhsDate = rhs.capturedAt ?? .distantPast
+        if lhsDate == rhsDate {
+            if lhs.cropSortFamilyKey == rhs.cropSortFamilyKey,
+               lhs.cropSortPriority != rhs.cropSortPriority {
+                return lhs.cropSortPriority < rhs.cropSortPriority
+            }
+            return lhs.fileName.localizedCaseInsensitiveCompare(rhs.fileName) == .orderedAscending
+        }
+        return lhsDate < rhsDate
+    }
 }
 
 private struct ScanCandidate {
@@ -169,4 +256,5 @@ private struct ScanCandidate {
     var fileSizeBytes: Int64
     var mediaKind: MediaKind
     var contentModificationDate: Date?
+    var cropRelationship: CropRelationship?
 }

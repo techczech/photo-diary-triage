@@ -1887,6 +1887,8 @@ final class AppState: ObservableObject {
         reviewFilter = filter
         if filter == .all {
             statusMessage = "Showing all visible photos."
+        } else if filter == .cropped {
+            statusMessage = "Showing crop-linked photos."
         } else {
             statusMessage = "Showing \(filter.title.lowercased()) photos."
         }
@@ -2414,11 +2416,32 @@ final class AppState: ObservableObject {
                     )
                 }.value
 
+                recordCropRelationship(for: item, cropURL: result.outputURL, manifestURL: result.manifestURL)
                 statusMessage = "Saved crop \(result.outputURL.lastPathComponent). Manifest: \(result.manifestURL.lastPathComponent)."
             } catch {
                 statusMessage = "Crop failed: \(error.localizedDescription)"
             }
         }
+    }
+
+    func openCropLinkedPreview(for itemID: UUID) {
+        guard let item = mediaItem(for: itemID),
+              let targetRelativePath = item.cropRelationship?.linkedPreviewRelativePath else {
+            statusMessage = "No linked crop/original preview is available."
+            return
+        }
+        guard let target = mediaItem(relativePath: targetRelativePath) else {
+            statusMessage = "Linked crop/original is not loaded in the current browser view."
+            return
+        }
+
+        preheatDisplayImages(around: target.id, in: reviewInteractionItems, radius: 2)
+        previewingMediaItemID = target.id
+        focusedReviewItemID = target.id
+        selectedMediaItemIDs = [target.id]
+        reviewSelectionAnchorID = target.id
+        activePane = .media
+        statusMessage = "Opened linked \(target.cropRelationship?.role == .crop ? "crop" : "original") \(target.fileName)."
     }
 
     func openComparisonForCurrentSelection() {
@@ -4447,6 +4470,8 @@ final class AppState: ObservableObject {
             return items.filter { $0.selectionState.isExcluded }
         case .undecided:
             return items.filter { $0.selectionState.isUndecided }
+        case .cropped:
+            return items.filter { $0.cropRelationship != nil }
         }
     }
 
@@ -4476,6 +4501,82 @@ final class AppState: ObservableObject {
         }
 
         return nil
+    }
+
+    private func mediaItem(relativePath: String) -> MediaItem? {
+        if let sessionItem = sessionMediaByID.values.first(where: { $0.relativePath == relativePath }) {
+            return sessionItem
+        }
+
+        for cachedItems in archiveMediaCache.values {
+            if let archiveItem = cachedItems.first(where: { $0.relativePath == relativePath }) {
+                return archiveItem
+            }
+        }
+
+        return contextMediaItems.first(where: { $0.relativePath == relativePath })
+    }
+
+    private func recordCropRelationship(for original: MediaItem, cropURL: URL, manifestURL: URL) {
+        let cropRelativePath = siblingRelativePath(for: cropURL, original: original)
+        let manifestRelativePath = siblingRelativePath(for: manifestURL, original: original)
+
+        func updatedOriginal(_ item: MediaItem) -> MediaItem {
+            var updated = item
+            var relationship = updated.cropRelationship ?? CropRelationship(
+                role: .original,
+                originalRelativePath: updated.relativePath,
+                originalFileName: updated.fileName,
+                cropRelativePaths: [],
+                cropFileNames: [],
+                manifestRelativePath: manifestRelativePath,
+                latestCropRelativePath: nil,
+                latestCropFileName: nil
+            )
+            relationship.role = .original
+            relationship.originalRelativePath = updated.relativePath
+            relationship.originalFileName = updated.fileName
+            relationship.manifestRelativePath = manifestRelativePath
+            if !relationship.cropRelativePaths.contains(cropRelativePath) {
+                relationship.cropRelativePaths.append(cropRelativePath)
+            }
+            if !relationship.cropFileNames.contains(cropURL.lastPathComponent) {
+                relationship.cropFileNames.append(cropURL.lastPathComponent)
+            }
+            relationship.latestCropRelativePath = cropRelativePath
+            relationship.latestCropFileName = cropURL.lastPathComponent
+            updated.cropRelationship = relationship
+            return updated
+        }
+
+        if var session = currentSession,
+           let index = session.mediaItems.firstIndex(where: { $0.id == original.id }) {
+            session.mediaItems[index] = updatedOriginal(session.mediaItems[index])
+            save(session)
+            return
+        }
+
+        var updatedArchiveCache = archiveMediaCache
+        var didUpdate = false
+        for key in updatedArchiveCache.keys {
+            guard var items = updatedArchiveCache[key],
+                  let index = items.firstIndex(where: { $0.id == original.id }) else { continue }
+            items[index] = updatedOriginal(items[index])
+            updatedArchiveCache[key] = items
+            didUpdate = true
+        }
+        if didUpdate {
+            archiveMediaCache = updatedArchiveCache
+            refreshAllUIState()
+        }
+    }
+
+    private func siblingRelativePath(for url: URL, original: MediaItem) -> String {
+        let relativeDirectory = URL(fileURLWithPath: original.relativePath).deletingLastPathComponent().path
+        if relativeDirectory == "." || relativeDirectory == "/" {
+            return url.lastPathComponent
+        }
+        return "\(relativeDirectory)/\(url.lastPathComponent)"
     }
 
     private var selectedBrowserFolderURL: URL? {
@@ -4616,6 +4717,10 @@ final class AppState: ObservableObject {
         let lhsDate = lhs.capturedAt ?? .distantPast
         let rhsDate = rhs.capturedAt ?? .distantPast
         if lhsDate == rhsDate {
+            if lhs.cropSortFamilyKey == rhs.cropSortFamilyKey,
+               lhs.cropSortPriority != rhs.cropSortPriority {
+                return lhs.cropSortPriority < rhs.cropSortPriority
+            }
             return lhs.fileName.localizedCaseInsensitiveCompare(rhs.fileName) == .orderedAscending
         }
         return lhsDate < rhsDate

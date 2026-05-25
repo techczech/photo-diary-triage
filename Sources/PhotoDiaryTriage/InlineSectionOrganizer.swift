@@ -219,6 +219,10 @@ struct InlineSectionOrganizer {
         let lhsDate = lhs.capturedAt ?? .distantPast
         let rhsDate = rhs.capturedAt ?? .distantPast
         if lhsDate == rhsDate {
+            if lhs.cropSortFamilyKey == rhs.cropSortFamilyKey,
+               lhs.cropSortPriority != rhs.cropSortPriority {
+                return lhs.cropSortPriority < rhs.cropSortPriority
+            }
             return lhs.fileName.localizedCaseInsensitiveCompare(rhs.fileName) == .orderedAscending
         }
         return lhsDate < rhsDate

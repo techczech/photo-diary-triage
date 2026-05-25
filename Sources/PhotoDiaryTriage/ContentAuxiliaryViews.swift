@@ -102,7 +102,7 @@ struct KeyboardHelpSheet: View {
                         ("H / J / K / L", "When compare is zoomed, pan the focused image. With Lock Pan on, all compare images pan together."),
                         ("V", "Crop the currently visible zoomed image area."),
                         ("Cmd-3 / Cmd-4", "Switch flat review or grouped review."),
-                        ("Cmd-Control-A / I / C / X / U", "Filter review items to all, included, candidate, excluded, or undecided."),
+                        ("Cmd-Control-A / I / C / X / U", "Filter review items to all, included, candidate, excluded, or undecided. Use the filter menu for Cropped."),
                         ("Cmd-Option-G / Cmd-Option-L", "Switch grid or list layout."),
                         ("Cmd-Shift-C", "Open compare from the command menu path.")
                     ])
@@ -868,6 +868,18 @@ struct FullPhotoSheet: View {
                 .background(statusBadgeColor(for: item.selectionState))
                 .clipShape(Capsule())
 
+            if let cropRelationship = item.cropRelationship {
+                Button {
+                    appState.openCropLinkedPreview(for: item.id)
+                } label: {
+                    Label(cropRelationship.badgeLabel, systemImage: cropRelationship.role == .crop ? "crop" : "photo.badge.plus")
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.small)
+                .foregroundStyle(cropRelationship.role == .crop ? Color.purple.opacity(0.95) : Color.teal.opacity(0.95))
+                .help(cropRelationship.helpText)
+            }
+
             if appState.canMutateImportSelection {
                 Button("S") {
                     appState.markPreviewItemForImport(item.id)
@@ -1276,6 +1288,18 @@ struct CompareItemCard: View {
                     .padding(.vertical, 4)
                     .background(statusBadgeColor(for: item.selectionState))
                     .clipShape(Capsule())
+
+                if let cropRelationship = item.cropRelationship {
+                    Button {
+                        appState.openCropLinkedPreview(for: item.id)
+                    } label: {
+                        Label(cropRelationship.badgeLabel, systemImage: cropRelationship.role == .crop ? "crop" : "photo.badge.plus")
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.mini)
+                    .foregroundStyle(cropRelationship.role == .crop ? Color.purple.opacity(0.95) : Color.teal.opacity(0.95))
+                    .help(cropRelationship.helpText)
+                }
 
                 if appState.canMutateImportSelection {
                     Button("S") {

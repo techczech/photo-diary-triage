@@ -163,6 +163,12 @@ struct ReviewGridCard: View {
                 ReviewCopyStatusBadge(copyStatus: copyStatus)
             }
 
+            if let cropRelationship = item.cropRelationship {
+                CropRelationshipBadge(relationship: cropRelationship) {
+                    appState.openCropLinkedPreview(for: item.id)
+                }
+            }
+
             if let visibleLockNotice = snapshot.visibleLockNotice {
                 ReviewDecisionLockNotice(text: visibleLockNotice)
             }
@@ -305,6 +311,12 @@ struct MediaItemRow: View {
                         ReviewCopyStatusBadge(copyStatus: copyStatus)
                     }
 
+                    if let cropRelationship = item.cropRelationship {
+                        CropRelationshipBadge(relationship: cropRelationship) {
+                            appState.openCropLinkedPreview(for: item.id)
+                        }
+                    }
+
                     if let visibleLockNotice = snapshot.visibleLockNotice {
                         ReviewDecisionLockNotice(text: visibleLockNotice)
                     }
@@ -419,6 +431,31 @@ private struct SourceLogOwnershipBadge: View {
 
     private var backgroundColor: Color {
         ownership.isCopied ? Color.green.opacity(0.12) : Color.blue.opacity(0.12)
+    }
+}
+
+private struct CropRelationshipBadge: View {
+    let relationship: CropRelationship
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label(relationship.badgeLabel, systemImage: relationship.role == .crop ? "crop" : "photo.badge.plus")
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .buttonStyle(.plain)
+        .font(.caption2.weight(.medium))
+        .foregroundStyle(relationship.role == .crop ? Color.purple.opacity(0.95) : Color.teal.opacity(0.95))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(backgroundColor)
+        .clipShape(Capsule())
+        .help(relationship.helpText)
+    }
+
+    private var backgroundColor: Color {
+        relationship.role == .crop ? Color.purple.opacity(0.10) : Color.teal.opacity(0.10)
     }
 }
 
