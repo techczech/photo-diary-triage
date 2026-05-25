@@ -1,6 +1,6 @@
 import Foundation
 
-struct AppRelease {
+struct AppRelease: Sendable {
     let version: String
     let build: String
     let featureSlug: String
