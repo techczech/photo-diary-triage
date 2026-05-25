@@ -162,6 +162,7 @@ struct KeyboardHelpSheet: View {
     }
 }
 
+@MainActor
 struct PhotoLogEditorSheet: View {
     @Environment(\.dismiss) private var dismiss
 

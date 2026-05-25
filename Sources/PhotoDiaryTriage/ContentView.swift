@@ -33,7 +33,7 @@ struct ContentView: View {
                 state: sidebarState,
                 appRelease: appRelease
             )
-            .navigationSplitViewColumnWidth(min: 260, ideal: 320, max: 380)
+            .navigationSplitViewColumnWidth(min: 220, ideal: 280, max: 340)
         } detail: {
             detailPane
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -49,7 +49,7 @@ struct ContentView: View {
                 walkNotes: $walkNotes,
                 summary: photoLogDetailsSummary
             )
-            .inspectorColumnWidth(min: 300, ideal: 360, max: 460)
+            .inspectorColumnWidth(min: 260, ideal: 320, max: 420)
         }
         .toolbar {
             mainToolbar
@@ -77,7 +77,7 @@ struct ContentView: View {
             navigationState: reviewNavigationState,
             sidebarState: sidebarState
         )
-        .frame(minWidth: 720, maxWidth: .infinity, alignment: .leading)
+        .frame(minWidth: 560, maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .sheet(isPresented: Binding(

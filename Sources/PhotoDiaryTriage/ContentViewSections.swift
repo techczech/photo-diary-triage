@@ -203,6 +203,7 @@ struct WalkDetailsPaneView: View {
     }
 }
 
+@MainActor
 struct ActionButtonsPaneView: View {
     let appState: AppState
     var compact: Bool = false
