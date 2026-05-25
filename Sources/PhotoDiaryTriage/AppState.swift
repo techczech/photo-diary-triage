@@ -2390,6 +2390,37 @@ final class AppState: ObservableObject {
         activePane = .media
     }
 
+    func cropMediaItem(_ item: MediaItem, normalizedRect: CropNormalizedRect, trigger: CropTrigger) {
+        guard normalizedRect.isUsableCrop else {
+            statusMessage = "Crop area is too small."
+            return
+        }
+        if trigger == .visibleZoom && normalizedRect.isEffectivelyFullFrame {
+            statusMessage = "Zoom in or use Drag Crop before saving a crop."
+            return
+        }
+
+        let release = AppRelease.current
+        statusMessage = "Cropping \(item.fileName)..."
+
+        Task {
+            do {
+                let result = try await Task.detached(priority: .userInitiated) {
+                    try CropService().crop(
+                        item: item,
+                        normalizedRect: normalizedRect,
+                        trigger: trigger,
+                        appRelease: release
+                    )
+                }.value
+
+                statusMessage = "Saved crop \(result.outputURL.lastPathComponent). Manifest: \(result.manifestURL.lastPathComponent)."
+            } catch {
+                statusMessage = "Crop failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
     func openComparisonForCurrentSelection() {
         let ids = reviewInteractionItems
             .map(\.id)

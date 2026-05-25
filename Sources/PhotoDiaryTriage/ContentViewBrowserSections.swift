@@ -313,6 +313,7 @@ struct ReviewPaneView: View {
                         onZoomReset: {
                             appState.resetReviewGridColumnCount()
                         },
+                        onCropVisible: { },
                         onToggleSidebar: {
                             appState.toggleSidebarVisibility()
                         },

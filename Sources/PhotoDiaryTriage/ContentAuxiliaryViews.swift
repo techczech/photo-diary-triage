@@ -100,6 +100,7 @@ struct KeyboardHelpSheet: View {
                         ("+ / - / 0", "Change review grid columns, or zoom compare images when compare is open. Reset returns compare to Fit."),
                         ("Q", "When compare is open, remove the focused compare item."),
                         ("H / J / K / L", "When compare is zoomed, pan the focused image. With Lock Pan on, all compare images pan together."),
+                        ("V", "Crop the currently visible zoomed image area."),
                         ("Cmd-3 / Cmd-4", "Switch flat review or grouped review."),
                         ("Cmd-Control-A / I / C / X / U", "Filter review items to all, included, candidate, excluded, or undecided."),
                         ("Cmd-Option-G / Cmd-Option-L", "Switch grid or list layout."),
@@ -490,6 +491,7 @@ struct ReviewKeyInputView: NSViewRepresentable {
     let onZoomIn: () -> Void
     let onZoomOut: () -> Void
     let onZoomReset: () -> Void
+    let onCropVisible: () -> Void
     let onToggleSidebar: () -> Void
     let onToggleInspector: () -> Void
 
@@ -509,6 +511,7 @@ struct ReviewKeyInputView: NSViewRepresentable {
         view.onZoomIn = onZoomIn
         view.onZoomOut = onZoomOut
         view.onZoomReset = onZoomReset
+        view.onCropVisible = onCropVisible
         view.onToggleSidebar = onToggleSidebar
         view.onToggleInspector = onToggleInspector
         return view
@@ -529,6 +532,7 @@ struct ReviewKeyInputView: NSViewRepresentable {
         nsView.onZoomIn = onZoomIn
         nsView.onZoomOut = onZoomOut
         nsView.onZoomReset = onZoomReset
+        nsView.onCropVisible = onCropVisible
         nsView.onToggleSidebar = onToggleSidebar
         nsView.onToggleInspector = onToggleInspector
 
@@ -557,6 +561,7 @@ final class ReviewKeyResponderView: NSView {
     var onZoomIn: (() -> Void)?
     var onZoomOut: (() -> Void)?
     var onZoomReset: (() -> Void)?
+    var onCropVisible: (() -> Void)?
     var onToggleSidebar: (() -> Void)?
     var onToggleInspector: (() -> Void)?
 
@@ -647,6 +652,8 @@ final class ReviewKeyResponderView: NSView {
                 onZoomOut?()
             } else if rawText == "0" {
                 onZoomReset?()
+            } else if text == "V" {
+                onCropVisible?()
             } else if let direction = CompareKeyboardPanDirection(key: text), let onPan {
                 onPan(direction.dx, direction.dy)
             } else if ["S", "X", "D", "R", "A", "C"].contains(text) || (text == "Q" && onPan != nil) {
@@ -673,6 +680,8 @@ struct FullPhotoSheet: View {
     let item: MediaItem
     @State private var zoom: CGFloat = 1
     @State private var viewport = CompareViewport.zero
+    @State private var visibleCropRect = CropNormalizedRect.fullFrame
+    @State private var isManualCropEnabled = false
     @State private var panCommand = ComparePanCommand.idle
 
     private var currentItem: MediaItem {
@@ -741,6 +750,9 @@ struct FullPhotoSheet: View {
                     zoom = 1
                     viewport = .zero
                 },
+                onCropVisible: {
+                    cropVisibleArea(for: displayItem)
+                },
                 onToggleSidebar: {
                     appState.toggleSidebarVisibility()
                 },
@@ -753,6 +765,8 @@ struct FullPhotoSheet: View {
                 zoom = 1
                 viewport = .zero
                 panCommand = .idle
+                visibleCropRect = .fullFrame
+                isManualCropEnabled = false
             }
 
             VStack(alignment: .leading, spacing: 10) {
@@ -781,6 +795,7 @@ struct FullPhotoSheet: View {
                     .shortcutHint("Right", help: "Show the next visible photo (Right Arrow)")
 
                     ZoomToolbar(zoom: $zoom)
+                    cropControls(for: displayItem)
                     Button("Close") {
                         dismiss()
                     }
@@ -793,7 +808,13 @@ struct FullPhotoSheet: View {
                     item: displayItem,
                     zoom: zoom,
                     viewport: $viewport,
-                    panCommand: panCommand
+                    visibleCropRect: $visibleCropRect,
+                    panCommand: panCommand,
+                    isCropSelectionEnabled: isManualCropEnabled,
+                    onManualCrop: { rect in
+                        appState.cropMediaItem(displayItem, normalizedRect: rect, trigger: .manualDrag)
+                        isManualCropEnabled = false
+                    }
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -804,7 +825,35 @@ struct FullPhotoSheet: View {
             zoom = 1
             viewport = .zero
             panCommand = .idle
+            visibleCropRect = .fullFrame
+            isManualCropEnabled = false
         }
+    }
+
+    @ViewBuilder
+    private func cropControls(for item: MediaItem) -> some View {
+        HStack(spacing: 6) {
+            Button {
+                cropVisibleArea(for: item)
+            } label: {
+                Label("Crop Visible", systemImage: "crop")
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .disabled(visibleCropRect.isEffectivelyFullFrame)
+            .shortcutHint("V", help: "Save a crop from the current zoomed view")
+
+            Toggle(isOn: $isManualCropEnabled) {
+                Label("Drag Crop", systemImage: "selection.pin.in.out")
+            }
+            .toggleStyle(.button)
+            .controlSize(.small)
+            .help("Drag over the image to save a manual crop")
+        }
+    }
+
+    private func cropVisibleArea(for item: MediaItem) {
+        appState.cropMediaItem(item, normalizedRect: visibleCropRect, trigger: .visibleZoom)
     }
 
     @ViewBuilder
@@ -904,7 +953,10 @@ struct FullPhotoPreviewCanvas: View {
     let item: MediaItem
     let zoom: CGFloat
     @Binding var viewport: CompareViewport
+    @Binding var visibleCropRect: CropNormalizedRect
     let panCommand: ComparePanCommand
+    let isCropSelectionEnabled: Bool
+    let onManualCrop: (CropNormalizedRect) -> Void
 
     @ObservedObject private var thumbnailSlot: ThumbnailSlot
 
@@ -913,13 +965,19 @@ struct FullPhotoPreviewCanvas: View {
         item: MediaItem,
         zoom: CGFloat,
         viewport: Binding<CompareViewport>,
-        panCommand: ComparePanCommand
+        visibleCropRect: Binding<CropNormalizedRect>,
+        panCommand: ComparePanCommand,
+        isCropSelectionEnabled: Bool,
+        onManualCrop: @escaping (CropNormalizedRect) -> Void
     ) {
         self.appState = appState
         self.item = item
         self.zoom = zoom
         _viewport = viewport
+        _visibleCropRect = visibleCropRect
         self.panCommand = panCommand
+        self.isCropSelectionEnabled = isCropSelectionEnabled
+        self.onManualCrop = onManualCrop
         _thumbnailSlot = ObservedObject(wrappedValue: appState.thumbnailSlot(for: item))
     }
 
@@ -929,7 +987,10 @@ struct FullPhotoPreviewCanvas: View {
             zoom: zoom,
             itemID: item.id,
             viewport: $viewport,
+            visibleCropRect: $visibleCropRect,
             panCommand: panCommand,
+            isCropSelectionEnabled: isCropSelectionEnabled,
+            onManualCrop: onManualCrop,
             placeholderImage: thumbnailSlot.image
         )
         .task(id: item.id) {
@@ -947,6 +1008,8 @@ struct CompareSheet: View {
     @State private var isPanLocked = true
     @State private var synchronizedViewport = CompareViewport.zero
     @State private var panCommand = ComparePanCommand.idle
+    @State private var visibleCropRects: [UUID: CropNormalizedRect] = [:]
+    @State private var isManualCropEnabled = false
 
     var body: some View {
         let snapshot = state.snapshot
@@ -1002,6 +1065,9 @@ struct CompareSheet: View {
                 onZoomReset: {
                     zoom = 1
                 },
+                onCropVisible: {
+                    cropFocusedVisibleArea(snapshot: snapshot)
+                },
                 onToggleSidebar: {
                     appState.toggleSidebarVisibility()
                 },
@@ -1026,6 +1092,23 @@ struct CompareSheet: View {
                     .controlSize(.small)
                     .help("Keep compare items panned to the same relative detail area")
                 ZoomToolbar(zoom: $zoom)
+                Button {
+                    cropFocusedVisibleArea(snapshot: snapshot)
+                } label: {
+                    Label("Crop Focus", systemImage: "crop")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(focusedVisibleCrop(in: snapshot)?.isEffectivelyFullFrame ?? true)
+                .shortcutHint("V", help: "Save a crop from the focused compare image")
+
+                Toggle(isOn: $isManualCropEnabled) {
+                    Label("Drag Crop", systemImage: "selection.pin.in.out")
+                }
+                .toggleStyle(.button)
+                .controlSize(.small)
+                .help("Drag over any compare image to save a manual crop")
+
                 Button("Close") {
                     onClose()
                 }
@@ -1063,7 +1146,16 @@ struct CompareSheet: View {
                                         synchronizedViewport: $synchronizedViewport,
                                         panCommand: panCommand,
                                         isPanLocked: isPanLocked,
-                                        imageWidth: CGFloat(metrics.imageWidth)
+                                        imageWidth: CGFloat(metrics.imageWidth),
+                                        isCropSelectionEnabled: isManualCropEnabled,
+                                        visibleCropRect: Binding(
+                                            get: { visibleCropRects[itemSnapshot.id] ?? .fullFrame },
+                                            set: { visibleCropRects[itemSnapshot.id] = $0 }
+                                        ),
+                                        onManualCrop: { rect in
+                                            appState.cropMediaItem(itemSnapshot.item, normalizedRect: rect, trigger: .manualDrag)
+                                            isManualCropEnabled = false
+                                        }
                                     )
                                     .frame(width: CGFloat(metrics.cardWidth), alignment: .topLeading)
                                     .id(itemSnapshot.id)
@@ -1125,6 +1217,18 @@ struct CompareSheet: View {
         .buttonStyle(.bordered)
         .controlSize(.small)
     }
+
+    private func focusedVisibleCrop(in snapshot: CompareSnapshot) -> CropNormalizedRect? {
+        guard let focusedID = snapshot.preferredScrollTargetID else { return nil }
+        return visibleCropRects[focusedID] ?? .fullFrame
+    }
+
+    private func cropFocusedVisibleArea(snapshot: CompareSnapshot) {
+        guard let focusedID = snapshot.preferredScrollTargetID,
+              let item = snapshot.items.first(where: { $0.id == focusedID })?.item else { return }
+        let rect = visibleCropRects[focusedID] ?? .fullFrame
+        appState.cropMediaItem(item, normalizedRect: rect, trigger: .visibleZoom)
+    }
 }
 
 struct CompareItemCard: View {
@@ -1135,6 +1239,9 @@ struct CompareItemCard: View {
     let panCommand: ComparePanCommand
     let isPanLocked: Bool
     let imageWidth: CGFloat
+    let isCropSelectionEnabled: Bool
+    @Binding var visibleCropRect: CropNormalizedRect
+    let onManualCrop: (CropNormalizedRect) -> Void
 
     private var item: MediaItem {
         snapshot.item
@@ -1224,6 +1331,16 @@ struct CompareItemCard: View {
                 }
 
                 Button {
+                    appState.cropMediaItem(item, normalizedRect: visibleCropRect, trigger: .visibleZoom)
+                } label: {
+                    Image(systemName: "crop")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+                .disabled(visibleCropRect.isEffectivelyFullFrame)
+                .shortcutHint("V", help: "Crop the visible zoomed area when this item is focused")
+
+                Button {
                     appState.removeItemFromComparison(item.id)
                 } label: {
                     Image(systemName: "xmark.circle.fill")
@@ -1240,7 +1357,10 @@ struct CompareItemCard: View {
                 zoom: zoom,
                 synchronizedViewport: $synchronizedViewport,
                 panCommand: panCommand,
-                isPanLocked: isPanLocked
+                isPanLocked: isPanLocked,
+                visibleCropRect: $visibleCropRect,
+                isCropSelectionEnabled: isCropSelectionEnabled,
+                onManualCrop: onManualCrop
             )
                 .frame(width: imageWidth, height: imageHeight)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -1248,7 +1368,7 @@ struct CompareItemCard: View {
                     ReviewGridClickTarget { click in
                         appState.handleGridSelection(for: item.id, click: click)
                     }
-                    .allowsHitTesting(zoom <= 1)
+                    .allowsHitTesting(zoom <= 1 && isCropSelectionEnabled == false)
                 }
         }
         .padding(12)
@@ -1316,7 +1436,10 @@ struct ZoomableImageCanvas: View {
     let zoom: CGFloat
     let itemID: UUID
     @Binding var viewport: CompareViewport
+    @Binding var visibleCropRect: CropNormalizedRect
     let panCommand: ComparePanCommand
+    let isCropSelectionEnabled: Bool
+    let onManualCrop: (CropNormalizedRect) -> Void
     var placeholderImage: NSImage?
     @StateObject private var imageModel = DecodedImageModel()
 
@@ -1328,8 +1451,11 @@ struct ZoomableImageCanvas: View {
                     image: image,
                     zoom: zoom,
                     synchronizedViewport: $viewport,
+                    visibleCropRect: $visibleCropRect,
                     panCommand: panCommand,
-                    isPanLocked: false
+                    isPanLocked: false,
+                    isCropSelectionEnabled: isCropSelectionEnabled,
+                    onManualCrop: onManualCrop
                 )
             } else if let placeholderImage {
                 Image(nsImage: placeholderImage)
@@ -1363,6 +1489,9 @@ struct LoadedLockedCompareImageCanvas: View {
     @Binding var synchronizedViewport: CompareViewport
     let panCommand: ComparePanCommand
     let isPanLocked: Bool
+    @Binding var visibleCropRect: CropNormalizedRect
+    let isCropSelectionEnabled: Bool
+    let onManualCrop: (CropNormalizedRect) -> Void
     @StateObject private var imageModel = DecodedImageModel()
     @ObservedObject private var thumbnailSlot: ThumbnailSlot
 
@@ -1372,7 +1501,10 @@ struct LoadedLockedCompareImageCanvas: View {
         zoom: CGFloat,
         synchronizedViewport: Binding<CompareViewport>,
         panCommand: ComparePanCommand,
-        isPanLocked: Bool
+        isPanLocked: Bool,
+        visibleCropRect: Binding<CropNormalizedRect>,
+        isCropSelectionEnabled: Bool,
+        onManualCrop: @escaping (CropNormalizedRect) -> Void
     ) {
         self.appState = appState
         self.item = item
@@ -1380,6 +1512,9 @@ struct LoadedLockedCompareImageCanvas: View {
         _synchronizedViewport = synchronizedViewport
         self.panCommand = panCommand
         self.isPanLocked = isPanLocked
+        _visibleCropRect = visibleCropRect
+        self.isCropSelectionEnabled = isCropSelectionEnabled
+        self.onManualCrop = onManualCrop
         _thumbnailSlot = ObservedObject(wrappedValue: appState.thumbnailSlot(for: item))
     }
 
@@ -1391,8 +1526,11 @@ struct LoadedLockedCompareImageCanvas: View {
                     image: image,
                     zoom: zoom,
                     synchronizedViewport: $synchronizedViewport,
+                    visibleCropRect: $visibleCropRect,
                     panCommand: panCommand,
-                    isPanLocked: isPanLocked
+                    isPanLocked: isPanLocked,
+                    isCropSelectionEnabled: isCropSelectionEnabled,
+                    onManualCrop: onManualCrop
                 )
             } else {
                 CompareImagePlaceholder(image: thumbnailSlot.image)
@@ -1431,8 +1569,11 @@ struct LockedCompareImageCanvas: NSViewRepresentable {
     let image: NSImage
     let zoom: CGFloat
     @Binding var synchronizedViewport: CompareViewport
+    @Binding var visibleCropRect: CropNormalizedRect
     let panCommand: ComparePanCommand
     let isPanLocked: Bool
+    let isCropSelectionEnabled: Bool
+    let onManualCrop: (CropNormalizedRect) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -1447,6 +1588,11 @@ struct LockedCompareImageCanvas: NSViewRepresentable {
     func updateNSView(_ nsView: LockedCompareCanvasView, context: Context) {
         context.coordinator.parent = self
         nsView.updateImage(image: image, zoom: zoom)
+        nsView.isCropSelectionEnabled = isCropSelectionEnabled
+        nsView.onVisibleCropChanged = { rect in
+            context.coordinator.updateVisibleCrop(rect)
+        }
+        nsView.onManualCrop = onManualCrop
         context.coordinator.applySynchronizedViewportIfNeeded()
         context.coordinator.applyPanCommandIfNeeded()
     }
@@ -1459,6 +1605,7 @@ struct LockedCompareImageCanvas: NSViewRepresentable {
         private var lastAppliedViewport = CompareViewport.zero
         private var lastAppliedDocumentSize: CGSize = .zero
         private var lastAppliedPanRevision: Int = 0
+        private var lastVisibleCropRect = CropNormalizedRect.fullFrame
 
         init(_ parent: LockedCompareImageCanvas) {
             self.parent = parent
@@ -1506,6 +1653,14 @@ struct LockedCompareImageCanvas: NSViewRepresentable {
             scrollView.panBy(dx: parent.panCommand.dx, dy: parent.panCommand.dy)
         }
 
+        func updateVisibleCrop(_ rect: CropNormalizedRect) {
+            guard rect != lastVisibleCropRect else { return }
+            lastVisibleCropRect = rect
+            DispatchQueue.main.async {
+                self.parent.visibleCropRect = rect
+            }
+        }
+
         private func boundsDidChange() {
             guard let scrollView else { return }
             guard parent.isPanLocked else { return }
@@ -1525,6 +1680,18 @@ final class LockedCompareCanvasView: NSScrollView {
     private weak var currentImage: NSImage?
     private var currentImageSize: CGSize = .zero
     private var currentZoom: CGFloat = 1
+    private let cropSelectionLayer = CAShapeLayer()
+    private var cropDragStart: CGPoint?
+    private var cropDragCurrent: CGPoint?
+    var isCropSelectionEnabled = false {
+        didSet {
+            if isCropSelectionEnabled == false {
+                clearCropSelection()
+            }
+        }
+    }
+    var onVisibleCropChanged: ((CropNormalizedRect) -> Void)?
+    var onManualCrop: ((CropNormalizedRect) -> Void)?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -1535,6 +1702,12 @@ final class LockedCompareCanvasView: NSScrollView {
         borderType = .noBorder
         imageView.imageAlignment = .alignCenter
         imageView.imageScaling = .scaleAxesIndependently
+        imageView.wantsLayer = true
+        cropSelectionLayer.fillColor = NSColor.controlAccentColor.withAlphaComponent(0.16).cgColor
+        cropSelectionLayer.strokeColor = NSColor.controlAccentColor.cgColor
+        cropSelectionLayer.lineWidth = 2
+        cropSelectionLayer.isHidden = true
+        imageView.layer?.addSublayer(cropSelectionLayer)
         documentView = imageView
     }
 
@@ -1546,6 +1719,41 @@ final class LockedCompareCanvasView: NSScrollView {
     override func layout() {
         super.layout()
         updateImageLayout()
+        publishVisibleCrop()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard isCropSelectionEnabled else {
+            super.mouseDown(with: event)
+            return
+        }
+        cropDragStart = imageView.convert(event.locationInWindow, from: nil)
+        cropDragCurrent = cropDragStart
+        updateCropSelectionLayer()
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard isCropSelectionEnabled, cropDragStart != nil else {
+            super.mouseDragged(with: event)
+            return
+        }
+        cropDragCurrent = imageView.convert(event.locationInWindow, from: nil)
+        updateCropSelectionLayer()
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard isCropSelectionEnabled, let cropDragStart else {
+            super.mouseUp(with: event)
+            return
+        }
+        cropDragCurrent = imageView.convert(event.locationInWindow, from: nil)
+        let rect = standardizedDocumentRect(from: cropDragStart, to: cropDragCurrent ?? cropDragStart)
+        clearCropSelection()
+
+        guard let normalized = normalizedCropRect(forDocumentRect: rect), normalized.isUsableCrop else {
+            return
+        }
+        onManualCrop?(normalized)
     }
 
     func updateImage(image: NSImage, zoom: CGFloat) {
@@ -1556,6 +1764,7 @@ final class LockedCompareCanvasView: NSScrollView {
         }
         currentZoom = zoom
         updateImageLayout()
+        publishVisibleCrop()
     }
 
     func currentSynchronizedViewport() -> CompareViewport {
@@ -1575,6 +1784,7 @@ final class LockedCompareCanvasView: NSScrollView {
         )
         contentView.scroll(to: origin)
         reflectScrolledClipView(contentView)
+        publishVisibleCrop()
     }
 
     func panBy(dx: Int, dy: Int, step: Double = 0.12) {
@@ -1596,6 +1806,71 @@ final class LockedCompareCanvasView: NSScrollView {
             height: max(1, currentImageSize.height * displayScale)
         )
         imageView.frame = NSRect(origin: .zero, size: scaledSize)
+        cropSelectionLayer.frame = imageView.bounds
+        updateCropSelectionLayer()
+        publishVisibleCrop()
+    }
+
+    private func publishVisibleCrop() {
+        guard let rect = normalizedCropRect(forDocumentRect: contentView.bounds) else { return }
+        onVisibleCropChanged?(rect)
+    }
+
+    private func normalizedCropRect(forDocumentRect rect: CGRect) -> CropNormalizedRect? {
+        guard currentImageSize.width > 0,
+              currentImageSize.height > 0,
+              imageView.bounds.width > 0,
+              imageView.bounds.height > 0 else {
+            return nil
+        }
+
+        let scaleX = imageView.bounds.width / currentImageSize.width
+        let scaleY = imageView.bounds.height / currentImageSize.height
+        guard scaleX > 0, scaleY > 0 else { return nil }
+
+        let imageRectFromBottom = CGRect(
+            x: rect.minX / scaleX,
+            y: rect.minY / scaleY,
+            width: rect.width / scaleX,
+            height: rect.height / scaleY
+        ).intersection(CGRect(origin: .zero, size: currentImageSize))
+        guard imageRectFromBottom.width > 0, imageRectFromBottom.height > 0 else { return nil }
+
+        let topY = currentImageSize.height - imageRectFromBottom.maxY
+        return CropNormalizedRect(
+            x: imageRectFromBottom.minX / currentImageSize.width,
+            y: topY / currentImageSize.height,
+            width: imageRectFromBottom.width / currentImageSize.width,
+            height: imageRectFromBottom.height / currentImageSize.height
+        )
+    }
+
+    private func standardizedDocumentRect(from start: CGPoint, to end: CGPoint) -> CGRect {
+        let rect = CGRect(
+            x: min(start.x, end.x),
+            y: min(start.y, end.y),
+            width: abs(end.x - start.x),
+            height: abs(end.y - start.y)
+        )
+        return rect.intersection(imageView.bounds)
+    }
+
+    private func updateCropSelectionLayer() {
+        guard let cropDragStart, let cropDragCurrent else {
+            cropSelectionLayer.isHidden = true
+            return
+        }
+
+        let rect = standardizedDocumentRect(from: cropDragStart, to: cropDragCurrent)
+        cropSelectionLayer.isHidden = rect.width <= 1 || rect.height <= 1
+        cropSelectionLayer.path = CGPath(rect: rect, transform: nil)
+    }
+
+    private func clearCropSelection() {
+        cropDragStart = nil
+        cropDragCurrent = nil
+        cropSelectionLayer.isHidden = true
+        cropSelectionLayer.path = nil
     }
 }
 
