@@ -6,58 +6,9 @@ struct HeaderPaneView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .center, spacing: 12) {
-                Picker("Mode", selection: Binding(
-                    get: { appState.workspaceMode },
-                    set: { appState.setWorkspaceMode($0) }
-                )) {
-                    ForEach(WorkspaceMode.displayOrder, id: \.self) { mode in
-                        Label(mode.title, systemImage: mode.systemImage)
-                            .tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(width: 560)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Label(appState.workspaceContextTitle, systemImage: appState.workspaceContextSystemImage)
-                        .font(.caption.weight(.semibold))
-                    Text(appState.workspaceModeDetail)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-
-                Spacer()
-
-                Button {
-                    appState.openSelectedBrowserFolder()
-                } label: {
-                    Label("Open in Finder", systemImage: "folder")
-                }
-                .disabled(!appState.canOpenSelectedBrowserFolder)
-                .buttonStyle(.bordered)
-                .help("Open the selected browser folder in Finder")
-
-                Button {
-                    appState.toggleDetailsInspector()
-                } label: {
-                    Label(appState.isDetailsInspectorVisible ? "Hide Inspector" : "Show Inspector", systemImage: "sidebar.right")
-                }
-                .labelStyle(.iconOnly)
-                .buttonStyle(.bordered)
-                .shortcutHint("Cmd-Option-I", help: "\(appState.isDetailsInspectorVisible ? "Hide" : "Show") inspector (Cmd-Option-I)")
-
-                Button {
-                    appState.showKeyboardHelp = true
-                } label: {
-                    Label("Keyboard Shortcuts", systemImage: "keyboard")
-                }
-                .labelStyle(.iconOnly)
-                .buttonStyle(.bordered)
-                .shortcutHint("Cmd-Shift-/", help: "Show keyboard shortcuts (Cmd-Shift-/)")
+            ViewThatFits(in: .horizontal) {
+                fullHeaderControls
+                compactHeaderControls
             }
 
             VStack(alignment: .leading, spacing: 3) {
@@ -75,6 +26,91 @@ struct HeaderPaneView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.65), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var modePicker: some View {
+        Picker("Mode", selection: Binding(
+            get: { appState.workspaceMode },
+            set: { appState.setWorkspaceMode($0) }
+        )) {
+            ForEach(WorkspaceMode.displayOrder, id: \.self) { mode in
+                Label(mode.title, systemImage: mode.systemImage)
+                    .tag(mode)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+    }
+
+    private var fullHeaderControls: some View {
+        HStack(alignment: .center, spacing: 12) {
+            modePicker
+                .frame(width: 560)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Label(appState.workspaceContextTitle, systemImage: appState.workspaceContextSystemImage)
+                    .font(.caption.weight(.semibold))
+                Text(appState.workspaceModeDetail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+
+            Spacer()
+
+            openInFinderButton(labelStyle: .titleAndIcon)
+            inspectorButton
+            keyboardHelpButton
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private var compactHeaderControls: some View {
+        HStack(alignment: .center, spacing: 8) {
+            modePicker
+                .frame(minWidth: 320, idealWidth: 380, maxWidth: 440)
+
+            Spacer(minLength: 8)
+
+            openInFinderButton(labelStyle: .iconOnly)
+            inspectorButton
+            keyboardHelpButton
+        }
+    }
+
+    private func openInFinderButton<S: LabelStyle>(labelStyle: S) -> some View {
+        Button {
+            appState.openSelectedBrowserFolder()
+        } label: {
+            Label("Open in Finder", systemImage: "folder")
+        }
+        .labelStyle(labelStyle)
+        .disabled(!appState.canOpenSelectedBrowserFolder)
+        .buttonStyle(.bordered)
+        .help("Open the selected browser folder in Finder")
+    }
+
+    private var inspectorButton: some View {
+        Button {
+            appState.toggleDetailsInspector()
+        } label: {
+            Label(appState.isDetailsInspectorVisible ? "Hide Inspector" : "Show Inspector", systemImage: "sidebar.right")
+        }
+        .labelStyle(.iconOnly)
+        .buttonStyle(.bordered)
+        .shortcutHint("Cmd-Option-I", help: "\(appState.isDetailsInspectorVisible ? "Hide" : "Show") inspector (Cmd-Option-I)")
+    }
+
+    private var keyboardHelpButton: some View {
+        Button {
+            appState.showKeyboardHelp = true
+        } label: {
+            Label("Keyboard Shortcuts", systemImage: "keyboard")
+        }
+        .labelStyle(.iconOnly)
+        .buttonStyle(.bordered)
+        .shortcutHint("Cmd-Shift-/", help: "Show keyboard shortcuts (Cmd-Shift-/)")
     }
 }
 

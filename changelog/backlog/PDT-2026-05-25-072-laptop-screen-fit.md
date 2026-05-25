@@ -35,7 +35,7 @@
 
 ## Current status
 
-- research complete; awaiting implementation decision
+- implemented pending user review
 
 ## Findings
 
