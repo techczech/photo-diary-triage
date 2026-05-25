@@ -91,6 +91,10 @@ struct PhotoDiaryCommands: Commands {
             }
             .keyboardShortcut("u", modifiers: [.command, .control])
 
+            Button("Show Cropped Photos") {
+                appState.setReviewFilter(.cropped)
+            }
+
             Divider()
 
             Button("Days Grouping") {

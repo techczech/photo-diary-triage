@@ -49,6 +49,7 @@ enum ReviewFilter: String, CaseIterable, Sendable {
     case candidate
     case excluded
     case undecided
+    case cropped
 
     var title: String {
         switch self {
@@ -62,6 +63,8 @@ enum ReviewFilter: String, CaseIterable, Sendable {
             return "Excluded"
         case .undecided:
             return "Undecided"
+        case .cropped:
+            return "Cropped"
         }
     }
 }

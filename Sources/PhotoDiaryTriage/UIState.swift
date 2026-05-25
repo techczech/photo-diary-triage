@@ -247,6 +247,11 @@ struct ReviewItemSnapshot: Identifiable, Equatable, Sendable {
         if sourceArchiveCopy != nil {
             return "Archived on disk; S/C/X is locked here."
         }
+        if item.cropRelationship?.role == .original,
+           item.cropRelationship?.hasCrops == true,
+           item.lifecycleState == .sourceCleanupPending {
+            return "Original has crop output; source cleanup will keep it."
+        }
         return nil
     }
 

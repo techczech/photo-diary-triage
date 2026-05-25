@@ -1035,6 +1035,40 @@ import Testing
 }
 
 @MainActor
+@Test func croppedReviewFilterShowsOriginalAndCrop() {
+    let sourceRoot = URL(fileURLWithPath: "/tmp/review-crop-filter", isDirectory: true)
+    let base = Date(timeIntervalSince1970: 20_000)
+    var original = makeTestMediaItem(sourceRoot: sourceRoot, fileName: "IMG_0001.jpg", capturedAt: base)
+    var crop = makeTestMediaItem(sourceRoot: sourceRoot, fileName: "IMG_0001-cropped.jpg", capturedAt: base)
+    let other = makeTestMediaItem(sourceRoot: sourceRoot, fileName: "IMG_0002.jpg", capturedAt: base.addingTimeInterval(1))
+    original.cropRelationship = CropRelationship(
+        role: .original,
+        originalRelativePath: "IMG_0001.jpg",
+        originalFileName: "IMG_0001.jpg",
+        cropRelativePaths: ["IMG_0001-cropped.jpg"],
+        cropFileNames: ["IMG_0001-cropped.jpg"],
+        manifestRelativePath: "IMG_0001.crops.json",
+        latestCropRelativePath: "IMG_0001-cropped.jpg",
+        latestCropFileName: "IMG_0001-cropped.jpg"
+    )
+    crop.cropRelationship = CropRelationship(
+        role: .crop,
+        originalRelativePath: "IMG_0001.jpg",
+        originalFileName: "IMG_0001.jpg",
+        cropRelativePaths: ["IMG_0001-cropped.jpg"],
+        cropFileNames: ["IMG_0001-cropped.jpg"],
+        manifestRelativePath: "IMG_0001.crops.json",
+        latestCropRelativePath: "IMG_0001-cropped.jpg",
+        latestCropFileName: "IMG_0001-cropped.jpg"
+    )
+    let state = makeReviewAppState(items: [crop, original, other])
+
+    state.setReviewFilter(.cropped)
+
+    #expect(state.visibleMediaItems.map(\.fileName) == ["IMG_0001-cropped.jpg", "IMG_0001.jpg"])
+}
+
+@MainActor
 @Test func excludeCurrentSelectionUpdatesTriageStateAndClearsRawImportFlag() {
     let sourceRoot = URL(fileURLWithPath: "/tmp/review-exclude-state", isDirectory: true)
     let capturedAt = Date(timeIntervalSince1970: 20_000)
