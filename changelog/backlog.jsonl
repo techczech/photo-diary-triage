@@ -393,3 +393,5 @@
 {"ts":"2026-05-24T17:05:51Z","item_id":"PDT-2026-05-24-071","event":"spec_created","status":"approved_for_implementation","title":"GitHub release 0.2.29","file":"changelog/backlog/PDT-2026-05-24-071-github-release-0-2-29.md"}
 {"ts":"2026-05-24T17:05:51Z","item_id":"PDT-2026-05-24-071","event":"implementation_started","status":"approved_for_implementation","title":"GitHub release 0.2.29","file":"changelog/backlog/PDT-2026-05-24-071-github-release-0-2-29.md"}
 {"ts":"2026-05-24T17:08:27Z","item_id":"PDT-2026-05-24-071","event":"implemented","status":"implemented","title":"GitHub release 0.2.29","file":"changelog/backlog/PDT-2026-05-24-071-github-release-0-2-29.md"}
+{"ts":"2026-05-25T07:49:36Z","item_id":"PDT-2026-05-25-072","event":"spec_created","status":"researching","title":"laptop screen fit","file":"changelog/backlog/PDT-2026-05-25-072-laptop-screen-fit.md"}
+{"ts":"2026-05-25T07:51:42Z","item_id":"PDT-2026-05-25-072","event":"research_completed","status":"awaiting_implementation_decision","title":"laptop screen fit","file":"changelog/backlog/PDT-2026-05-25-072-laptop-screen-fit.md"}
