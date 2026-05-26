@@ -12,6 +12,9 @@ RELEASE_ENV="$ROOT_DIR/APP_RELEASE.env"
 
 source "$RELEASE_ENV"
 
+cd "$ROOT_DIR"
+swift build
+
 pkill -f "$APP_DIR/Contents/MacOS/PhotoDiaryTriage" 2>/dev/null || true
 rm -rf "$APP_DIR"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"

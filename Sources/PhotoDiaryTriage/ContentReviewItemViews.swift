@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 
+@MainActor
 struct ThumbnailImageSurface: View {
     let appState: AppState
     let item: MediaItem
@@ -65,6 +66,7 @@ struct ThumbnailImageSurface: View {
     }
 }
 
+@MainActor
 struct ReviewGridCard: View {
     let appState: AppState
     let snapshot: ReviewItemSnapshot
@@ -250,6 +252,7 @@ struct ReviewGridCard: View {
     }
 }
 
+@MainActor
 struct MediaItemRow: View {
     let appState: AppState
     let snapshot: ReviewItemSnapshot

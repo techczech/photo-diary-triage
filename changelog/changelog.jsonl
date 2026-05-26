@@ -161,3 +161,4 @@
 {"ts":"2026-05-25T08:20:56Z","item_id":"PDT-2026-05-25-072","event":"report_created","status":"implemented","title":"laptop screen fit","file":"changelog/changelog/PDT-2026-05-25-072-laptop-screen-fit-report.md"}
 {"ts":"2026-05-25T20:29:57Z","item_id":"PDT-2026-05-25-073","event":"report_created","status":"implemented","title":"quick non-destructive crop","file":"changelog/changelog/PDT-2026-05-25-073-quick-nondestructive-crop-report.md"}
 {"ts":"2026-05-25T20:50:43Z","item_id":"PDT-2026-05-25-074","event":"report_created","status":"implemented","title":"crop link filter and original safety","file":"changelog/changelog/PDT-2026-05-25-074-crop-link-filter-safety-report.md"}
+{"ts":"2026-05-26T19:14:36Z","item_id":"PDT-2026-05-26-075","event":"report_created","status":"implemented","title":"fresh app bundle build","file":"changelog/changelog/PDT-2026-05-26-075-fresh-app-bundle-build-report.md"}
