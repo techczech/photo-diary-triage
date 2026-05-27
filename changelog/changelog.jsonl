@@ -162,3 +162,4 @@
 {"ts":"2026-05-25T20:29:57Z","item_id":"PDT-2026-05-25-073","event":"report_created","status":"implemented","title":"quick non-destructive crop","file":"changelog/changelog/PDT-2026-05-25-073-quick-nondestructive-crop-report.md"}
 {"ts":"2026-05-25T20:50:43Z","item_id":"PDT-2026-05-25-074","event":"report_created","status":"implemented","title":"crop link filter and original safety","file":"changelog/changelog/PDT-2026-05-25-074-crop-link-filter-safety-report.md"}
 {"ts":"2026-05-26T19:14:36Z","item_id":"PDT-2026-05-26-075","event":"report_created","status":"implemented","title":"fresh app bundle build","file":"changelog/changelog/PDT-2026-05-26-075-fresh-app-bundle-build-report.md"}
+{"ts":"2026-05-27T07:54:50Z","item_id":"PDT-2026-05-27-077","event":"report_created","status":"implemented","title":"crop feedback and immediate preview","file":"changelog/changelog/PDT-2026-05-27-077-crop-feedback-and-immediate-preview-report.md"}
