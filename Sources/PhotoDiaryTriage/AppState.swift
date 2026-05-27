@@ -258,6 +258,13 @@ final class AppState: ObservableObject {
             refreshReviewState()
         }
     }
+    @Published private var cropOperationItemIDs: Set<UUID> = [] {
+        didSet {
+            refreshReviewState()
+            refreshCompareState()
+            refreshPresentationState()
+        }
+    }
     @Published var startupAlert: AppStartupAlert? {
         didSet {
             refreshPresentationState()
@@ -2392,6 +2399,10 @@ final class AppState: ObservableObject {
         activePane = .media
     }
 
+    func isCropInProgress(for item: MediaItem) -> Bool {
+        cropOperationItemIDs.contains(item.id)
+    }
+
     func cropMediaItem(_ item: MediaItem, normalizedRect: CropNormalizedRect, trigger: CropTrigger) {
         guard normalizedRect.isUsableCrop else {
             statusMessage = "Crop area is too small."
@@ -2401,9 +2412,14 @@ final class AppState: ObservableObject {
             statusMessage = "Zoom in or use Drag Crop before saving a crop."
             return
         }
+        guard !cropOperationItemIDs.contains(item.id) else {
+            statusMessage = "Crop is already saving for \(item.fileName)."
+            return
+        }
 
         let release = AppRelease.current
-        statusMessage = "Cropping \(item.fileName)..."
+        cropOperationItemIDs.insert(item.id)
+        statusMessage = "Saving crop from \(item.fileName)..."
 
         Task {
             do {
@@ -2416,11 +2432,16 @@ final class AppState: ObservableObject {
                     )
                 }.value
 
-                recordCropRelationship(for: item, cropURL: result.outputURL, manifestURL: result.manifestURL)
-                statusMessage = "Saved crop \(result.outputURL.lastPathComponent). Manifest: \(result.manifestURL.lastPathComponent)."
+                if let cropItem = recordCropRelationship(for: item, cropURL: result.outputURL, manifestURL: result.manifestURL) {
+                    focusCropOutput(cropItem, replacing: item)
+                    statusMessage = "Saved crop \(result.outputURL.lastPathComponent) and showing cropped version."
+                } else {
+                    statusMessage = "Saved crop \(result.outputURL.lastPathComponent). Reload the folder if it is not visible."
+                }
             } catch {
                 statusMessage = "Crop failed: \(error.localizedDescription)"
             }
+            cropOperationItemIDs.remove(item.id)
         }
     }
 
@@ -3578,10 +3599,10 @@ final class AppState: ObservableObject {
         }.value
     }
 
-    private func save(_ session: ImportSession) {
+    private func save(_ session: ImportSession, updateKind: CurrentSessionUpdateKind = .sessionOnly) {
         var mutableSession = session
         mutableSession.lastUpdatedAt = Date()
-        setCurrentSession(mutableSession, updateKind: .sessionOnly)
+        setCurrentSession(mutableSession, updateKind: updateKind)
         persistCurrentSession()
     }
 
@@ -4517,7 +4538,8 @@ final class AppState: ObservableObject {
         return contextMediaItems.first(where: { $0.relativePath == relativePath })
     }
 
-    private func recordCropRelationship(for original: MediaItem, cropURL: URL, manifestURL: URL) {
+    @discardableResult
+    private func recordCropRelationship(for original: MediaItem, cropURL: URL, manifestURL: URL) -> MediaItem? {
         let cropRelativePath = siblingRelativePath(for: cropURL, original: original)
         let manifestRelativePath = siblingRelativePath(for: manifestURL, original: original)
 
@@ -4549,19 +4571,88 @@ final class AppState: ObservableObject {
             return updated
         }
 
+        func cropRelationship(from originalRelationship: CropRelationship, original: MediaItem) -> CropRelationship {
+            CropRelationship(
+                role: .crop,
+                originalRelativePath: original.relativePath,
+                originalFileName: original.fileName,
+                cropRelativePaths: originalRelationship.cropRelativePaths,
+                cropFileNames: originalRelationship.cropFileNames,
+                manifestRelativePath: manifestRelativePath,
+                latestCropRelativePath: cropRelativePath,
+                latestCropFileName: cropURL.lastPathComponent
+            )
+        }
+
         if var session = currentSession,
            let index = session.mediaItems.firstIndex(where: { $0.id == original.id }) {
-            session.mediaItems[index] = updatedOriginal(session.mediaItems[index])
-            save(session)
-            return
+            let updatedOriginalItem = updatedOriginal(session.mediaItems[index])
+            session.mediaItems[index] = updatedOriginalItem
+            guard let originalRelationship = updatedOriginalItem.cropRelationship else { return nil }
+            let cropRelationship = cropRelationship(from: originalRelationship, original: updatedOriginalItem)
+            let cropItem = makeCropMediaItem(
+                from: updatedOriginalItem,
+                cropURL: cropURL,
+                cropRelativePath: cropRelativePath,
+                cropRelationship: cropRelationship
+            )
+
+            if let cropIndex = session.mediaItems.firstIndex(where: { $0.relativePath == cropRelativePath || canonicalPath($0.sourceURL) == canonicalPath(cropURL) }) {
+                var existingCrop = session.mediaItems[cropIndex]
+                existingCrop.sourceURL = cropURL
+                existingCrop.relativePath = cropRelativePath
+                existingCrop.fileName = cropURL.lastPathComponent
+                existingCrop.baseName = cropURL.deletingPathExtension().lastPathComponent
+                existingCrop.fileSizeBytes = cropItem.fileSizeBytes
+                existingCrop.capturedAt = cropItem.capturedAt
+                existingCrop.metadata = cropItem.metadata
+                existingCrop.thumbnailCacheKey = cropItem.thumbnailCacheKey
+                existingCrop.cropRelationship = cropRelationship
+                session.mediaItems[cropIndex] = existingCrop
+                save(session, updateKind: .full)
+                return existingCrop
+            }
+
+            session.mediaItems.append(cropItem)
+            save(session, updateKind: .full)
+            return cropItem
         }
 
         var updatedArchiveCache = archiveMediaCache
         var didUpdate = false
+        var outputCropItem: MediaItem?
         for key in updatedArchiveCache.keys {
             guard var items = updatedArchiveCache[key],
                   let index = items.firstIndex(where: { $0.id == original.id }) else { continue }
-            items[index] = updatedOriginal(items[index])
+            let updatedOriginalItem = updatedOriginal(items[index])
+            items[index] = updatedOriginalItem
+            guard let originalRelationship = updatedOriginalItem.cropRelationship else { continue }
+            let cropRelationship = cropRelationship(from: originalRelationship, original: updatedOriginalItem)
+            let cropItem = makeCropMediaItem(
+                from: updatedOriginalItem,
+                cropURL: cropURL,
+                cropRelativePath: cropRelativePath,
+                cropRelationship: cropRelationship
+            )
+
+            if let cropIndex = items.firstIndex(where: { $0.relativePath == cropRelativePath || canonicalPath($0.sourceURL) == canonicalPath(cropURL) }) {
+                var existingCrop = items[cropIndex]
+                existingCrop.sourceURL = cropURL
+                existingCrop.relativePath = cropRelativePath
+                existingCrop.fileName = cropURL.lastPathComponent
+                existingCrop.baseName = cropURL.deletingPathExtension().lastPathComponent
+                existingCrop.fileSizeBytes = cropItem.fileSizeBytes
+                existingCrop.capturedAt = cropItem.capturedAt
+                existingCrop.metadata = cropItem.metadata
+                existingCrop.thumbnailCacheKey = cropItem.thumbnailCacheKey
+                existingCrop.cropRelationship = cropRelationship
+                items[cropIndex] = existingCrop
+                outputCropItem = existingCrop
+            } else {
+                items.append(cropItem)
+                outputCropItem = cropItem
+            }
+            items.sort(by: Self.mediaSort)
             updatedArchiveCache[key] = items
             didUpdate = true
         }
@@ -4569,6 +4660,64 @@ final class AppState: ObservableObject {
             archiveMediaCache = updatedArchiveCache
             refreshAllUIState()
         }
+        return outputCropItem
+    }
+
+    private func makeCropMediaItem(
+        from original: MediaItem,
+        cropURL: URL,
+        cropRelativePath: String,
+        cropRelationship: CropRelationship
+    ) -> MediaItem {
+        let attributes = try? fileManager.attributesOfItem(atPath: cropURL.path)
+        let fileSize = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
+        var metadata = MetadataExtractor().extract(from: cropURL)
+        let capturedAt = metadata.capturedAt ?? original.capturedAt
+        metadata.capturedAt = capturedAt
+
+        return MediaItem(
+            sourceURL: cropURL,
+            relativePath: cropRelativePath,
+            fileName: cropURL.lastPathComponent,
+            baseName: cropURL.deletingPathExtension().lastPathComponent,
+            mediaKind: mediaKind(for: cropURL),
+            fileSizeBytes: fileSize,
+            capturedAt: capturedAt,
+            metadata: metadata,
+            thumbnailCacheKey: CacheKeyBuilder.key(for: cropURL),
+            cropRelationship: cropRelationship
+        )
+    }
+
+    private func focusCropOutput(_ cropItem: MediaItem, replacing original: MediaItem) {
+        if let compareIndex = comparingMediaItemIDs.firstIndex(of: original.id) {
+            comparingMediaItemIDs[compareIndex] = cropItem.id
+        }
+        if previewingMediaItemID == original.id {
+            previewingMediaItemID = cropItem.id
+        }
+
+        selectedMediaItemIDs = [cropItem.id]
+        focusedReviewItemID = cropItem.id
+        reviewSelectionAnchorID = cropItem.id
+        pendingReviewScrollTargetID = cropItem.id
+        activePane = .media
+        preheatDisplayImages(for: [cropItem.id], limit: 1)
+    }
+
+    private func mediaKind(for url: URL) -> MediaKind {
+        switch url.pathExtension.lowercased() {
+        case "jpg", "jpeg":
+            return .jpeg
+        case "cr2", "cr3", "dng", "raf", "nef":
+            return .raw
+        default:
+            return .other
+        }
+    }
+
+    private func canonicalPath(_ url: URL) -> String {
+        url.resolvingSymlinksInPath().standardizedFileURL.path
     }
 
     private func siblingRelativePath(for url: URL, original: MediaItem) -> String {

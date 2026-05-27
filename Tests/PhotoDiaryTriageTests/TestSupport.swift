@@ -1,4 +1,8 @@
+import CoreGraphics
 import Foundation
+import ImageIO
+import Testing
+import UniformTypeIdentifiers
 @testable import PhotoDiaryTriage
 
 func makeTemporaryDirectory() throws -> URL {
@@ -34,6 +38,45 @@ func makeTestMetadata(capturedAt: Date) -> MediaMetadata {
         longitude: nil,
         raw: [:]
     )
+}
+
+func writeTestJPEGImage(_ url: URL, width: Int = 100, height: Int = 80) throws {
+    var pixels = [UInt8](repeating: 255, count: width * height * 4)
+    for y in 0..<height {
+        for x in 0..<width {
+            let offset = ((y * width) + x) * 4
+            pixels[offset] = UInt8(x % 255)
+            pixels[offset + 1] = UInt8(y % 255)
+            pixels[offset + 2] = 180
+            pixels[offset + 3] = 255
+        }
+    }
+
+    let data = Data(pixels)
+    let provider = try #require(CGDataProvider(data: data as CFData))
+    let colorSpace = CGColorSpaceCreateDeviceRGB()
+    let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
+    let image = try #require(CGImage(
+        width: width,
+        height: height,
+        bitsPerComponent: 8,
+        bitsPerPixel: 32,
+        bytesPerRow: width * 4,
+        space: colorSpace,
+        bitmapInfo: bitmapInfo,
+        provider: provider,
+        decode: nil,
+        shouldInterpolate: false,
+        intent: .defaultIntent
+    ))
+    let destination = try #require(CGImageDestinationCreateWithURL(
+        url as CFURL,
+        UTType.jpeg.identifier as CFString,
+        1,
+        nil
+    ))
+    CGImageDestinationAddImage(destination, image, nil)
+    #expect(CGImageDestinationFinalize(destination))
 }
 
 @discardableResult

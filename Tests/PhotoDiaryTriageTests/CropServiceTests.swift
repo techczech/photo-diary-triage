@@ -87,6 +87,63 @@ import UniformTypeIdentifiers
     #expect(original.cropRelationship?.latestCropFileName == "IMG_0001-cropped.jpg")
 }
 
+@MainActor
+@Test func cropMediaItemAddsOutputToReviewAndShowsCropImmediately() async throws {
+    let root = try makeTemporaryDirectory()
+    let sourceURL = root.appendingPathComponent("IMG_0001.jpg")
+    try writeTestJPEGImage(sourceURL, width: 100, height: 80)
+    let item = MediaItem(
+        sourceURL: sourceURL,
+        relativePath: "IMG_0001.jpg",
+        fileName: "IMG_0001.jpg",
+        baseName: "IMG_0001",
+        mediaKind: .jpeg,
+        fileSizeBytes: Int64((try Data(contentsOf: sourceURL)).count),
+        capturedAt: Date(timeIntervalSince1970: 0),
+        metadata: makeTestMetadata(capturedAt: Date(timeIntervalSince1970: 0)),
+        thumbnailCacheKey: "crop-app-state"
+    )
+    let state = AppState(testing: true)
+    state.currentSession = makeTestSession(
+        sourceRoot: root,
+        archiveRoot: root.appendingPathComponent("archive", isDirectory: true),
+        items: [item]
+    )
+    state.setWorkspaceMode(.cameraTriage)
+    if let leafID = state.browserNodeMap.values.first(where: { ($0.children?.isEmpty ?? true) && $0.mediaItemIDs.contains(item.id) })?.id {
+        state.selectedSidebarNodeID = leafID
+    }
+    state.previewingMediaItemID = item.id
+
+    state.cropMediaItem(
+        item,
+        normalizedRect: CropNormalizedRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5),
+        trigger: .visibleZoom
+    )
+
+    let didIntegrateCrop = await waitForCondition {
+        state.currentSession?.mediaItems.count == 2 && !state.isCropInProgress(for: item)
+    }
+    #expect(didIntegrateCrop)
+    let session = try #require(state.currentSession)
+    let original = try #require(session.mediaItems.first { $0.fileName == "IMG_0001.jpg" })
+    let crop = try #require(session.mediaItems.first { $0.fileName == "IMG_0001-cropped.jpg" })
+
+    #expect(original.cropRelationship?.role == .original)
+    #expect(original.cropRelationship?.latestCropRelativePath == "IMG_0001-cropped.jpg")
+    #expect(crop.cropRelationship?.role == .crop)
+    #expect(crop.cropRelationship?.originalRelativePath == "IMG_0001.jpg")
+    #expect(state.previewingMediaItemID == crop.id)
+    #expect(state.focusedReviewItemID == crop.id)
+    #expect(state.selectedMediaItemIDs == Set([crop.id]))
+    #expect(state.statusMessage.contains("showing cropped version"))
+
+    state.setReviewFilter(.cropped)
+    let croppedFileNames = state.visibleMediaItems.map(\.fileName)
+    #expect(croppedFileNames.contains("IMG_0001-cropped.jpg"))
+    #expect(croppedFileNames.contains("IMG_0001.jpg"))
+}
+
 @Test func cleanupKeepsOriginalWhenCropExists() async throws {
     let root = try makeTemporaryDirectory()
     let sourceURL = root.appendingPathComponent("IMG_0002.jpg")
@@ -132,6 +189,15 @@ import UniformTypeIdentifiers
     let rect = CropNormalizedRect(x: 0.9, y: 0.9, width: 0.5, height: 0.5)
     #expect(rect == CropNormalizedRect(x: 0.9, y: 0.9, width: 0.1, height: 0.1))
     #expect(rect.pixelRect(sourceWidth: 100, sourceHeight: 80) == CropPixelRect(x: 90, y: 72, width: 10, height: 8))
+}
+
+@MainActor
+private func waitForCondition(_ condition: @escaping @MainActor () -> Bool) async -> Bool {
+    for _ in 0..<100 {
+        if condition() { return true }
+        try? await Task.sleep(nanoseconds: 10_000_000)
+    }
+    return condition()
 }
 
 private func writeTestImage(_ url: URL, width: Int, height: Int) throws {

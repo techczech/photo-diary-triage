@@ -832,15 +832,25 @@ struct FullPhotoSheet: View {
 
     @ViewBuilder
     private func cropControls(for item: MediaItem) -> some View {
+        let isSavingCrop = appState.isCropInProgress(for: item)
+
         HStack(spacing: 6) {
             Button {
                 cropVisibleArea(for: item)
             } label: {
-                Label("Crop Visible", systemImage: "crop")
+                if isSavingCrop {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Saving Crop")
+                    }
+                } else {
+                    Label("Crop Visible", systemImage: "crop")
+                }
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.small)
-            .disabled(visibleCropRect.isEffectivelyFullFrame)
+            .disabled(isSavingCrop || visibleCropRect.isEffectivelyFullFrame)
             .shortcutHint("V", help: "Save a crop from the current zoomed view")
 
             Toggle(isOn: $isManualCropEnabled) {
@@ -848,11 +858,13 @@ struct FullPhotoSheet: View {
             }
             .toggleStyle(.button)
             .controlSize(.small)
+            .disabled(isSavingCrop)
             .help("Drag over the image to save a manual crop")
         }
     }
 
     private func cropVisibleArea(for item: MediaItem) {
+        guard !appState.isCropInProgress(for: item) else { return }
         appState.cropMediaItem(item, normalizedRect: visibleCropRect, trigger: .visibleZoom)
     }
 
@@ -1107,11 +1119,19 @@ struct CompareSheet: View {
                 Button {
                     cropFocusedVisibleArea(snapshot: snapshot)
                 } label: {
-                    Label("Crop Focus", systemImage: "crop")
+                    if focusedCropIsSaving(in: snapshot) {
+                        HStack(spacing: 6) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Saving Crop")
+                        }
+                    } else {
+                        Label("Crop Focus", systemImage: "crop")
+                    }
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
-                .disabled(focusedVisibleCrop(in: snapshot)?.isEffectivelyFullFrame ?? true)
+                .disabled(focusedCropIsSaving(in: snapshot) || (focusedVisibleCrop(in: snapshot)?.isEffectivelyFullFrame ?? true))
                 .shortcutHint("V", help: "Save a crop from the focused compare image")
 
                 Toggle(isOn: $isManualCropEnabled) {
@@ -1119,6 +1139,7 @@ struct CompareSheet: View {
                 }
                 .toggleStyle(.button)
                 .controlSize(.small)
+                .disabled(snapshot.items.contains { appState.isCropInProgress(for: $0.item) })
                 .help("Drag over any compare image to save a manual crop")
 
                 Button("Close") {
@@ -1235,9 +1256,16 @@ struct CompareSheet: View {
         return visibleCropRects[focusedID] ?? .fullFrame
     }
 
+    private func focusedCropIsSaving(in snapshot: CompareSnapshot) -> Bool {
+        guard let focusedID = snapshot.preferredScrollTargetID,
+              let item = snapshot.items.first(where: { $0.id == focusedID })?.item else { return false }
+        return appState.isCropInProgress(for: item)
+    }
+
     private func cropFocusedVisibleArea(snapshot: CompareSnapshot) {
         guard let focusedID = snapshot.preferredScrollTargetID,
               let item = snapshot.items.first(where: { $0.id == focusedID })?.item else { return }
+        guard !appState.isCropInProgress(for: item) else { return }
         let rect = visibleCropRects[focusedID] ?? .fullFrame
         appState.cropMediaItem(item, normalizedRect: rect, trigger: .visibleZoom)
     }
@@ -1275,6 +1303,8 @@ struct CompareItemCard: View {
     }
 
     var body: some View {
+        let isSavingCrop = appState.isCropInProgress(for: item)
+
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 6) {
                 Text(metadataSummary)
@@ -1357,11 +1387,16 @@ struct CompareItemCard: View {
                 Button {
                     appState.cropMediaItem(item, normalizedRect: visibleCropRect, trigger: .visibleZoom)
                 } label: {
-                    Image(systemName: "crop")
+                    if isSavingCrop {
+                        ProgressView()
+                            .controlSize(.mini)
+                    } else {
+                        Image(systemName: "crop")
+                    }
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.mini)
-                .disabled(visibleCropRect.isEffectivelyFullFrame)
+                .disabled(isSavingCrop || visibleCropRect.isEffectivelyFullFrame)
                 .shortcutHint("V", help: "Crop the visible zoomed area when this item is focused")
 
                 Button {
