@@ -687,6 +687,16 @@ final class AppState: ObservableObject {
         ids.compactMap { mediaItem(for: $0) }
     }
 
+    func openCropVersion(relativePath: String) {
+        guard let target = mediaItem(relativePath: relativePath) else {
+            statusMessage = "Crop version is not loaded in the current browser view."
+            return
+        }
+
+        focusMediaItem(target)
+        statusMessage = "Showing \(target.cropRelationship?.role == .crop ? "crop" : "original") \(target.fileName)."
+    }
+
     var reviewPresentationMode: ReviewPresentationMode {
         settings.reviewPresentationMode
     }
@@ -2456,12 +2466,7 @@ final class AppState: ObservableObject {
             return
         }
 
-        preheatDisplayImages(around: target.id, in: reviewInteractionItems, radius: 2)
-        previewingMediaItemID = target.id
-        focusedReviewItemID = target.id
-        selectedMediaItemIDs = [target.id]
-        reviewSelectionAnchorID = target.id
-        activePane = .media
+        focusMediaItem(target)
         statusMessage = "Opened linked \(target.cropRelationship?.role == .crop ? "crop" : "original") \(target.fileName)."
     }
 
@@ -4071,19 +4076,22 @@ final class AppState: ObservableObject {
                     fallbackFolderPath: nil,
                     walkTitle: nil,
                     walkLocation: nil,
-                    mediaItem: nil
+                    mediaItem: nil,
+                    cropHistory: nil
                 )
             )
             return
         }
 
+        let mediaItem = inspectorMediaItem
         let snapshot = InspectorSnapshot(
             isVisible: isDetailsInspectorVisible,
             browserNode: inspectorBrowserNode,
             fallbackFolderPath: currentSession?.sourceFolder.path,
             walkTitle: currentSession?.walkMetadata.title.nonEmpty,
             walkLocation: currentSession?.walkMetadata.location.nonEmpty,
-            mediaItem: inspectorMediaItem
+            mediaItem: mediaItem,
+            cropHistory: mediaItem.flatMap { cropHistory(for: $0) }
         )
         inspectorState.update(snapshot)
     }
@@ -4693,16 +4701,20 @@ final class AppState: ObservableObject {
         if let compareIndex = comparingMediaItemIDs.firstIndex(of: original.id) {
             comparingMediaItemIDs[compareIndex] = cropItem.id
         }
-        if previewingMediaItemID == original.id {
-            previewingMediaItemID = cropItem.id
-        }
+        let shouldMovePreview = previewingMediaItemID == original.id
+        focusMediaItem(cropItem, openPreview: shouldMovePreview)
+    }
 
-        selectedMediaItemIDs = [cropItem.id]
-        focusedReviewItemID = cropItem.id
-        reviewSelectionAnchorID = cropItem.id
-        pendingReviewScrollTargetID = cropItem.id
+    private func focusMediaItem(_ item: MediaItem, openPreview: Bool = true) {
+        selectedMediaItemIDs = [item.id]
+        focusedReviewItemID = item.id
+        reviewSelectionAnchorID = item.id
+        pendingReviewScrollTargetID = item.id
+        if openPreview {
+            previewingMediaItemID = item.id
+        }
         activePane = .media
-        preheatDisplayImages(for: [cropItem.id], limit: 1)
+        preheatDisplayImages(for: [item.id], limit: 1)
     }
 
     private func mediaKind(for url: URL) -> MediaKind {
@@ -4718,6 +4730,48 @@ final class AppState: ObservableObject {
 
     private func canonicalPath(_ url: URL) -> String {
         url.resolvingSymlinksInPath().standardizedFileURL.path
+    }
+
+    private func cropHistory(for item: MediaItem) -> CropHistorySnapshot? {
+        guard let relationship = item.cropRelationship else { return nil }
+        let originalRelativePath = relationship.originalRelativePath
+        let originalItem = mediaItem(relativePath: originalRelativePath)
+        var seen: Set<String> = []
+        var versions: [CropVersionSnapshot] = []
+
+        func appendVersion(relativePath: String, fileName: String, role: CropRelationshipRole) {
+            guard seen.insert(relativePath).inserted else { return }
+            let linkedItem = mediaItem(relativePath: relativePath)
+            versions.append(
+                CropVersionSnapshot(
+                    id: relativePath,
+                    relativePath: relativePath,
+                    fileName: linkedItem?.fileName ?? fileName,
+                    role: role,
+                    mediaItemID: linkedItem?.id,
+                    isCurrent: item.relativePath == relativePath
+                )
+            )
+        }
+
+        appendVersion(
+            relativePath: originalRelativePath,
+            fileName: originalItem?.fileName ?? relationship.originalFileName,
+            role: .original
+        )
+
+        for (index, cropRelativePath) in relationship.cropRelativePaths.enumerated() {
+            let fallbackFileName: String
+            if relationship.cropFileNames.indices.contains(index) {
+                fallbackFileName = relationship.cropFileNames[index]
+            } else {
+                fallbackFileName = URL(fileURLWithPath: cropRelativePath).lastPathComponent
+            }
+            appendVersion(relativePath: cropRelativePath, fileName: fallbackFileName, role: .crop)
+        }
+
+        guard versions.count > 1 else { return nil }
+        return CropHistorySnapshot(versions: versions)
     }
 
     private func siblingRelativePath(for url: URL, original: MediaItem) -> String {

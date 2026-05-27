@@ -285,6 +285,10 @@ struct DetailsInspectorView: View {
                     if !item.companionFiles.isEmpty {
                         inspectorRow("RAW Companions", "\(item.companionFiles.count)")
                     }
+                    if let cropHistory = state.snapshot.cropHistory {
+                        Divider()
+                        cropHistorySection(cropHistory)
+                    }
                 } else {
                     Text("Select a photo to inspect its metadata.")
                         .foregroundStyle(.secondary)
@@ -297,6 +301,67 @@ struct DetailsInspectorView: View {
                 }
             }
         }
+    }
+
+    private func cropHistorySection(_ history: CropHistorySnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label("Crop Versions", systemImage: "crop")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("\(history.cropCount)")
+                    .font(.caption.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+
+            ForEach(history.versions) { version in
+                cropVersionRow(version)
+            }
+        }
+    }
+
+    private func cropVersionRow(_ version: CropVersionSnapshot) -> some View {
+        HStack(alignment: .center, spacing: 8) {
+            Image(systemName: version.role == .crop ? "crop" : "photo")
+                .foregroundStyle(version.role == .crop ? Color.purple.opacity(0.95) : Color.teal.opacity(0.95))
+                .frame(width: 18)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(version.roleLabel)
+                        .font(.caption.weight(.semibold))
+                    if version.isCurrent {
+                        Text("Current")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(Color.accentColor)
+                    } else if !version.isLoaded {
+                        Text("Not loaded")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Text(version.fileName)
+                    .font(.caption)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer(minLength: 6)
+
+            Button {
+                appState.openCropVersion(relativePath: version.relativePath)
+            } label: {
+                Image(systemName: "arrow.right.square")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.mini)
+            .disabled(version.isCurrent || !version.isLoaded)
+            .help(version.isLoaded ? "Show this crop version in the app" : "This crop version is not loaded in the current view")
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(version.isCurrent ? Color.accentColor.opacity(0.10) : Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
     }
 
     private func inspectorRow(_ label: String, _ value: String) -> some View {

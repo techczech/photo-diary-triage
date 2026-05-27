@@ -454,6 +454,36 @@ struct ReviewNavigationSnapshot: Equatable, Sendable {
     )
 }
 
+struct CropVersionSnapshot: Identifiable, Equatable, Sendable {
+    let id: String
+    let relativePath: String
+    let fileName: String
+    let role: CropRelationshipRole
+    let mediaItemID: UUID?
+    let isCurrent: Bool
+
+    var isLoaded: Bool {
+        mediaItemID != nil
+    }
+
+    var roleLabel: String {
+        switch role {
+        case .original:
+            return "Original"
+        case .crop:
+            return "Crop"
+        }
+    }
+}
+
+struct CropHistorySnapshot: Equatable, Sendable {
+    let versions: [CropVersionSnapshot]
+
+    var cropCount: Int {
+        versions.filter { $0.role == .crop }.count
+    }
+}
+
 struct InspectorSnapshot: Equatable, Sendable {
     let isVisible: Bool
     let browserNode: BrowserNode?
@@ -461,6 +491,7 @@ struct InspectorSnapshot: Equatable, Sendable {
     let walkTitle: String?
     let walkLocation: String?
     let mediaItem: MediaItem?
+    let cropHistory: CropHistorySnapshot?
 
     static let empty = InspectorSnapshot(
         isVisible: true,
@@ -468,7 +499,8 @@ struct InspectorSnapshot: Equatable, Sendable {
         fallbackFolderPath: nil,
         walkTitle: nil,
         walkLocation: nil,
-        mediaItem: nil
+        mediaItem: nil,
+        cropHistory: nil
     )
 }
 

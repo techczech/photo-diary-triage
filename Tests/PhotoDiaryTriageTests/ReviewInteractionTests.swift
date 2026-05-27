@@ -1069,6 +1069,62 @@ import Testing
 }
 
 @MainActor
+@Test func inspectorCropHistoryShowsVersionsAndSwitchesInApp() throws {
+    let sourceRoot = URL(fileURLWithPath: "/tmp/review-crop-history", isDirectory: true)
+    let base = Date(timeIntervalSince1970: 20_000)
+    var original = makeTestMediaItem(sourceRoot: sourceRoot, fileName: "IMG_0001.jpg", capturedAt: base)
+    var firstCrop = makeTestMediaItem(sourceRoot: sourceRoot, fileName: "IMG_0001-cropped.jpg", capturedAt: base)
+    var secondCrop = makeTestMediaItem(sourceRoot: sourceRoot, fileName: "IMG_0001-cropped-2.jpg", capturedAt: base)
+    let cropPaths = ["IMG_0001-cropped.jpg", "IMG_0001-cropped-2.jpg"]
+    let cropFileNames = ["IMG_0001-cropped.jpg", "IMG_0001-cropped-2.jpg"]
+    original.cropRelationship = CropRelationship(
+        role: .original,
+        originalRelativePath: "IMG_0001.jpg",
+        originalFileName: "IMG_0001.jpg",
+        cropRelativePaths: cropPaths,
+        cropFileNames: cropFileNames,
+        manifestRelativePath: "IMG_0001.crops.json",
+        latestCropRelativePath: "IMG_0001-cropped-2.jpg",
+        latestCropFileName: "IMG_0001-cropped-2.jpg"
+    )
+    firstCrop.cropRelationship = CropRelationship(
+        role: .crop,
+        originalRelativePath: "IMG_0001.jpg",
+        originalFileName: "IMG_0001.jpg",
+        cropRelativePaths: cropPaths,
+        cropFileNames: cropFileNames,
+        manifestRelativePath: "IMG_0001.crops.json",
+        latestCropRelativePath: "IMG_0001-cropped.jpg",
+        latestCropFileName: "IMG_0001-cropped.jpg"
+    )
+    secondCrop.cropRelationship = CropRelationship(
+        role: .crop,
+        originalRelativePath: "IMG_0001.jpg",
+        originalFileName: "IMG_0001.jpg",
+        cropRelativePaths: cropPaths,
+        cropFileNames: cropFileNames,
+        manifestRelativePath: "IMG_0001.crops.json",
+        latestCropRelativePath: "IMG_0001-cropped-2.jpg",
+        latestCropFileName: "IMG_0001-cropped-2.jpg"
+    )
+    let state = makeReviewAppState(items: [firstCrop, original, secondCrop])
+    state.selectedMediaItemIDs = [original.id]
+    state.focusedReviewItemID = original.id
+
+    let history = try #require(state.inspectorState.snapshot.cropHistory)
+    #expect(history.versions.map(\.fileName) == ["IMG_0001.jpg", "IMG_0001-cropped.jpg", "IMG_0001-cropped-2.jpg"])
+    #expect(history.versions.map(\.isCurrent) == [true, false, false])
+
+    state.openCropVersion(relativePath: "IMG_0001-cropped-2.jpg")
+
+    #expect(state.previewingMediaItemID == secondCrop.id)
+    #expect(state.focusedReviewItemID == secondCrop.id)
+    #expect(state.selectedMediaItemIDs == Set([secondCrop.id]))
+    let updatedHistory = try #require(state.inspectorState.snapshot.cropHistory)
+    #expect(updatedHistory.versions.map(\.isCurrent) == [false, false, true])
+}
+
+@MainActor
 @Test func excludeCurrentSelectionUpdatesTriageStateAndClearsRawImportFlag() {
     let sourceRoot = URL(fileURLWithPath: "/tmp/review-exclude-state", isDirectory: true)
     let capturedAt = Date(timeIntervalSince1970: 20_000)
