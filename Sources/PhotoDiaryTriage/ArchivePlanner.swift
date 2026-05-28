@@ -10,8 +10,8 @@ struct ArchivePlanner {
     func plan(for session: ImportSession) -> ArchiveCommitPlan {
         let selectedItems = session.mediaItems
             .filter { $0.selectionState.isIncluded && !$0.lifecycleState.isImportedOrBeyond }
-            .sorted(by: Self.mediaSort)
-        let walkDate = selectedItems.compactMap(\.capturedAt).min() ?? session.startedAt
+        let sortedSelectedItems = MediaItemSort.sorted(selectedItems)
+        let walkDate = sortedSelectedItems.compactMap(\.capturedAt).min() ?? session.startedAt
         let titleSource = session.walkMetadata.title.nonEmpty ?? session.walkMetadata.location.nonEmpty ?? "photo-walk"
         let walkFolderName = DateFormatting.archiveWalkFolderName(from: walkDate, title: titleSource)
         let archiveFolder = session.archiveRoot
@@ -21,7 +21,7 @@ struct ArchivePlanner {
 
         var reservedDestinations: Set<String> = []
         var entries: [ArchiveEntry] = []
-        for (offset, item) in selectedItems.enumerated() {
+        for (offset, item) in sortedSelectedItems.enumerated() {
             let archiveStem = "\(walkFolderName)-\(String(format: "%03d", offset + 1))"
             let destination = makeUniqueDestination(stem: archiveStem, originalFileName: item.fileName, in: archiveFolder, reserved: &reservedDestinations)
             entries.append(
@@ -54,8 +54,8 @@ struct ArchivePlanner {
             archiveFolder: archiveFolder,
             entries: entries,
             totalSourceFiles: session.mediaItems.count,
-            selectedCount: selectedItems.count,
-            skippedCount: session.mediaItems.count - selectedItems.count
+            selectedCount: sortedSelectedItems.count,
+            skippedCount: session.mediaItems.count - sortedSelectedItems.count
         )
     }
 
@@ -75,12 +75,4 @@ struct ArchivePlanner {
         return candidate
     }
 
-    private static func mediaSort(lhs: MediaItem, rhs: MediaItem) -> Bool {
-        let lhsDate = lhs.capturedAt ?? .distantPast
-        let rhsDate = rhs.capturedAt ?? .distantPast
-        if lhsDate == rhsDate {
-            return lhs.fileName.localizedCaseInsensitiveCompare(rhs.fileName) == .orderedAscending
-        }
-        return lhsDate < rhsDate
-    }
 }

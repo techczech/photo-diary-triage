@@ -1065,7 +1065,52 @@ import Testing
 
     state.setReviewFilter(.cropped)
 
-    #expect(state.visibleMediaItems.map(\.fileName) == ["IMG_0001-cropped.jpg", "IMG_0001.jpg"])
+    #expect(state.visibleMediaItems.map(\.fileName) == ["IMG_0001.jpg", "IMG_0001-cropped.jpg"])
+}
+
+@Test func cropFamilySortsOriginalBeforeCropsUsingOriginalDate() {
+    let sourceRoot = URL(fileURLWithPath: "/tmp/review-crop-family-sort", isDirectory: true)
+    let base = Date(timeIntervalSince1970: 20_000)
+    var original = makeTestMediaItem(sourceRoot: sourceRoot, fileName: "IMG_0001.jpg", capturedAt: base)
+    var firstCrop = makeTestMediaItem(sourceRoot: sourceRoot, fileName: "IMG_0001-cropped.jpg", capturedAt: base.addingTimeInterval(86_400))
+    var secondCrop = makeTestMediaItem(sourceRoot: sourceRoot, fileName: "IMG_0001-cropped-2.jpg", capturedAt: base.addingTimeInterval(-86_400))
+    let other = makeTestMediaItem(sourceRoot: sourceRoot, fileName: "IMG_0002.jpg", capturedAt: base.addingTimeInterval(1))
+    let cropPaths = ["IMG_0001-cropped.jpg", "IMG_0001-cropped-2.jpg"]
+    let cropFileNames = ["IMG_0001-cropped.jpg", "IMG_0001-cropped-2.jpg"]
+    original.cropRelationship = CropRelationship(
+        role: .original,
+        originalRelativePath: "IMG_0001.jpg",
+        originalFileName: "IMG_0001.jpg",
+        cropRelativePaths: cropPaths,
+        cropFileNames: cropFileNames,
+        manifestRelativePath: "IMG_0001.crops.json",
+        latestCropRelativePath: "IMG_0001-cropped-2.jpg",
+        latestCropFileName: "IMG_0001-cropped-2.jpg"
+    )
+    firstCrop.cropRelationship = CropRelationship(
+        role: .crop,
+        originalRelativePath: "IMG_0001.jpg",
+        originalFileName: "IMG_0001.jpg",
+        cropRelativePaths: cropPaths,
+        cropFileNames: cropFileNames,
+        manifestRelativePath: "IMG_0001.crops.json",
+        latestCropRelativePath: "IMG_0001-cropped.jpg",
+        latestCropFileName: "IMG_0001-cropped.jpg"
+    )
+    secondCrop.cropRelationship = CropRelationship(
+        role: .crop,
+        originalRelativePath: "IMG_0001.jpg",
+        originalFileName: "IMG_0001.jpg",
+        cropRelativePaths: cropPaths,
+        cropFileNames: cropFileNames,
+        manifestRelativePath: "IMG_0001.crops.json",
+        latestCropRelativePath: "IMG_0001-cropped-2.jpg",
+        latestCropFileName: "IMG_0001-cropped-2.jpg"
+    )
+
+    let sorted = MediaItemSort.sorted([other, firstCrop, secondCrop, original])
+
+    #expect(sorted.map(\.fileName) == ["IMG_0001.jpg", "IMG_0001-cropped.jpg", "IMG_0001-cropped-2.jpg", "IMG_0002.jpg"])
 }
 
 @MainActor

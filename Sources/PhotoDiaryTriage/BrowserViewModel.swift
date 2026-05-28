@@ -148,13 +148,14 @@ final class BrowserViewModel {
 
     private func buildSessionRoot(for session: ImportSession, bursts: [BurstGroup], clusters: [TimeCluster]) -> BrowserNode {
         let calendar = Calendar(identifier: .gregorian)
-        let sortedItems = session.mediaItems.sorted(by: Self.mediaSort)
+        let sortedItems = MediaItemSort.sorted(session.mediaItems)
+        let familyDates = MediaItemSort.familyDateMap(for: sortedItems)
 
         var byYear: [Int: [Int: [Int: [MediaItem]]]] = [:]
         var unknownDateItems: [MediaItem] = []
 
         for item in sortedItems {
-            guard let capturedAt = item.capturedAt else {
+            guard let capturedAt = MediaItemSort.familyDate(for: item, familyDates: familyDates) else {
                 unknownDateItems.append(item)
                 continue
             }
@@ -433,16 +434,4 @@ final class BrowserViewModel {
         )
     }
 
-    private static func mediaSort(lhs: MediaItem, rhs: MediaItem) -> Bool {
-        let lhsDate = lhs.capturedAt ?? .distantPast
-        let rhsDate = rhs.capturedAt ?? .distantPast
-        if lhsDate == rhsDate {
-            if lhs.cropSortFamilyKey == rhs.cropSortFamilyKey,
-               lhs.cropSortPriority != rhs.cropSortPriority {
-                return lhs.cropSortPriority < rhs.cropSortPriority
-            }
-            return lhs.fileName.localizedCaseInsensitiveCompare(rhs.fileName) == .orderedAscending
-        }
-        return lhsDate < rhsDate
-    }
 }

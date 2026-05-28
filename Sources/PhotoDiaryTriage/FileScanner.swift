@@ -107,7 +107,7 @@ struct FileScanner {
             )
         }
 
-        return items.sorted(by: Self.mediaSort)
+        return MediaItemSort.sorted(items)
     }
 
     private func mediaKind(for extensionName: String) -> MediaKind {
@@ -232,18 +232,6 @@ struct FileScanner {
         url.resolvingSymlinksInPath().standardizedFileURL.path
     }
 
-    private static func mediaSort(lhs: MediaItem, rhs: MediaItem) -> Bool {
-        let lhsDate = lhs.capturedAt ?? .distantPast
-        let rhsDate = rhs.capturedAt ?? .distantPast
-        if lhsDate == rhsDate {
-            if lhs.cropSortFamilyKey == rhs.cropSortFamilyKey,
-               lhs.cropSortPriority != rhs.cropSortPriority {
-                return lhs.cropSortPriority < rhs.cropSortPriority
-            }
-            return lhs.fileName.localizedCaseInsensitiveCompare(rhs.fileName) == .orderedAscending
-        }
-        return lhsDate < rhsDate
-    }
 }
 
 private struct ScanCandidate {

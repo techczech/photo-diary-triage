@@ -680,7 +680,7 @@ final class AppState: ObservableObject {
         if let node = selectedBrowserNode, let cached = archiveMediaCache[node.id] {
             return cached.filter { idSet.contains($0.id) }
         }
-        return ids.compactMap { sessionMediaByID[$0] }.sorted(by: Self.mediaSort)
+        return MediaItemSort.sorted(ids.compactMap { sessionMediaByID[$0] })
     }
 
     func orderedMediaItems(for ids: [UUID]) -> [MediaItem] {
@@ -794,7 +794,7 @@ final class AppState: ObservableObject {
     }
 
     var selectedMediaItems: [MediaItem] {
-        selectedMediaItemIDs.compactMap { mediaItem(for: $0) }.sorted(by: Self.mediaSort)
+        MediaItemSort.sorted(selectedMediaItemIDs.compactMap { mediaItem(for: $0) })
     }
 
     var focusedReviewItem: MediaItem? {
@@ -1192,7 +1192,7 @@ final class AppState: ObservableObject {
                 editableItemsByPath[item.relativePath] = item
             }
         }
-        let editableItems = editableItemsByPath.values.sorted(by: Self.mediaSort)
+        let editableItems = MediaItemSort.sorted(Array(editableItemsByPath.values))
         let grouped = groupingService.group(items: editableItems, settings: settings)
 
         var editableSession = logRecord.0
@@ -1395,7 +1395,7 @@ final class AppState: ObservableObject {
                 mergedItemsByPath[item.relativePath] = item
             }
 
-            let mergedItems = mergedItemsByPath.values.sorted(by: Self.mediaSort)
+            let mergedItems = MediaItemSort.sorted(Array(mergedItemsByPath.values))
             let logGrouped = groupingService.group(items: mergedItems, settings: settings)
             let inboxItems = appendPlan.inbox.mediaItems.filter { !selectedIDs.contains($0.id) }
             let inboxGrouped = groupingService.group(items: inboxItems, settings: settings)
@@ -3049,7 +3049,7 @@ final class AppState: ObservableObject {
         var mergedItems = existingInbox?.mediaItems ?? []
         let existingPaths = Set(mergedItems.map(\.relativePath))
         mergedItems.append(contentsOf: itemsToReturn.filter { !existingPaths.contains($0.relativePath) })
-        mergedItems.sort(by: Self.mediaSort)
+        mergedItems = MediaItemSort.sorted(mergedItems)
         let grouped = groupingService.group(items: mergedItems, settings: settings)
 
         var inbox = existingInbox ?? ImportSession(
@@ -3349,9 +3349,9 @@ final class AppState: ObservableObject {
             !memberPaths.contains($0.relativePath) && !returnedPaths.contains($0.relativePath)
         }
         inboxItems.append(contentsOf: returnedItems)
-        inboxItems.sort(by: Self.mediaSort)
+        inboxItems = MediaItemSort.sorted(inboxItems)
 
-        let memberGrouped = groupingService.group(items: memberItems.sorted(by: Self.mediaSort), settings: settings)
+        let memberGrouped = groupingService.group(items: MediaItemSort.sorted(memberItems), settings: settings)
         let inboxGrouped = groupingService.group(items: inboxItems, settings: settings)
 
         var updatedLog = editingSession
@@ -4513,7 +4513,7 @@ final class AppState: ObservableObject {
             return cachedSessionItems
         }
 
-        let items = node.mediaItemIDs.compactMap { sessionMediaByID[$0] }.sorted(by: Self.mediaSort)
+        let items = MediaItemSort.sorted(node.mediaItemIDs.compactMap { sessionMediaByID[$0] })
         sessionVisibleMediaCacheByNodeID[node.id] = items
         return items
     }
@@ -4660,7 +4660,7 @@ final class AppState: ObservableObject {
                 items.append(cropItem)
                 outputCropItem = cropItem
             }
-            items.sort(by: Self.mediaSort)
+            items = MediaItemSort.sorted(items)
             updatedArchiveCache[key] = items
             didUpdate = true
         }
@@ -4897,7 +4897,7 @@ final class AppState: ObservableObject {
                 switch result {
                 case .success(let loadResult):
                     guard let loadResult else { return }
-                    let sortedItems = loadResult.items.sorted(by: Self.mediaSort)
+                    let sortedItems = MediaItemSort.sorted(loadResult.items)
                     self.archiveMediaCache[loadResult.nodeID] = sortedItems
                     self.requestVisibleThumbnails(prefetching: sortedItems)
                     self.preheatDisplayImages(for: sortedItems.map(\.id), limit: 6)
@@ -4914,19 +4914,6 @@ final class AppState: ObservableObject {
         archiveMediaLoadTask?.cancel()
         archiveMediaLoadTask = nil
         archiveMediaLoadGeneration &+= 1
-    }
-
-    private static func mediaSort(lhs: MediaItem, rhs: MediaItem) -> Bool {
-        let lhsDate = lhs.capturedAt ?? .distantPast
-        let rhsDate = rhs.capturedAt ?? .distantPast
-        if lhsDate == rhsDate {
-            if lhs.cropSortFamilyKey == rhs.cropSortFamilyKey,
-               lhs.cropSortPriority != rhs.cropSortPriority {
-                return lhs.cropSortPriority < rhs.cropSortPriority
-            }
-            return lhs.fileName.localizedCaseInsensitiveCompare(rhs.fileName) == .orderedAscending
-        }
-        return lhsDate < rhsDate
     }
 
     private static func formatSeconds(_ seconds: TimeInterval) -> String {

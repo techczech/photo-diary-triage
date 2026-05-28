@@ -76,10 +76,10 @@ import UniformTypeIdentifiers
     )
 
     let scanned = try FileScanner().scanFolder(root, settings: makeTestSettings(root: root))
-    let crop = try #require(scanned.first)
-    let original = try #require(scanned.last)
+    let original = try #require(scanned.first)
+    let crop = try #require(scanned.last)
 
-    #expect(scanned.map(\.fileName) == ["IMG_0001-cropped.jpg", "IMG_0001.jpg"])
+    #expect(scanned.map(\.fileName) == ["IMG_0001.jpg", "IMG_0001-cropped.jpg"])
     #expect(crop.cropRelationship?.role == .crop)
     #expect(crop.cropRelationship?.originalRelativePath == "IMG_0001.jpg")
     #expect(original.cropRelationship?.role == .original)
