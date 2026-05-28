@@ -147,6 +147,34 @@ import Testing
     #expect(nudged.y == 0)
 }
 
+@Test func canvasZoomMathAnchorsZoomAroundPointer() {
+    let origin = CanvasZoomPanMath.pointerAnchoredOrigin(
+        oldContentSize: CGSize(width: 1_000, height: 800),
+        newContentSize: CGSize(width: 2_000, height: 1_600),
+        viewportSize: CGSize(width: 500, height: 400),
+        oldBoundsOrigin: CGPoint(x: 100, y: 80),
+        anchorDocumentPoint: CGPoint(x: 350, y: 280)
+    )
+
+    #expect(origin == CGPoint(x: 450, y: 360))
+}
+
+@Test func canvasZoomMathClampsDraggedPanWithinImageBounds() {
+    let origin = CanvasZoomPanMath.draggedOrigin(
+        startOrigin: CGPoint(x: 450, y: 380),
+        translation: CGSize(width: -200, height: -120),
+        contentSize: CGSize(width: 1_000, height: 800),
+        viewportSize: CGSize(width: 500, height: 400)
+    )
+
+    #expect(origin == CGPoint(x: 500, y: 400))
+}
+
+@Test func canvasZoomMathClampsWheelZoomRange() {
+    #expect(CanvasZoomPanMath.zoom(from: 3.8, multiplier: 2) == 4)
+    #expect(CanvasZoomPanMath.zoom(from: 0.3, multiplier: 0.2) == 0.25)
+}
+
 @Test func compareKeyboardPanDirectionMapsVimKeys() {
     #expect(CompareKeyboardPanDirection(key: "h") == .left)
     #expect(CompareKeyboardPanDirection(key: "j") == .down)

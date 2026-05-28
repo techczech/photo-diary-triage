@@ -2,7 +2,7 @@
 
 item_id: PDT-2026-05-27-083
 title: Mouse zoom and pan
-status: approved_for_implementation
+status: awaiting_user_review
 target_release_version: 0.2.39
 target_feature_slug: mouse-zoom-pan
 
@@ -40,3 +40,19 @@ Add normal mouse and trackpad support for zooming and panning images.
 - User can zoom with Command-scroll.
 - User can pan by dragging a zoomed image.
 - Crop visible area stays correct after mouse zoom and pan.
+
+## Implementation Notes
+
+- Canvas zoom is now a binding so AppKit pointer gestures update the same state as toolbar and keyboard zoom.
+- Command-scroll zoom is handled inside the image canvas.
+- Trackpad pinch zoom is handled through `magnify(with:)`.
+- Pointer-anchored zoom keeps the same image point under the cursor where possible.
+- Click-drag panning is enabled when the image is zoomed beyond fit and the crop tool is off.
+- Cursor feedback switches between open-hand and closed-hand panning cursors; Drag Crop keeps the crosshair cursor.
+- Pan origins are clamped to image bounds.
+- Added deterministic zoom/pan math tests for pointer anchoring, pan clamping, and zoom range clamping.
+
+## Verification
+
+- `swift build` passed.
+- `swift test --filter canvasZoomMath` blocked by local XCTest lookup failure: `error: XCTest not available`.
