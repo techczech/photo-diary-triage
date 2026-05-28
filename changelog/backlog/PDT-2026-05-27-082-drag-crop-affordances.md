@@ -2,7 +2,7 @@
 
 item_id: PDT-2026-05-27-082
 title: Drag crop affordances
-status: approved_for_implementation
+status: awaiting_user_review
 target_release_version: 0.2.38
 target_feature_slug: drag-crop-affordances
 
@@ -37,3 +37,18 @@ Make Drag Crop behave like a real mouse crop tool.
 - User can see the crop rectangle during drag.
 - User gets clear feedback after crop creation or cancel.
 - Crop mode does not accidentally swallow normal selection outside crop mode.
+
+## Implementation Notes
+
+- Drag Crop now sets a status message when enabled in preview and compare.
+- Escape cancels Drag Crop before closing preview/compare.
+- The AppKit image canvas uses a crosshair cursor while Drag Crop is active.
+- The current visible image boundary remains visible in Drag Crop mode.
+- Tiny/unusable drags beep and show a status message instead of silently doing nothing.
+- Valid manual drags still save immediately, turn Drag Crop off, and let the existing crop-save path focus the crop output.
+- Added a regression test for tiny manual drags mapping to unusable crop rectangles.
+
+## Verification
+
+- `swift build` passed.
+- `swift test --filter cropGeometryMapperMarksTinyManualDragUnusable` blocked by local XCTest lookup failure: `error: XCTest not available`.

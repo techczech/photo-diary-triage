@@ -427,3 +427,4 @@
 {"ts":"2026-05-28T08:22:14Z","item_id":"PDT-2026-05-28-084","event":"spec_created","status":"approved_for_implementation","title":"responsiveness and Computer check","file":"changelog/backlog/PDT-2026-05-28-084-responsiveness-and-computer-check.md"}
 {"ts":"2026-05-28T08:25:28Z","item_id":"PDT-2026-05-27-080","event":"implemented_pending_review","status":"awaiting_user_review","title":"crop geometry correctness","file":"changelog/backlog/PDT-2026-05-27-080-crop-geometry-correctness.md"}
 {"ts":"2026-05-28T08:30:49Z","item_id":"PDT-2026-05-27-081","event":"implemented_pending_review","status":"awaiting_user_review","title":"crop links and gallery grouping","file":"changelog/backlog/PDT-2026-05-27-081-crop-links-gallery-grouping.md"}
+{"ts":"2026-05-28T08:38:53Z","item_id":"PDT-2026-05-27-082","event":"implemented_pending_review","status":"awaiting_user_review","title":"drag crop affordances","file":"changelog/backlog/PDT-2026-05-27-082-drag-crop-affordances.md"}
