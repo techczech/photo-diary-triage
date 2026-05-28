@@ -1842,7 +1842,6 @@ final class LockedCompareCanvasView: NSScrollView {
     override func layout() {
         super.layout()
         updateImageLayout()
-        publishVisibleCrop()
     }
 
     override func resetCursorRects() {
@@ -1920,15 +1919,19 @@ final class LockedCompareCanvasView: NSScrollView {
     }
 
     func updateImage(image: NSImage, zoom: CGFloat) {
-        if currentImage !== image {
+        let nextZoom = CanvasZoomPanMath.clampedZoom(zoom)
+        let imageChanged = currentImage !== image
+        let zoomChanged = abs(currentZoom - nextZoom) > 0.0001
+        guard imageChanged || zoomChanged else { return }
+
+        if imageChanged {
             currentImage = image
             imageView.image = image
             currentImageSize = image.size
         }
-        currentZoom = CanvasZoomPanMath.clampedZoom(zoom)
+        currentZoom = nextZoom
         updateImageLayout()
         window?.invalidateCursorRects(for: self)
-        publishVisibleCrop()
     }
 
     func currentSynchronizedViewport() -> CompareViewport {
