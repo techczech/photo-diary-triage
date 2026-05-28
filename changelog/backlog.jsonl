@@ -428,3 +428,4 @@
 {"ts":"2026-05-28T08:25:28Z","item_id":"PDT-2026-05-27-080","event":"implemented_pending_review","status":"awaiting_user_review","title":"crop geometry correctness","file":"changelog/backlog/PDT-2026-05-27-080-crop-geometry-correctness.md"}
 {"ts":"2026-05-28T08:30:49Z","item_id":"PDT-2026-05-27-081","event":"implemented_pending_review","status":"awaiting_user_review","title":"crop links and gallery grouping","file":"changelog/backlog/PDT-2026-05-27-081-crop-links-gallery-grouping.md"}
 {"ts":"2026-05-28T08:38:53Z","item_id":"PDT-2026-05-27-082","event":"implemented_pending_review","status":"awaiting_user_review","title":"drag crop affordances","file":"changelog/backlog/PDT-2026-05-27-082-drag-crop-affordances.md"}
+{"ts":"2026-05-28T08:44:21Z","item_id":"PDT-2026-05-27-083","event":"implemented_pending_review","status":"awaiting_user_review","title":"mouse zoom and pan","file":"changelog/backlog/PDT-2026-05-27-083-mouse-zoom-pan.md"}

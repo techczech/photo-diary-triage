@@ -152,6 +152,74 @@ struct CompareViewport: Equatable, Sendable {
     }
 }
 
+struct CanvasZoomPanMath {
+    static let minimumZoom: CGFloat = 0.25
+    static let maximumZoom: CGFloat = 4
+
+    static func clampedZoom(_ zoom: CGFloat) -> CGFloat {
+        min(max(zoom, minimumZoom), maximumZoom)
+    }
+
+    static func zoom(from currentZoom: CGFloat, multiplier: CGFloat) -> CGFloat {
+        clampedZoom(currentZoom * max(multiplier, 0.01))
+    }
+
+    static func pointerAnchoredOrigin(
+        oldContentSize: CGSize,
+        newContentSize: CGSize,
+        viewportSize: CGSize,
+        oldBoundsOrigin: CGPoint,
+        anchorDocumentPoint: CGPoint
+    ) -> CGPoint {
+        let normalizedX = normalized(anchorDocumentPoint.x, size: oldContentSize.width)
+        let normalizedY = normalized(anchorDocumentPoint.y, size: oldContentSize.height)
+        let viewportOffset = CGPoint(
+            x: anchorDocumentPoint.x - oldBoundsOrigin.x,
+            y: anchorDocumentPoint.y - oldBoundsOrigin.y
+        )
+        let newDocumentPoint = CGPoint(
+            x: normalizedX * newContentSize.width,
+            y: normalizedY * newContentSize.height
+        )
+        return clampedOrigin(
+            CGPoint(
+                x: newDocumentPoint.x - viewportOffset.x,
+                y: newDocumentPoint.y - viewportOffset.y
+            ),
+            contentSize: newContentSize,
+            viewportSize: viewportSize
+        )
+    }
+
+    static func draggedOrigin(
+        startOrigin: CGPoint,
+        translation: CGSize,
+        contentSize: CGSize,
+        viewportSize: CGSize
+    ) -> CGPoint {
+        clampedOrigin(
+            CGPoint(
+                x: startOrigin.x - translation.width,
+                y: startOrigin.y - translation.height
+            ),
+            contentSize: contentSize,
+            viewportSize: viewportSize
+        )
+    }
+
+    static func clampedOrigin(_ origin: CGPoint, contentSize: CGSize, viewportSize: CGSize) -> CGPoint {
+        CGPoint(
+            x: min(max(origin.x, 0), max(contentSize.width - viewportSize.width, 0)),
+            y: min(max(origin.y, 0), max(contentSize.height - viewportSize.height, 0))
+        )
+    }
+
+    private static func normalized(_ value: CGFloat, size: CGFloat) -> CGFloat {
+        guard size > 0 else { return 0.5 }
+        return min(max(value / size, 0), 1)
+    }
+}
+
 enum CompareKeyboardPanDirection: Equatable, Sendable {
     case left
     case down

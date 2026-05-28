@@ -811,7 +811,7 @@ struct FullPhotoSheet: View {
                 FullPhotoPreviewCanvas(
                     appState: appState,
                     item: displayItem,
-                    zoom: zoom,
+                    zoom: $zoom,
                     viewport: $viewport,
                     visibleCropRect: $visibleCropRect,
                     panCommand: panCommand,
@@ -987,7 +987,7 @@ struct FullPhotoSheet: View {
 struct FullPhotoPreviewCanvas: View {
     let appState: AppState
     let item: MediaItem
-    let zoom: CGFloat
+    @Binding var zoom: CGFloat
     @Binding var viewport: CompareViewport
     @Binding var visibleCropRect: CropNormalizedRect
     let panCommand: ComparePanCommand
@@ -1000,7 +1000,7 @@ struct FullPhotoPreviewCanvas: View {
     init(
         appState: AppState,
         item: MediaItem,
-        zoom: CGFloat,
+        zoom: Binding<CGFloat>,
         viewport: Binding<CompareViewport>,
         visibleCropRect: Binding<CropNormalizedRect>,
         panCommand: ComparePanCommand,
@@ -1010,7 +1010,7 @@ struct FullPhotoPreviewCanvas: View {
     ) {
         self.appState = appState
         self.item = item
-        self.zoom = zoom
+        _zoom = zoom
         _viewport = viewport
         _visibleCropRect = visibleCropRect
         self.panCommand = panCommand
@@ -1023,7 +1023,7 @@ struct FullPhotoPreviewCanvas: View {
     var body: some View {
         ZoomableImageCanvas(
             imageURL: item.sourceURL,
-            zoom: zoom,
+            zoom: $zoom,
             itemID: item.id,
             viewport: $viewport,
             visibleCropRect: $visibleCropRect,
@@ -1196,7 +1196,7 @@ struct CompareSheet: View {
                                     CompareItemCard(
                                         appState: appState,
                                         snapshot: itemSnapshot,
-                                        zoom: zoom,
+                                        zoom: $zoom,
                                         synchronizedViewport: $synchronizedViewport,
                                         panCommand: panCommand,
                                         isPanLocked: isPanLocked,
@@ -1302,7 +1302,7 @@ struct CompareSheet: View {
 struct CompareItemCard: View {
     let appState: AppState
     let snapshot: ReviewItemSnapshot
-    let zoom: CGFloat
+    @Binding var zoom: CGFloat
     @Binding var synchronizedViewport: CompareViewport
     let panCommand: ComparePanCommand
     let isPanLocked: Bool
@@ -1442,7 +1442,7 @@ struct CompareItemCard: View {
             LoadedLockedCompareImageCanvas(
                 appState: appState,
                 item: item,
-                zoom: zoom,
+                zoom: $zoom,
                 synchronizedViewport: $synchronizedViewport,
                 panCommand: panCommand,
                 isPanLocked: isPanLocked,
@@ -1522,7 +1522,7 @@ struct ZoomToolbar: View {
 
 struct ZoomableImageCanvas: View {
     let imageURL: URL
-    let zoom: CGFloat
+    @Binding var zoom: CGFloat
     let itemID: UUID
     @Binding var viewport: CompareViewport
     @Binding var visibleCropRect: CropNormalizedRect
@@ -1539,7 +1539,7 @@ struct ZoomableImageCanvas: View {
                 LockedCompareImageCanvas(
                     itemID: itemID,
                     image: image,
-                    zoom: zoom,
+                    zoom: $zoom,
                     synchronizedViewport: $viewport,
                     visibleCropRect: $visibleCropRect,
                     panCommand: panCommand,
@@ -1576,7 +1576,7 @@ struct ZoomableImageCanvas: View {
 struct LoadedLockedCompareImageCanvas: View {
     let appState: AppState
     let item: MediaItem
-    let zoom: CGFloat
+    @Binding var zoom: CGFloat
     @Binding var synchronizedViewport: CompareViewport
     let panCommand: ComparePanCommand
     let isPanLocked: Bool
@@ -1590,7 +1590,7 @@ struct LoadedLockedCompareImageCanvas: View {
     init(
         appState: AppState,
         item: MediaItem,
-        zoom: CGFloat,
+        zoom: Binding<CGFloat>,
         synchronizedViewport: Binding<CompareViewport>,
         panCommand: ComparePanCommand,
         isPanLocked: Bool,
@@ -1601,7 +1601,7 @@ struct LoadedLockedCompareImageCanvas: View {
     ) {
         self.appState = appState
         self.item = item
-        self.zoom = zoom
+        _zoom = zoom
         _synchronizedViewport = synchronizedViewport
         self.panCommand = panCommand
         self.isPanLocked = isPanLocked
@@ -1618,7 +1618,7 @@ struct LoadedLockedCompareImageCanvas: View {
                 LockedCompareImageCanvas(
                     itemID: item.id,
                     image: image,
-                    zoom: zoom,
+                    zoom: $zoom,
                     synchronizedViewport: $synchronizedViewport,
                     visibleCropRect: $visibleCropRect,
                     panCommand: panCommand,
@@ -1662,7 +1662,7 @@ struct CompareImagePlaceholder: View {
 struct LockedCompareImageCanvas: NSViewRepresentable {
     let itemID: UUID
     let image: NSImage
-    let zoom: CGFloat
+    @Binding var zoom: CGFloat
     @Binding var synchronizedViewport: CompareViewport
     @Binding var visibleCropRect: CropNormalizedRect
     let panCommand: ComparePanCommand
@@ -1690,6 +1690,9 @@ struct LockedCompareImageCanvas: NSViewRepresentable {
         }
         nsView.onManualCrop = onManualCrop
         nsView.onManualCropRejected = onManualCropRejected
+        nsView.onZoomChanged = { nextZoom in
+            context.coordinator.updateZoom(nextZoom)
+        }
         context.coordinator.applySynchronizedViewportIfNeeded()
         context.coordinator.applyPanCommandIfNeeded()
     }
@@ -1758,6 +1761,13 @@ struct LockedCompareImageCanvas: NSViewRepresentable {
             }
         }
 
+        func updateZoom(_ nextZoom: CGFloat) {
+            guard abs(parent.zoom - nextZoom) > 0.0001 else { return }
+            DispatchQueue.main.async {
+                self.parent.zoom = nextZoom
+            }
+        }
+
         private func boundsDidChange() {
             guard let scrollView else { return }
             scrollView.publishVisibleCrop()
@@ -1782,6 +1792,9 @@ final class LockedCompareCanvasView: NSScrollView {
     private let cropSelectionLayer = CAShapeLayer()
     private var cropDragStart: CGPoint?
     private var cropDragCurrent: CGPoint?
+    private var panDragStartInWindow: CGPoint?
+    private var panDragStartOrigin: CGPoint?
+    private var isPointerPanning = false
     var isCropSelectionEnabled = false {
         didSet {
             if isCropSelectionEnabled == false {
@@ -1794,6 +1807,7 @@ final class LockedCompareCanvasView: NSScrollView {
     var onVisibleCropChanged: ((CropNormalizedRect) -> Void)?
     var onManualCrop: ((CropNormalizedRect) -> Void)?
     var onManualCropRejected: (() -> Void)?
+    var onZoomChanged: ((CGFloat) -> Void)?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -1835,11 +1849,17 @@ final class LockedCompareCanvasView: NSScrollView {
         super.resetCursorRects()
         if isCropSelectionEnabled {
             addCursorRect(bounds, cursor: .crosshair)
+        } else if canPointerPan {
+            addCursorRect(bounds, cursor: .openHand)
         }
     }
 
     override func mouseDown(with event: NSEvent) {
         guard isCropSelectionEnabled else {
+            if canPointerPan {
+                beginPointerPan(with: event)
+                return
+            }
             super.mouseDown(with: event)
             return
         }
@@ -1849,6 +1869,10 @@ final class LockedCompareCanvasView: NSScrollView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if isPointerPanning {
+            continuePointerPan(with: event)
+            return
+        }
         guard isCropSelectionEnabled, cropDragStart != nil else {
             super.mouseDragged(with: event)
             return
@@ -1858,6 +1882,10 @@ final class LockedCompareCanvasView: NSScrollView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if isPointerPanning {
+            finishPointerPan()
+            return
+        }
         guard isCropSelectionEnabled, let cropDragStart else {
             super.mouseUp(with: event)
             return
@@ -1874,14 +1902,32 @@ final class LockedCompareCanvasView: NSScrollView {
         onManualCrop?(normalized)
     }
 
+    override func scrollWheel(with event: NSEvent) {
+        guard event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command) else {
+            super.scrollWheel(with: event)
+            publishVisibleCrop()
+            return
+        }
+        let delta = event.scrollingDeltaY
+        guard abs(delta) > 0.01 else { return }
+        let sensitivity: CGFloat = event.hasPreciseScrollingDeltas ? 0.01 : 0.08
+        applyPointerZoom(multiplier: CGFloat(exp(Double(delta * sensitivity))), windowLocation: event.locationInWindow)
+    }
+
+    override func magnify(with event: NSEvent) {
+        let multiplier = max(0.01, 1 + event.magnification)
+        applyPointerZoom(multiplier: multiplier, windowLocation: event.locationInWindow)
+    }
+
     func updateImage(image: NSImage, zoom: CGFloat) {
         if currentImage !== image {
             currentImage = image
             imageView.image = image
             currentImageSize = image.size
         }
-        currentZoom = zoom
+        currentZoom = CanvasZoomPanMath.clampedZoom(zoom)
         updateImageLayout()
+        window?.invalidateCursorRects(for: self)
         publishVisibleCrop()
     }
 
@@ -1908,6 +1954,74 @@ final class LockedCompareCanvasView: NSScrollView {
     func panBy(dx: Int, dy: Int, step: Double = 0.12) {
         let viewport = currentSynchronizedViewport().nudged(dx: dx, dy: dy, step: step)
         applySynchronizedViewport(viewport)
+    }
+
+    private var canPointerPan: Bool {
+        currentZoom > 1.0001 && (
+            imageView.bounds.width > contentView.bounds.width + 1 ||
+            imageView.bounds.height > contentView.bounds.height + 1
+        )
+    }
+
+    private func beginPointerPan(with event: NSEvent) {
+        panDragStartInWindow = event.locationInWindow
+        panDragStartOrigin = contentView.bounds.origin
+        isPointerPanning = true
+        NSCursor.closedHand.set()
+    }
+
+    private func continuePointerPan(with event: NSEvent) {
+        guard let panDragStartInWindow, let panDragStartOrigin else { return }
+        let currentLocation = event.locationInWindow
+        let translation = CGSize(
+            width: currentLocation.x - panDragStartInWindow.x,
+            height: currentLocation.y - panDragStartInWindow.y
+        )
+        let origin = CanvasZoomPanMath.draggedOrigin(
+            startOrigin: panDragStartOrigin,
+            translation: translation,
+            contentSize: imageView.bounds.size,
+            viewportSize: contentView.bounds.size
+        )
+        contentView.scroll(to: origin)
+        reflectScrolledClipView(contentView)
+        publishVisibleCrop()
+        NSCursor.closedHand.set()
+    }
+
+    private func finishPointerPan() {
+        panDragStartInWindow = nil
+        panDragStartOrigin = nil
+        isPointerPanning = false
+        window?.invalidateCursorRects(for: self)
+        if canPointerPan {
+            NSCursor.openHand.set()
+        }
+    }
+
+    private func applyPointerZoom(multiplier: CGFloat, windowLocation: CGPoint) {
+        let nextZoom = CanvasZoomPanMath.zoom(from: currentZoom, multiplier: multiplier)
+        guard abs(nextZoom - currentZoom) > 0.0001 else { return }
+
+        let oldContentSize = imageView.bounds.size
+        let oldBoundsOrigin = contentView.bounds.origin
+        let viewportSize = contentView.bounds.size
+        let anchorDocumentPoint = imageView.convert(windowLocation, from: nil)
+
+        currentZoom = nextZoom
+        updateImageLayout()
+        let origin = CanvasZoomPanMath.pointerAnchoredOrigin(
+            oldContentSize: oldContentSize,
+            newContentSize: imageView.bounds.size,
+            viewportSize: viewportSize,
+            oldBoundsOrigin: oldBoundsOrigin,
+            anchorDocumentPoint: anchorDocumentPoint
+        )
+        contentView.scroll(to: origin)
+        reflectScrolledClipView(contentView)
+        publishVisibleCrop()
+        window?.invalidateCursorRects(for: self)
+        onZoomChanged?(nextZoom)
     }
 
     private func updateImageLayout() {
