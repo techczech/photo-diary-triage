@@ -233,6 +233,21 @@ import UniformTypeIdentifiers
     #expect(rect == CropNormalizedRect(x: 0.1, y: 0.25, width: 0.4, height: 0.5))
 }
 
+@Test func cropGeometryMapperMarksTinyManualDragUnusable() throws {
+    let documentRect = CropGeometryMapper.standardizedDocumentRect(
+        start: CGPoint(x: 200, y: 200),
+        end: CGPoint(x: 205, y: 205),
+        documentSize: CGSize(width: 800, height: 600)
+    )
+    let rect = try #require(CropGeometryMapper.normalizedCropRect(
+        documentRect: documentRect,
+        imageSize: CGSize(width: 400, height: 300),
+        documentSize: CGSize(width: 800, height: 600)
+    ))
+
+    #expect(rect.isUsableCrop == false)
+}
+
 @Test func cropServiceWritesPixelsFromMappedTopLeftRectangle() throws {
     let root = try makeTemporaryDirectory()
     let sourceURL = root.appendingPathComponent("GRID.png")
