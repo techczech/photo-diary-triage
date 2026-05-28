@@ -2,7 +2,7 @@
 
 item_id: PDT-2026-05-27-081
 title: Crop links and gallery grouping
-status: approved_for_implementation
+status: awaiting_user_review
 target_release_version: 0.2.37
 target_feature_slug: crop-links-gallery-grouping
 
@@ -38,3 +38,13 @@ Make original and cropped versions clearly linked, clickable, and adjacent in th
 - Original appears before crops.
 - Clicking the link control changes preview/focus/selection to the linked version.
 - Crop link controls work in grid, preview, compare, and inspector.
+
+## Implementation Notes
+
+- Added `MediaItemSort` for crop-family-aware ordering.
+- Original now sorts before crop versions.
+- Crop versions sort by manifest path order.
+- Browser grouping uses the crop family's original date so crops stay beside originals even when crop metadata dates differ.
+- Grid crop link controls now sit above the card click target instead of being covered by it.
+- Crop link labels now say `Show Crop`, `Show Latest Crop`, or `Show Original`.
+- Shipped in `APP_VERSION=0.2.37`.

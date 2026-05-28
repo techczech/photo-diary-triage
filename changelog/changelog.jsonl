@@ -165,3 +165,4 @@
 {"ts":"2026-05-27T07:54:50Z","item_id":"PDT-2026-05-27-077","event":"report_created","status":"implemented","title":"crop feedback and immediate preview","file":"changelog/changelog/PDT-2026-05-27-077-crop-feedback-and-immediate-preview-report.md"}
 {"ts":"2026-05-27T08:44:17Z","item_id":"PDT-2026-05-27-078","event":"report_created","status":"implemented","title":"crop history and version switching","file":"changelog/changelog/PDT-2026-05-27-078-crop-history-and-version-switching-report.md"}
 {"ts":"2026-05-28T08:25:28Z","item_id":"PDT-2026-05-27-080","event":"report_created","status":"implemented","title":"crop geometry correctness","file":"changelog/changelog/PDT-2026-05-27-080-crop-geometry-correctness-report.md"}
+{"ts":"2026-05-28T08:30:49Z","item_id":"PDT-2026-05-27-081","event":"report_created","status":"implemented","title":"crop links and gallery grouping","file":"changelog/changelog/PDT-2026-05-27-081-crop-links-gallery-grouping-report.md"}

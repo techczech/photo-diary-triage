@@ -181,7 +181,7 @@ struct ReviewGridCard: View {
         }
         .contentShape(RoundedRectangle(cornerRadius: 12))
         .shortcutHint("Shift-click / Cmd-click / Double-click", help: "Click to select. Shift-click extends the selection, Command-click toggles selection, and double-click opens preview.")
-        .overlay {
+        .background {
             ReviewGridClickTarget(onClick: onClick)
         }
     }
@@ -443,15 +443,14 @@ private struct CropRelationshipBadge: View {
 
     var body: some View {
         Button(action: action) {
-            Label(relationship.badgeLabel, systemImage: relationship.role == .crop ? "crop" : "photo.badge.plus")
+            Label(relationship.linkActionLabel, systemImage: relationship.role == .crop ? "photo" : "crop")
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.bordered)
+        .controlSize(.mini)
         .font(.caption2.weight(.medium))
         .foregroundStyle(relationship.role == .crop ? Color.purple.opacity(0.95) : Color.teal.opacity(0.95))
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
         .background(backgroundColor)
         .clipShape(Capsule())
         .help(relationship.helpText)

@@ -627,6 +627,15 @@ struct CropRelationship: Codable, Hashable, Sendable {
         }
     }
 
+    var linkActionLabel: String {
+        switch role {
+        case .original:
+            return cropRelativePaths.count == 1 ? "Show Crop" : "Show Latest Crop"
+        case .crop:
+            return "Show Original"
+        }
+    }
+
     var helpText: String {
         switch role {
         case .original:
@@ -747,13 +756,67 @@ extension MediaItem {
     }
 
     var cropSortPriority: Int {
-        if cropRelationship?.role == .crop {
+        if cropRelationship?.role == .original {
             return 0
         }
-        if cropRelationship?.role == .original {
+        if cropRelationship?.role == .crop {
+            if let index = cropRelationship?.cropRelativePaths.firstIndex(of: relativePath) {
+                return index + 1
+            }
             return 1
         }
-        return 2
+        return 0
+    }
+}
+
+enum MediaItemSort {
+    static func sorted(_ items: [MediaItem]) -> [MediaItem] {
+        let familyDates = familyDateMap(for: items)
+        return items.sorted { lhs, rhs in
+            areInIncreasingOrder(lhs, rhs, familyDates: familyDates)
+        }
+    }
+
+    static func areInIncreasingOrder(_ lhs: MediaItem, _ rhs: MediaItem) -> Bool {
+        let familyDates = familyDateMap(for: [lhs, rhs])
+        return areInIncreasingOrder(lhs, rhs, familyDates: familyDates)
+    }
+
+    static func familyDateMap(for items: [MediaItem]) -> [String: Date] {
+        let grouped = Dictionary(grouping: items, by: \.cropSortFamilyKey)
+        return grouped.reduce(into: [String: Date]()) { result, entry in
+            if let date = entry.value.first(where: { $0.cropRelationship?.role == .original })?.capturedAt
+                ?? entry.value.compactMap(\.capturedAt).min() {
+                result[entry.key] = date
+            }
+        }
+    }
+
+    static func familyDate(for item: MediaItem, familyDates: [String: Date]) -> Date? {
+        familyDates[item.cropSortFamilyKey] ?? item.capturedAt
+    }
+
+    private static func areInIncreasingOrder(
+        _ lhs: MediaItem,
+        _ rhs: MediaItem,
+        familyDates: [String: Date]
+    ) -> Bool {
+        let lhsDate = familyDates[lhs.cropSortFamilyKey] ?? lhs.capturedAt ?? .distantPast
+        let rhsDate = familyDates[rhs.cropSortFamilyKey] ?? rhs.capturedAt ?? .distantPast
+        if lhsDate != rhsDate {
+            return lhsDate < rhsDate
+        }
+
+        if lhs.cropSortFamilyKey == rhs.cropSortFamilyKey,
+           lhs.cropSortPriority != rhs.cropSortPriority {
+            return lhs.cropSortPriority < rhs.cropSortPriority
+        }
+
+        let familyComparison = lhs.cropSortFamilyKey.localizedCaseInsensitiveCompare(rhs.cropSortFamilyKey)
+        if familyComparison != .orderedSame {
+            return familyComparison == .orderedAscending
+        }
+        return lhs.fileName.localizedCaseInsensitiveCompare(rhs.fileName) == .orderedAscending
     }
 }
 
