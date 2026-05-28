@@ -164,3 +164,4 @@
 {"ts":"2026-05-26T19:14:36Z","item_id":"PDT-2026-05-26-075","event":"report_created","status":"implemented","title":"fresh app bundle build","file":"changelog/changelog/PDT-2026-05-26-075-fresh-app-bundle-build-report.md"}
 {"ts":"2026-05-27T07:54:50Z","item_id":"PDT-2026-05-27-077","event":"report_created","status":"implemented","title":"crop feedback and immediate preview","file":"changelog/changelog/PDT-2026-05-27-077-crop-feedback-and-immediate-preview-report.md"}
 {"ts":"2026-05-27T08:44:17Z","item_id":"PDT-2026-05-27-078","event":"report_created","status":"implemented","title":"crop history and version switching","file":"changelog/changelog/PDT-2026-05-27-078-crop-history-and-version-switching-report.md"}
+{"ts":"2026-05-28T08:25:28Z","item_id":"PDT-2026-05-27-080","event":"report_created","status":"implemented","title":"crop geometry correctness","file":"changelog/changelog/PDT-2026-05-27-080-crop-geometry-correctness-report.md"}

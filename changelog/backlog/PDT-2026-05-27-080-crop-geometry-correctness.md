@@ -2,7 +2,7 @@
 
 item_id: PDT-2026-05-27-080
 title: Crop geometry correctness
-status: proposed
+status: awaiting_user_review
 target_release_version: 0.2.36
 target_feature_slug: crop-geometry-correctness
 
@@ -38,3 +38,12 @@ Fix crop output so it matches the image area the user sees or drags.
 - A manually dragged rectangle crops the dragged pixels.
 - Top/bottom and left/right are not inverted.
 - `Crop Visible` is disabled only when the visible area is full-frame.
+
+## Implementation Notes
+
+- Extracted crop coordinate mapping into `CropGeometryMapper`.
+- Replaced private canvas mapping with the shared mapper.
+- Republished visible crop rectangles on all scroll-view bounds changes, including preview scrolling where the stale crop rectangle bug was most likely.
+- Added a dashed visible-crop boundary when zoomed.
+- Added mapper and pixel-output regression tests.
+- Shipped in `APP_VERSION=0.2.36`.

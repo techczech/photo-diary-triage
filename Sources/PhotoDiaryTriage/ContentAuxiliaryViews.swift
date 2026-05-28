@@ -1722,6 +1722,7 @@ struct LockedCompareImageCanvas: NSViewRepresentable {
 
         private func boundsDidChange() {
             guard let scrollView else { return }
+            scrollView.publishVisibleCrop()
             guard parent.isPanLocked else { return }
             guard isApplyingSynchronizedViewport == false else { return }
             let viewport = scrollView.currentSynchronizedViewport()
@@ -1739,6 +1740,7 @@ final class LockedCompareCanvasView: NSScrollView {
     private weak var currentImage: NSImage?
     private var currentImageSize: CGSize = .zero
     private var currentZoom: CGFloat = 1
+    private let visibleCropLayer = CAShapeLayer()
     private let cropSelectionLayer = CAShapeLayer()
     private var cropDragStart: CGPoint?
     private var cropDragCurrent: CGPoint?
@@ -1762,10 +1764,16 @@ final class LockedCompareCanvasView: NSScrollView {
         imageView.imageAlignment = .alignCenter
         imageView.imageScaling = .scaleAxesIndependently
         imageView.wantsLayer = true
+        visibleCropLayer.fillColor = NSColor.clear.cgColor
+        visibleCropLayer.strokeColor = NSColor.controlAccentColor.withAlphaComponent(0.65).cgColor
+        visibleCropLayer.lineWidth = 2
+        visibleCropLayer.lineDashPattern = [6, 4]
+        visibleCropLayer.isHidden = true
         cropSelectionLayer.fillColor = NSColor.controlAccentColor.withAlphaComponent(0.16).cgColor
         cropSelectionLayer.strokeColor = NSColor.controlAccentColor.cgColor
         cropSelectionLayer.lineWidth = 2
         cropSelectionLayer.isHidden = true
+        imageView.layer?.addSublayer(visibleCropLayer)
         imageView.layer?.addSublayer(cropSelectionLayer)
         documentView = imageView
     }
@@ -1865,53 +1873,40 @@ final class LockedCompareCanvasView: NSScrollView {
             height: max(1, currentImageSize.height * displayScale)
         )
         imageView.frame = NSRect(origin: .zero, size: scaledSize)
+        visibleCropLayer.frame = imageView.bounds
         cropSelectionLayer.frame = imageView.bounds
+        updateVisibleCropLayer()
         updateCropSelectionLayer()
         publishVisibleCrop()
     }
 
-    private func publishVisibleCrop() {
+    func publishVisibleCrop() {
         guard let rect = normalizedCropRect(forDocumentRect: contentView.bounds) else { return }
+        updateVisibleCropLayer()
         onVisibleCropChanged?(rect)
     }
 
     private func normalizedCropRect(forDocumentRect rect: CGRect) -> CropNormalizedRect? {
-        guard currentImageSize.width > 0,
-              currentImageSize.height > 0,
-              imageView.bounds.width > 0,
-              imageView.bounds.height > 0 else {
-            return nil
-        }
-
-        let scaleX = imageView.bounds.width / currentImageSize.width
-        let scaleY = imageView.bounds.height / currentImageSize.height
-        guard scaleX > 0, scaleY > 0 else { return nil }
-
-        let imageRectFromBottom = CGRect(
-            x: rect.minX / scaleX,
-            y: rect.minY / scaleY,
-            width: rect.width / scaleX,
-            height: rect.height / scaleY
-        ).intersection(CGRect(origin: .zero, size: currentImageSize))
-        guard imageRectFromBottom.width > 0, imageRectFromBottom.height > 0 else { return nil }
-
-        let topY = currentImageSize.height - imageRectFromBottom.maxY
-        return CropNormalizedRect(
-            x: imageRectFromBottom.minX / currentImageSize.width,
-            y: topY / currentImageSize.height,
-            width: imageRectFromBottom.width / currentImageSize.width,
-            height: imageRectFromBottom.height / currentImageSize.height
+        CropGeometryMapper.normalizedCropRect(
+            documentRect: rect,
+            imageSize: currentImageSize,
+            documentSize: imageView.bounds.size
         )
     }
 
     private func standardizedDocumentRect(from start: CGPoint, to end: CGPoint) -> CGRect {
-        let rect = CGRect(
-            x: min(start.x, end.x),
-            y: min(start.y, end.y),
-            width: abs(end.x - start.x),
-            height: abs(end.y - start.y)
+        CropGeometryMapper.standardizedDocumentRect(
+            start: start,
+            end: end,
+            documentSize: imageView.bounds.size
         )
-        return rect.intersection(imageView.bounds)
+    }
+
+    private func updateVisibleCropLayer() {
+        let visibleRect = contentView.bounds.intersection(imageView.bounds)
+        let isFullImage = visibleRect.width >= imageView.bounds.width - 1 && visibleRect.height >= imageView.bounds.height - 1
+        visibleCropLayer.isHidden = isFullImage || visibleRect.width <= 1 || visibleRect.height <= 1 || isCropSelectionEnabled
+        visibleCropLayer.path = CGPath(rect: visibleRect, transform: nil)
     }
 
     private func updateCropSelectionLayer() {
