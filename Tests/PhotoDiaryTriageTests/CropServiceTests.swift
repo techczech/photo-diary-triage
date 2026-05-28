@@ -191,6 +191,87 @@ import UniformTypeIdentifiers
     #expect(rect.pixelRect(sourceWidth: 100, sourceHeight: 80) == CropPixelRect(x: 90, y: 72, width: 10, height: 8))
 }
 
+@Test func cropGeometryMapperMapsCenteredVisibleViewport() throws {
+    let rect = try #require(CropGeometryMapper.normalizedCropRect(
+        documentRect: CGRect(x: 200, y: 150, width: 400, height: 300),
+        imageSize: CGSize(width: 400, height: 300),
+        documentSize: CGSize(width: 800, height: 600)
+    ))
+
+    #expect(rect == CropNormalizedRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5))
+}
+
+@Test func cropGeometryMapperUsesTopLeftNormalizedY() throws {
+    let topLeftQuarter = try #require(CropGeometryMapper.normalizedCropRect(
+        documentRect: CGRect(x: 0, y: 300, width: 400, height: 300),
+        imageSize: CGSize(width: 400, height: 300),
+        documentSize: CGSize(width: 800, height: 600)
+    ))
+    let bottomLeftQuarter = try #require(CropGeometryMapper.normalizedCropRect(
+        documentRect: CGRect(x: 0, y: 0, width: 400, height: 300),
+        imageSize: CGSize(width: 400, height: 300),
+        documentSize: CGSize(width: 800, height: 600)
+    ))
+
+    #expect(topLeftQuarter == CropNormalizedRect(x: 0, y: 0, width: 0.5, height: 0.5))
+    #expect(bottomLeftQuarter == CropNormalizedRect(x: 0, y: 0.5, width: 0.5, height: 0.5))
+}
+
+@Test func cropGeometryMapperStandardizesManualDragRect() throws {
+    let documentRect = CropGeometryMapper.standardizedDocumentRect(
+        start: CGPoint(x: 80, y: 450),
+        end: CGPoint(x: 400, y: 150),
+        documentSize: CGSize(width: 800, height: 600)
+    )
+    let rect = try #require(CropGeometryMapper.normalizedCropRect(
+        documentRect: documentRect,
+        imageSize: CGSize(width: 400, height: 300),
+        documentSize: CGSize(width: 800, height: 600)
+    ))
+
+    #expect(documentRect == CGRect(x: 80, y: 150, width: 320, height: 300))
+    #expect(rect == CropNormalizedRect(x: 0.1, y: 0.25, width: 0.4, height: 0.5))
+}
+
+@Test func cropServiceWritesPixelsFromMappedTopLeftRectangle() throws {
+    let root = try makeTemporaryDirectory()
+    let sourceURL = root.appendingPathComponent("GRID.png")
+    try writeTestGridPNGImage(sourceURL, width: 10, height: 8)
+    let item = MediaItem(
+        sourceURL: sourceURL,
+        relativePath: "GRID.png",
+        fileName: "GRID.png",
+        baseName: "GRID",
+        mediaKind: .other,
+        fileSizeBytes: Int64((try Data(contentsOf: sourceURL)).count),
+        capturedAt: Date(timeIntervalSince1970: 0),
+        metadata: MediaMetadata(
+            capturedAt: Date(timeIntervalSince1970: 0),
+            pixelWidth: 10,
+            pixelHeight: 8,
+            cameraModel: nil,
+            lensModel: nil,
+            latitude: nil,
+            longitude: nil,
+            raw: [:]
+        ),
+        thumbnailCacheKey: "crop-grid"
+    )
+
+    let result = try CropService().crop(
+        item: item,
+        normalizedRect: CropNormalizedRect(x: 0.2, y: 0.25, width: 0.5, height: 0.5),
+        trigger: .visibleZoom,
+        appRelease: AppRelease(version: "test", build: "1", featureSlug: "crop-grid")
+    )
+
+    #expect(result.pixelRect == CropPixelRect(x: 2, y: 2, width: 5, height: 4))
+    #expect(result.outputWidth == 5)
+    #expect(result.outputHeight == 4)
+    #expect(try samplePixel(at: result.outputURL, x: 0, y: 0) == TestPixel(red: 20, green: 40, blue: 180, alpha: 255))
+    #expect(try samplePixel(at: result.outputURL, x: 4, y: 3) == TestPixel(red: 60, green: 100, blue: 180, alpha: 255))
+}
+
 @MainActor
 private func waitForCondition(_ condition: @escaping @MainActor () -> Bool) async -> Bool {
     for _ in 0..<100 {
@@ -232,6 +313,87 @@ private func writeTestImage(_ url: URL, width: Int, height: Int) throws {
     let destination = try #require(CGImageDestinationCreateWithURL(
         url as CFURL,
         UTType.jpeg.identifier as CFString,
+        1,
+        nil
+    ))
+    CGImageDestinationAddImage(destination, image, nil)
+    #expect(CGImageDestinationFinalize(destination))
+}
+
+private struct TestPixel: Equatable {
+    let red: UInt8
+    let green: UInt8
+    let blue: UInt8
+    let alpha: UInt8
+}
+
+private func writeTestGridPNGImage(_ url: URL, width: Int, height: Int) throws {
+    var pixels = [UInt8](repeating: 255, count: width * height * 4)
+    for y in 0..<height {
+        for x in 0..<width {
+            let offset = ((y * width) + x) * 4
+            pixels[offset] = UInt8(x * 10)
+            pixels[offset + 1] = UInt8(y * 20)
+            pixels[offset + 2] = 180
+            pixels[offset + 3] = 255
+        }
+    }
+    try writeRGBAImage(url, width: width, height: height, pixels: pixels, typeIdentifier: UTType.png.identifier)
+}
+
+private func samplePixel(at url: URL, x: Int, y: Int) throws -> TestPixel {
+    let source = try #require(CGImageSourceCreateWithURL(url as CFURL, nil))
+    let image = try #require(CGImageSourceCreateImageAtIndex(source, 0, nil))
+    let width = image.width
+    let height = image.height
+    var pixels = [UInt8](repeating: 0, count: width * height * 4)
+    let context = try #require(CGContext(
+        data: &pixels,
+        width: width,
+        height: height,
+        bitsPerComponent: 8,
+        bytesPerRow: width * 4,
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    ))
+    context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+    let clampedX = min(max(x, 0), width - 1)
+    let clampedY = min(max(y, 0), height - 1)
+    let offset = ((clampedY * width) + clampedX) * 4
+    return TestPixel(
+        red: pixels[offset],
+        green: pixels[offset + 1],
+        blue: pixels[offset + 2],
+        alpha: pixels[offset + 3]
+    )
+}
+
+private func writeRGBAImage(
+    _ url: URL,
+    width: Int,
+    height: Int,
+    pixels: [UInt8],
+    typeIdentifier: String
+) throws {
+    let data = Data(pixels)
+    let provider = try #require(CGDataProvider(data: data as CFData))
+    let image = try #require(CGImage(
+        width: width,
+        height: height,
+        bitsPerComponent: 8,
+        bitsPerPixel: 32,
+        bytesPerRow: width * 4,
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+        provider: provider,
+        decode: nil,
+        shouldInterpolate: false,
+        intent: .defaultIntent
+    ))
+    let destination = try #require(CGImageDestinationCreateWithURL(
+        url as CFURL,
+        typeIdentifier as CFString,
         1,
         nil
     ))

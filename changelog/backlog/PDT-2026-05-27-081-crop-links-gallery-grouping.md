@@ -2,7 +2,7 @@
 
 item_id: PDT-2026-05-27-081
 title: Crop links and gallery grouping
-status: proposed
+status: approved_for_implementation
 target_release_version: 0.2.37
 target_feature_slug: crop-links-gallery-grouping
 
