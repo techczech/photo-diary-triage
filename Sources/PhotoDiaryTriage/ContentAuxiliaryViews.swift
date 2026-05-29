@@ -681,7 +681,6 @@ struct FullPhotoSheet: View {
     @State private var zoom: CGFloat = 1
     @State private var viewport = CompareViewport.zero
     @State private var visibleCropRect = CropNormalizedRect.fullFrame
-    @State private var isManualCropEnabled = false
     @State private var pendingManualCropRect: CropNormalizedRect?
     @State private var panCommand = ComparePanCommand.idle
 
@@ -697,7 +696,7 @@ struct FullPhotoSheet: View {
                 isFocused: true,
                 onArrow: { dx, dy, extending in
                     // While a crop is pending, arrows nudge the crop rect; Shift takes a larger step.
-                    if isManualCropEnabled, let rect = pendingManualCropRect {
+                    if let rect = pendingManualCropRect {
                         let step = extending ? 0.02 : 0.004
                         pendingManualCropRect = CropSelectionGeometry.nudgedNormalizedRect(rect, dx: dx, dy: dy, step: step)
                         return
@@ -737,14 +736,14 @@ struct FullPhotoSheet: View {
                 },
                 onSpace: { },
                 onOpen: {
-                    // Enter commits a usable pending crop.
-                    if isManualCropEnabled, pendingManualCropRect?.isUsableCrop == true {
+                    // Return commits a usable pending crop.
+                    if pendingManualCropRect?.isUsableCrop == true {
                         applyManualCrop(for: displayItem)
                     }
                 },
                 onCommandOpen: { },
                 onEscape: {
-                    if isManualCropEnabled {
+                    if pendingManualCropRect != nil {
                         cancelManualCrop()
                     } else {
                         dismiss()
@@ -782,7 +781,6 @@ struct FullPhotoSheet: View {
                 viewport = .zero
                 panCommand = .idle
                 visibleCropRect = .fullFrame
-                isManualCropEnabled = false
                 pendingManualCropRect = nil
             }
 
@@ -827,17 +825,15 @@ struct FullPhotoSheet: View {
                     viewport: $viewport,
                     visibleCropRect: $visibleCropRect,
                     panCommand: panCommand,
-                    isCropSelectionEnabled: isManualCropEnabled,
+                    isCropSelectionEnabled: true,
                     manualCropRect: $pendingManualCropRect,
                     onManualCropSelectionChanged: { rect in
                         pendingManualCropRect = rect
                         if rect != nil {
-                            appState.statusMessage = "Crop area selected. Adjust it, then Save Crop."
+                            appState.statusMessage = "Crop area selected — drag to adjust, then click Crop (or press Return)."
                         }
                     },
-                    onManualCropRejected: {
-                        appState.statusMessage = "Drag a larger crop area before releasing."
-                    }
+                    onManualCropRejected: { }
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -849,16 +845,7 @@ struct FullPhotoSheet: View {
             viewport = .zero
             panCommand = .idle
             visibleCropRect = .fullFrame
-            isManualCropEnabled = false
             pendingManualCropRect = nil
-        }
-        .onChange(of: isManualCropEnabled) { _, enabled in
-            if enabled {
-                appState.statusMessage = "Drag Crop on. Drag to select, adjust the rectangle, then Save Crop."
-            } else if pendingManualCropRect != nil {
-                pendingManualCropRect = nil
-                appState.statusMessage = "Cancelled drag crop."
-            }
         }
     }
 
@@ -880,29 +867,21 @@ struct FullPhotoSheet: View {
                     Label("Crop Visible", systemImage: "crop")
                 }
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.bordered)
             .controlSize(.small)
             .disabled(isSavingCrop || visibleCropRect.isEffectivelyFullFrame)
             .shortcutHint("V", help: "Save a crop from the current zoomed view")
 
-            Toggle(isOn: $isManualCropEnabled) {
-                Label("Drag Crop", systemImage: "selection.pin.in.out")
-            }
-            .toggleStyle(.button)
-            .controlSize(.small)
-            .disabled(isSavingCrop)
-            .help("Drag over the image to define an adjustable crop")
-
-            if isManualCropEnabled || pendingManualCropRect != nil {
+            if pendingManualCropRect != nil {
                 Button {
                     applyManualCrop(for: item)
                 } label: {
-                    Label("Save Crop", systemImage: "checkmark")
+                    Label("Crop", systemImage: "crop")
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
                 .disabled(isSavingCrop || pendingManualCropRect?.isUsableCrop != true)
-                .help("Save the selected crop rectangle")
+                .help("Crop to the selected rectangle (Return)")
 
                 Button {
                     cancelManualCrop()
@@ -911,7 +890,7 @@ struct FullPhotoSheet: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .help("Cancel the pending crop")
+                .help("Clear the crop selection (Escape)")
             }
         }
     }
@@ -929,13 +908,11 @@ struct FullPhotoSheet: View {
         guard !appState.isCropInProgress(for: item) else { return }
         appState.cropMediaItem(item, normalizedRect: rect, trigger: .manualDrag)
         pendingManualCropRect = nil
-        isManualCropEnabled = false
     }
 
     private func cancelManualCrop() {
         pendingManualCropRect = nil
-        isManualCropEnabled = false
-        appState.statusMessage = "Cancelled drag crop."
+        appState.statusMessage = "Cleared crop selection."
     }
 
     @ViewBuilder
@@ -2009,15 +1986,15 @@ final class LockedCompareCanvasView: NSScrollView {
     override func resetCursorRects() {
         super.resetCursorRects()
         if isCropSelectionEnabled {
-            addCursorRect(bounds, cursor: .crosshair)
-            if let manualCropDocumentRect {
-                addCursorRect(imageView.convert(manualCropDocumentRect, to: self), cursor: .openHand)
+            addValidatedCursorRect(bounds, cursor: .crosshair)
+            if let manualCropDocumentRect, manualCropDocumentRect.width > 1, manualCropDocumentRect.height > 1 {
+                addValidatedCursorRect(imageView.convert(manualCropDocumentRect, to: self), cursor: .openHand)
                 // Edge bands first, then corner squares on top, matching the hit-test order.
                 for (handle, band) in CropSelectionGeometry.edgeHitBands(in: manualCropDocumentRect, tolerance: cropHandleTolerance) {
-                    addCursorRect(imageView.convert(band, to: self), cursor: cropCursor(for: handle))
+                    addValidatedCursorRect(imageView.convert(band, to: self), cursor: cropCursor(for: handle))
                 }
                 for handle in [CropSelectionHandle.topLeft, .topRight, .bottomRight, .bottomLeft] {
-                    addCursorRect(
+                    addValidatedCursorRect(
                         imageView.convert(
                             CropSelectionGeometry.handleRect(for: handle, in: manualCropDocumentRect, tolerance: cropHandleTolerance),
                             to: self
@@ -2027,8 +2004,17 @@ final class LockedCompareCanvasView: NSScrollView {
                 }
             }
         } else if canPointerPan {
-            addCursorRect(bounds, cursor: .openHand)
+            addValidatedCursorRect(bounds, cursor: .openHand)
         }
+    }
+
+    /// `addCursorRect` raises an exception on empty or non-finite rects; skip those.
+    private func addValidatedCursorRect(_ rect: NSRect, cursor: NSCursor) {
+        let standardized = rect.standardized
+        guard standardized.width > 0, standardized.height > 0,
+              standardized.origin.x.isFinite, standardized.origin.y.isFinite,
+              standardized.size.width.isFinite, standardized.size.height.isFinite else { return }
+        addCursorRect(standardized, cursor: cursor)
     }
 
     override func mouseDown(with event: NSEvent) {

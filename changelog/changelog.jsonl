@@ -173,3 +173,4 @@
 {"ts":"2026-05-29T09:46:55Z","item_id":"PDT-2026-05-29-087","event":"report_created","status":"implemented","title":"Computer Use accessibility state","file":"changelog/changelog/PDT-2026-05-29-087-computer-use-accessibility-state-report.md"}
 {"ts":"2026-05-29T10:05:00Z","item_id":"PDT-2026-05-29-088","event":"report_created","status":"implemented","title":"speed optimization pass","file":"changelog/changelog/PDT-2026-05-29-088-speed-optimization-pass-report.md"}
 {"ts":"2026-05-29T11:50:00Z","item_id":"PDT-2026-05-29-092","event":"report_created","status":"implemented","title":"crop overlay rework","file":"changelog/changelog/PDT-2026-05-29-092-crop-overlay-rework-report.md"}
+{"ts":"2026-05-29T19:56:00Z","item_id":"PDT-2026-05-29-093","event":"report_created","status":"implemented","title":"crop drag no-mode + crash fix","file":"changelog/changelog/PDT-2026-05-29-093-crop-drag-no-mode-and-crash-fix-report.md"}
