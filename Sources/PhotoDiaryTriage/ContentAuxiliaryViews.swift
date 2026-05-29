@@ -1901,8 +1901,27 @@ struct LockedCompareImageCanvas: NSViewRepresentable {
     }
 }
 
+/// The document view inside `LockedCompareCanvasView`. A plain `NSImageView` (an `NSControl`)
+/// swallows mouse-down via cell tracking, so the enclosing scroll view never sees the drag.
+/// This subclass forwards mouse events to the canvas so crop-drag and pointer-pan actually work.
+final class CropCanvasImageView: NSImageView {
+    weak var eventHandler: LockedCompareCanvasView?
+
+    override func mouseDown(with event: NSEvent) {
+        eventHandler?.handleCanvasMouseDown(with: event)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        eventHandler?.handleCanvasMouseDragged(with: event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        eventHandler?.handleCanvasMouseUp(with: event)
+    }
+}
+
 final class LockedCompareCanvasView: NSScrollView {
-    private let imageView = NSImageView()
+    private let imageView = CropCanvasImageView()
     private weak var currentImage: NSImage?
     private var currentImageSize: CGSize = .zero
     private var currentZoom: CGFloat = 1
@@ -1971,6 +1990,7 @@ final class LockedCompareCanvasView: NSScrollView {
         imageView.layer?.addSublayer(cropGridLayer)
         imageView.layer?.addSublayer(cropHandleLayer)
         documentView = imageView
+        imageView.eventHandler = self
     }
 
     @available(*, unavailable)
@@ -2018,6 +2038,10 @@ final class LockedCompareCanvasView: NSScrollView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        handleCanvasMouseDown(with: event)
+    }
+
+    func handleCanvasMouseDown(with event: NSEvent) {
         guard isCropSelectionEnabled else {
             if canPointerPan {
                 beginPointerPan(with: event)
@@ -2044,6 +2068,10 @@ final class LockedCompareCanvasView: NSScrollView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        handleCanvasMouseDragged(with: event)
+    }
+
+    func handleCanvasMouseDragged(with event: NSEvent) {
         if isPointerPanning {
             continuePointerPan(with: event)
             return
@@ -2056,6 +2084,10 @@ final class LockedCompareCanvasView: NSScrollView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        handleCanvasMouseUp(with: event)
+    }
+
+    func handleCanvasMouseUp(with event: NSEvent) {
         if isPointerPanning {
             finishPointerPan()
             return
