@@ -287,6 +287,84 @@ import UniformTypeIdentifiers
     #expect(try samplePixel(at: result.outputURL, x: 4, y: 3) == TestPixel(red: 60, green: 100, blue: 180, alpha: 255))
 }
 
+@Test func cropServiceCleansTemporaryFileAndFallsBackToBoundedJpegOutput() throws {
+    let root = try makeTemporaryDirectory()
+    let sourceURL = root.appendingPathComponent("GRID.source")
+    try writeTestGridPNGImage(sourceURL, width: 60, height: 40)
+    let item = MediaItem(
+        sourceURL: sourceURL,
+        relativePath: "GRID.source",
+        fileName: "GRID.source",
+        baseName: "GRID",
+        mediaKind: .other,
+        fileSizeBytes: Int64((try Data(contentsOf: sourceURL)).count),
+        capturedAt: Date(timeIntervalSince1970: 0),
+        metadata: MediaMetadata(
+            capturedAt: Date(timeIntervalSince1970: 0),
+            pixelWidth: 60,
+            pixelHeight: 40,
+            cameraModel: nil,
+            lensModel: nil,
+            latitude: nil,
+            longitude: nil,
+            raw: [:]
+        ),
+        thumbnailCacheKey: "crop-temp"
+    )
+
+    let result = try CropService().crop(
+        item: item,
+        normalizedRect: CropNormalizedRect(x: 0.1, y: 0.1, width: 0.6, height: 0.6),
+        trigger: .manualDrag,
+        appRelease: AppRelease(version: "test", build: "1", featureSlug: "crop-temp")
+    )
+
+    let siblingNames = try FileManager.default.contentsOfDirectory(atPath: root.path)
+    #expect(result.outputURL.pathExtension == "jpg")
+    #expect(result.outputWidth == 36)
+    #expect(result.outputHeight == 24)
+    #expect(!siblingNames.contains { $0.hasPrefix(".GRID-cropped-") && $0.contains(".tmp") })
+    #expect((try Data(contentsOf: result.outputURL)).count < 250_000)
+}
+
+@Test func cropServiceRemovesOutputWhenManifestWriteFails() throws {
+    let root = try makeTemporaryDirectory()
+    let sourceURL = root.appendingPathComponent("IMG_0003.jpg")
+    let manifestURL = root.appendingPathComponent("IMG_0003.crops.json", isDirectory: true)
+    let expectedOutputURL = root.appendingPathComponent("IMG_0003-cropped.jpg")
+    try writeTestJPEGImage(sourceURL, width: 100, height: 80)
+    try FileManager.default.createDirectory(at: manifestURL, withIntermediateDirectories: false)
+    let item = MediaItem(
+        sourceURL: sourceURL,
+        relativePath: "IMG_0003.jpg",
+        fileName: "IMG_0003.jpg",
+        baseName: "IMG_0003",
+        mediaKind: .jpeg,
+        fileSizeBytes: Int64((try Data(contentsOf: sourceURL)).count),
+        capturedAt: Date(timeIntervalSince1970: 0),
+        metadata: makeTestMetadata(capturedAt: Date(timeIntervalSince1970: 0)),
+        thumbnailCacheKey: "crop-manifest-failure"
+    )
+
+    do {
+        _ = try CropService().crop(
+            item: item,
+            normalizedRect: CropNormalizedRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5),
+            trigger: .visibleZoom,
+            appRelease: AppRelease(version: "test", build: "1", featureSlug: "crop-manifest-failure")
+        )
+        Issue.record("Expected crop manifest write failure.")
+    } catch CropServiceError.cannotWriteManifest(let path) {
+        #expect(path == manifestURL.path)
+    } catch {
+        Issue.record("Unexpected crop error: \(error)")
+    }
+
+    let siblingNames = try FileManager.default.contentsOfDirectory(atPath: root.path)
+    #expect(!FileManager.default.fileExists(atPath: expectedOutputURL.path))
+    #expect(!siblingNames.contains { $0.hasPrefix(".IMG_0003-cropped-") && $0.contains(".tmp") })
+}
+
 @MainActor
 private func waitForCondition(_ condition: @escaping @MainActor () -> Bool) async -> Bool {
     for _ in 0..<100 {

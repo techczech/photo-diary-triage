@@ -169,3 +169,4 @@
 {"ts":"2026-05-28T08:38:53Z","item_id":"PDT-2026-05-27-082","event":"report_created","status":"implemented","title":"drag crop affordances","file":"changelog/changelog/PDT-2026-05-27-082-drag-crop-affordances-report.md"}
 {"ts":"2026-05-28T08:44:21Z","item_id":"PDT-2026-05-27-083","event":"report_created","status":"implemented","title":"mouse zoom and pan","file":"changelog/changelog/PDT-2026-05-27-083-mouse-zoom-pan-report.md"}
 {"ts":"2026-05-28T08:50:35Z","item_id":"PDT-2026-05-28-084","event":"report_created","status":"implemented","title":"responsiveness and Computer check","file":"changelog/changelog/PDT-2026-05-28-084-responsiveness-and-computer-check-report.md"}
+{"ts":"2026-05-29T09:20:59Z","item_id":"PDT-2026-05-28-085","event":"report_created","status":"implemented","title":"crop interaction repair","file":"changelog/changelog/PDT-2026-05-28-085-crop-interaction-repair-report.md"}

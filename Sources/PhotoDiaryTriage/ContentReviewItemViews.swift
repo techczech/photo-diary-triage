@@ -140,6 +140,11 @@ struct ReviewGridCard: View {
             )
             .frame(height: CGFloat(ReviewGridMetrics.thumbnailHeight(for: cardWidth)))
             .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay {
+                if snapshot.thumbnailFailed == false {
+                    ReviewGridClickTarget(onClick: onClick)
+                }
+            }
 
             HStack(alignment: .center, spacing: 6) {
                 Text(metadataSummary)
@@ -155,6 +160,10 @@ struct ReviewGridCard: View {
                     .padding(.vertical, 4)
                     .background(statusBadgeColor(for: snapshot.displayStatusKind))
                     .clipShape(Capsule())
+            }
+            .contentShape(Rectangle())
+            .overlay {
+                ReviewGridClickTarget(onClick: onClick)
             }
 
             if let ownership = snapshot.sourceLogOwnership {
@@ -181,9 +190,6 @@ struct ReviewGridCard: View {
         }
         .contentShape(RoundedRectangle(cornerRadius: 12))
         .shortcutHint("Shift-click / Cmd-click / Double-click", help: "Click to select. Shift-click extends the selection, Command-click toggles selection, and double-click opens preview.")
-        .background {
-            ReviewGridClickTarget(onClick: onClick)
-        }
     }
 
     @ViewBuilder

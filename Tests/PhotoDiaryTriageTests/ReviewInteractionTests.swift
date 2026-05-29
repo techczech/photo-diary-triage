@@ -175,6 +175,66 @@ import Testing
     #expect(CanvasZoomPanMath.zoom(from: 0.3, multiplier: 0.2) == 0.25)
 }
 
+@Test func cropGeometryMapperConvertsNormalizedRectBackToDocumentRect() throws {
+    let documentRect = try #require(CropGeometryMapper.documentRect(
+        normalizedRect: CropNormalizedRect(x: 0.25, y: 0.2, width: 0.5, height: 0.4),
+        documentSize: CGSize(width: 800, height: 600)
+    ))
+
+    #expect(documentRect == CGRect(x: 200, y: 240, width: 400, height: 240))
+}
+
+@Test func cropSelectionGeometryCreatesMovesAndResizesWithinBounds() {
+    let documentSize = CGSize(width: 300, height: 220)
+    let startRect = CGRect(x: 80, y: 60, width: 120, height: 80)
+
+    let created = CropSelectionGeometry.updatedRect(
+        mode: .create,
+        startRect: nil,
+        startPoint: CGPoint(x: 260, y: 190),
+        currentPoint: CGPoint(x: 100, y: 70),
+        documentSize: documentSize
+    )
+    let moved = CropSelectionGeometry.updatedRect(
+        mode: .move,
+        startRect: startRect,
+        startPoint: CGPoint(x: 100, y: 100),
+        currentPoint: CGPoint(x: 500, y: 500),
+        documentSize: documentSize
+    )
+    let resized = CropSelectionGeometry.updatedRect(
+        mode: .resize(.topLeft),
+        startRect: startRect,
+        startPoint: CGPoint(x: 80, y: 140),
+        currentPoint: CGPoint(x: 40, y: 180),
+        documentSize: documentSize
+    )
+
+    #expect(created == CGRect(x: 100, y: 70, width: 160, height: 120))
+    #expect(moved == CGRect(x: 180, y: 140, width: 120, height: 80))
+    #expect(resized == CGRect(x: 40, y: 60, width: 160, height: 120))
+}
+
+@Test func cropSelectionGeometryChoosesHandlesBeforeMove() {
+    let selection = CGRect(x: 80, y: 60, width: 120, height: 80)
+
+    #expect(CropSelectionGeometry.dragMode(
+        at: CGPoint(x: 80, y: 140),
+        in: selection,
+        tolerance: 10
+    ) == .resize(.topLeft))
+    #expect(CropSelectionGeometry.dragMode(
+        at: CGPoint(x: 140, y: 100),
+        in: selection,
+        tolerance: 10
+    ) == .move)
+    #expect(CropSelectionGeometry.dragMode(
+        at: CGPoint(x: 40, y: 40),
+        in: selection,
+        tolerance: 10
+    ) == nil)
+}
+
 @Test func compareKeyboardPanDirectionMapsVimKeys() {
     #expect(CompareKeyboardPanDirection(key: "h") == .left)
     #expect(CompareKeyboardPanDirection(key: "j") == .down)

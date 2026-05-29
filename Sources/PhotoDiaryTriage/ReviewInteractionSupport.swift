@@ -220,6 +220,172 @@ struct CanvasZoomPanMath {
     }
 }
 
+enum CropSelectionHandle: Equatable, Sendable, CaseIterable {
+    case topLeft
+    case top
+    case topRight
+    case right
+    case bottomRight
+    case bottom
+    case bottomLeft
+    case left
+}
+
+enum CropSelectionDragMode: Equatable, Sendable {
+    case create
+    case move
+    case resize(CropSelectionHandle)
+}
+
+struct CropSelectionGeometry {
+    static func dragMode(at point: CGPoint, in selection: CGRect, tolerance: CGFloat) -> CropSelectionDragMode? {
+        for handle in CropSelectionHandle.allCases {
+            if handleRect(for: handle, in: selection, tolerance: tolerance).contains(point) {
+                return .resize(handle)
+            }
+        }
+        if selection.contains(point) {
+            return .move
+        }
+        return nil
+    }
+
+    static func updatedRect(
+        mode: CropSelectionDragMode,
+        startRect: CGRect?,
+        startPoint: CGPoint,
+        currentPoint: CGPoint,
+        documentSize: CGSize
+    ) -> CGRect {
+        switch mode {
+        case .create:
+            return CropGeometryMapper.standardizedDocumentRect(
+                start: startPoint,
+                end: currentPoint,
+                documentSize: documentSize
+            )
+        case .move:
+            guard let startRect else { return .zero }
+            return movedRect(
+                startRect,
+                by: CGSize(width: currentPoint.x - startPoint.x, height: currentPoint.y - startPoint.y),
+                documentSize: documentSize
+            )
+        case .resize(let handle):
+            guard let startRect else { return .zero }
+            return resizedRect(
+                startRect,
+                handle: handle,
+                currentPoint: currentPoint,
+                documentSize: documentSize
+            )
+        }
+    }
+
+    static func handleRect(for handle: CropSelectionHandle, in selection: CGRect, tolerance: CGFloat) -> CGRect {
+        let side = max(tolerance * 2, 8)
+        let center = handlePoint(for: handle, in: selection)
+        return CGRect(x: center.x - side / 2, y: center.y - side / 2, width: side, height: side)
+    }
+
+    static func handleRects(in selection: CGRect, tolerance: CGFloat) -> [CGRect] {
+        CropSelectionHandle.allCases.map { handleRect(for: $0, in: selection, tolerance: tolerance) }
+    }
+
+    private static func handlePoint(for handle: CropSelectionHandle, in selection: CGRect) -> CGPoint {
+        switch handle {
+        case .topLeft:
+            return CGPoint(x: selection.minX, y: selection.maxY)
+        case .top:
+            return CGPoint(x: selection.midX, y: selection.maxY)
+        case .topRight:
+            return CGPoint(x: selection.maxX, y: selection.maxY)
+        case .right:
+            return CGPoint(x: selection.maxX, y: selection.midY)
+        case .bottomRight:
+            return CGPoint(x: selection.maxX, y: selection.minY)
+        case .bottom:
+            return CGPoint(x: selection.midX, y: selection.minY)
+        case .bottomLeft:
+            return CGPoint(x: selection.minX, y: selection.minY)
+        case .left:
+            return CGPoint(x: selection.minX, y: selection.midY)
+        }
+    }
+
+    private static func movedRect(_ rect: CGRect, by translation: CGSize, documentSize: CGSize) -> CGRect {
+        clampedRect(
+            CGRect(
+                x: rect.minX + translation.width,
+                y: rect.minY + translation.height,
+                width: rect.width,
+                height: rect.height
+            ),
+            documentSize: documentSize
+        )
+    }
+
+    private static func resizedRect(
+        _ rect: CGRect,
+        handle: CropSelectionHandle,
+        currentPoint: CGPoint,
+        documentSize: CGSize
+    ) -> CGRect {
+        let point = CGPoint(
+            x: min(max(currentPoint.x, 0), max(documentSize.width, 0)),
+            y: min(max(currentPoint.y, 0), max(documentSize.height, 0))
+        )
+        var minX = rect.minX
+        var maxX = rect.maxX
+        var minY = rect.minY
+        var maxY = rect.maxY
+
+        switch handle {
+        case .topLeft:
+            minX = point.x
+            maxY = point.y
+        case .top:
+            maxY = point.y
+        case .topRight:
+            maxX = point.x
+            maxY = point.y
+        case .right:
+            maxX = point.x
+        case .bottomRight:
+            maxX = point.x
+            minY = point.y
+        case .bottom:
+            minY = point.y
+        case .bottomLeft:
+            minX = point.x
+            minY = point.y
+        case .left:
+            minX = point.x
+        }
+
+        return clampedRect(
+            CGRect(
+                x: min(minX, maxX),
+                y: min(minY, maxY),
+                width: abs(maxX - minX),
+                height: abs(maxY - minY)
+            ),
+            documentSize: documentSize
+        )
+    }
+
+    private static func clampedRect(_ rect: CGRect, documentSize: CGSize) -> CGRect {
+        let width = min(max(rect.width, 0), max(documentSize.width, 0))
+        let height = min(max(rect.height, 0), max(documentSize.height, 0))
+        return CGRect(
+            x: min(max(rect.minX, 0), max(documentSize.width - width, 0)),
+            y: min(max(rect.minY, 0), max(documentSize.height - height, 0)),
+            width: width,
+            height: height
+        )
+    }
+}
+
 enum CompareKeyboardPanDirection: Equatable, Sendable {
     case left
     case down
