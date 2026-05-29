@@ -369,9 +369,26 @@ final class AppState: ObservableObject {
     private var cachedSourceLogOwnershipPersistedGeneration: Int = -1
     private var cachedSourceLogOwnershipByRelativePath: [String: SourceLogOwnershipSnapshot] = [:]
     private var activePhotoLogMembershipEditID: UUID?
+    private var cachedGroupedReviewSectionsGeneration: Int = -1
+    private var cachedGroupedReviewSectionsMode: DayOrganizationMode = .days
+    private var cachedGroupedReviewSections: [GroupedReviewSection] = []
+    private var refreshTransactionDepth = 0
+    private var pendingRefreshes: PendingRefreshKinds = []
+
+    private struct PendingRefreshKinds: OptionSet {
+        let rawValue: Int
+        static let sidebar = PendingRefreshKinds(rawValue: 1 << 0)
+        static let review = PendingRefreshKinds(rawValue: 1 << 1)
+        static let navigation = PendingRefreshKinds(rawValue: 1 << 2)
+        static let inspector = PendingRefreshKinds(rawValue: 1 << 3)
+        static let compare = PendingRefreshKinds(rawValue: 1 << 4)
+        static let presentation = PendingRefreshKinds(rawValue: 1 << 5)
+    }
 
     init(testing: Bool = false) {
         self.fileManager = .default
+        thumbnailImageCache.countLimit = 512
+        thumbnailImageCache.totalCostLimit = 256 * 1024 * 1024
         self.sourceWorkspaceFolderResolver = SourceWorkspaceFolderResolver(fileManager: self.fileManager)
         self.supportRoot = AppPaths.supportRoot()
         let settingsStore = SettingsStore(fileURL: self.supportRoot.appendingPathComponent("settings.json"))
@@ -629,7 +646,16 @@ final class AppState: ObservableObject {
     }
 
     var groupedReviewSections: [GroupedReviewSection] {
-        inlineSectionOrganizer.groupedReviewSections(from: organizedInlineSections)
+        if cachedGroupedReviewSectionsGeneration == inlineSectionCacheGeneration,
+           cachedGroupedReviewSectionsMode == dayOrganizationMode {
+            return cachedGroupedReviewSections
+        }
+
+        let sections = inlineSectionOrganizer.groupedReviewSections(from: organizedInlineSections)
+        cachedGroupedReviewSectionsGeneration = inlineSectionCacheGeneration
+        cachedGroupedReviewSectionsMode = dayOrganizationMode
+        cachedGroupedReviewSections = sections
+        return sections
     }
 
     var canFocusReviewSurface: Bool {
@@ -2127,25 +2153,29 @@ final class AppState: ObservableObject {
     }
 
     func revealInlineMediaItem(_ itemID: UUID, sectionPath: [String]) {
-        expandedInlineSectionIDs.formUnion(sectionPath)
-        selectInlineMediaItem(itemID)
-        focusedInlineSectionID = sectionPath.last
-        focusedReviewItemID = itemID
-        activePane = .media
-        reviewKeyboardTarget = .items
+        withCoalescedRefreshes {
+            expandedInlineSectionIDs.formUnion(sectionPath)
+            selectInlineMediaItem(itemID)
+            focusedInlineSectionID = sectionPath.last
+            focusedReviewItemID = itemID
+            activePane = .media
+            reviewKeyboardTarget = .items
+        }
         DispatchQueue.main.async { [weak self] in
             self?.pendingInlineScrollTargetID = itemID
         }
     }
 
     func selectInlineMediaItem(_ itemID: UUID) {
-        previewingMediaItemID = nil
-        selectMediaItems([itemID])
-        syncFocusedInlineSectionToFocusedItem()
-        focusedReviewItemID = itemID
-        activePane = .media
-        reviewGridHasFocus = true
-        reviewKeyboardTarget = .items
+        withCoalescedRefreshes {
+            previewingMediaItemID = nil
+            selectMediaItems([itemID])
+            syncFocusedInlineSectionToFocusedItem()
+            focusedReviewItemID = itemID
+            activePane = .media
+            reviewGridHasFocus = true
+            reviewKeyboardTarget = .items
+        }
     }
 
     func previewItems(for section: InlineSection, limit: Int = 18) -> [MediaItem] {
@@ -2155,9 +2185,11 @@ final class AppState: ObservableObject {
     }
 
     func selectFolderNodes(_ nodeIDs: Set<String>) {
-        selectedFolderNodeIDs = nodeIDs
-        activePane = .folders
-        selectedMediaItemIDs.removeAll()
+        withCoalescedRefreshes {
+            selectedFolderNodeIDs = nodeIDs
+            activePane = .folders
+            selectedMediaItemIDs.removeAll()
+        }
     }
 
     func selectMediaItems(_ itemIDs: Set<UUID>) {
@@ -2384,29 +2416,33 @@ final class AppState: ObservableObject {
         guard let section = focusedInlineSection else { return }
         let scopedItemIDs = resolvedMediaItemIDs(in: section)
         guard !scopedItemIDs.isEmpty else { return }
-        drilledInlineSectionID = section.id
-        drilledInlineSectionMediaItemIDs = scopedItemIDs
-        dayDetailDisplayMode = .review
-        reviewKeyboardTarget = .items
-        activePane = .media
-        reviewGridHasFocus = true
-        if let firstID = scopedItemIDs.first {
-            selectedMediaItemIDs = [firstID]
-            focusedReviewItemID = firstID
-            reviewSelectionAnchorID = firstID
-            pendingReviewScrollTargetID = firstID
+        withCoalescedRefreshes {
+            drilledInlineSectionID = section.id
+            drilledInlineSectionMediaItemIDs = scopedItemIDs
+            dayDetailDisplayMode = .review
+            reviewKeyboardTarget = .items
+            activePane = .media
+            reviewGridHasFocus = true
+            if let firstID = scopedItemIDs.first {
+                selectedMediaItemIDs = [firstID]
+                focusedReviewItemID = firstID
+                reviewSelectionAnchorID = firstID
+                pendingReviewScrollTargetID = firstID
+            }
+            statusMessage = "Opened \(section.title)."
         }
-        statusMessage = "Opened \(section.title)."
     }
 
     func navigatePreview(by offset: Int) {
         guard let targetID = previewNavigationOffset(offset) else { return }
-        preheatDisplayImages(around: targetID, in: reviewInteractionItems, radius: 2)
-        previewingMediaItemID = targetID
-        focusedReviewItemID = targetID
-        selectedMediaItemIDs = [targetID]
-        reviewSelectionAnchorID = targetID
-        activePane = .media
+        withCoalescedRefreshes {
+            preheatDisplayImages(around: targetID, in: reviewInteractionItems, radius: 2)
+            previewingMediaItemID = targetID
+            focusedReviewItemID = targetID
+            selectedMediaItemIDs = [targetID]
+            reviewSelectionAnchorID = targetID
+            activePane = .media
+        }
     }
 
     func isCropInProgress(for item: MediaItem) -> Bool {
@@ -3125,19 +3161,21 @@ final class AppState: ObservableObject {
     }
 
     private func applyReviewSelectionState(_ state: ReviewSelectionState) {
-        let previousFocusedReviewItemID = focusedReviewItemID
-        selectedMediaItemIDs = state.selectedMediaItemIDs
-        focusedReviewItemID = state.focusedReviewItemID
-        reviewSelectionAnchorID = state.reviewSelectionAnchorID
-        activePane = state.activePane
-        reviewGridHasFocus = state.reviewGridHasFocus
-        if state.activePane == .media, state.reviewGridHasFocus {
-            reviewKeyboardTarget = .items
-        }
-        if state.activePane == .media,
-           state.reviewGridHasFocus,
-           focusedReviewItemID != previousFocusedReviewItemID {
-            requestReviewScrollIfNeeded(to: focusedReviewItemID)
+        withCoalescedRefreshes {
+            let previousFocusedReviewItemID = focusedReviewItemID
+            selectedMediaItemIDs = state.selectedMediaItemIDs
+            focusedReviewItemID = state.focusedReviewItemID
+            reviewSelectionAnchorID = state.reviewSelectionAnchorID
+            activePane = state.activePane
+            reviewGridHasFocus = state.reviewGridHasFocus
+            if state.activePane == .media, state.reviewGridHasFocus {
+                reviewKeyboardTarget = .items
+            }
+            if state.activePane == .media,
+               state.reviewGridHasFocus,
+               focusedReviewItemID != previousFocusedReviewItemID {
+                requestReviewScrollIfNeeded(to: focusedReviewItemID)
+            }
         }
     }
 
@@ -3782,16 +3820,78 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Coalesces the snapshot refreshes triggered by a batch of related `@Published`
+    /// mutations into a single refresh per domain. Each `refresh*State()` is a pure
+    /// function of current state, so running it once at the end of the batch yields the
+    /// same final snapshots as running it after every individual mutation — the
+    /// intermediate publishes are wasted work. Runs synchronously: the batch flushes
+    /// before the wrapped call returns, so callers and tests still observe up-to-date
+    /// snapshots immediately afterward.
+    @discardableResult
+    private func withCoalescedRefreshes<T>(_ body: () -> T) -> T {
+        refreshTransactionDepth += 1
+        defer {
+            refreshTransactionDepth -= 1
+            if refreshTransactionDepth == 0 {
+                flushPendingRefreshes()
+            }
+        }
+        return body()
+    }
+
+    private func flushPendingRefreshes() {
+        let kinds = pendingRefreshes
+        pendingRefreshes = []
+        if kinds.contains(.sidebar) { performRefreshSidebarState() }
+        if kinds.contains(.review) { performRefreshReviewState() }
+        if kinds.contains(.navigation) { performRefreshNavigationState() }
+        if kinds.contains(.inspector) { performRefreshInspectorState() }
+        if kinds.contains(.compare) { performRefreshCompareState() }
+        if kinds.contains(.presentation) { performRefreshPresentationState() }
+    }
+
     private func refreshAllUIState() {
-        refreshSidebarState()
-        refreshReviewState()
-        refreshNavigationState()
-        refreshInspectorState()
-        refreshCompareState()
-        refreshPresentationState()
+        withCoalescedRefreshes {
+            refreshSidebarState()
+            refreshReviewState()
+            refreshNavigationState()
+            refreshInspectorState()
+            refreshCompareState()
+            refreshPresentationState()
+        }
     }
 
     private func refreshSidebarState() {
+        if refreshTransactionDepth > 0 { pendingRefreshes.insert(.sidebar); return }
+        performRefreshSidebarState()
+    }
+
+    private func refreshReviewState() {
+        if refreshTransactionDepth > 0 { pendingRefreshes.insert(.review); return }
+        performRefreshReviewState()
+    }
+
+    private func refreshNavigationState() {
+        if refreshTransactionDepth > 0 { pendingRefreshes.insert(.navigation); return }
+        performRefreshNavigationState()
+    }
+
+    private func refreshInspectorState() {
+        if refreshTransactionDepth > 0 { pendingRefreshes.insert(.inspector); return }
+        performRefreshInspectorState()
+    }
+
+    private func refreshCompareState() {
+        if refreshTransactionDepth > 0 { pendingRefreshes.insert(.compare); return }
+        performRefreshCompareState()
+    }
+
+    private func refreshPresentationState() {
+        if refreshTransactionDepth > 0 { pendingRefreshes.insert(.presentation); return }
+        performRefreshPresentationState()
+    }
+
+    private func performRefreshSidebarState() {
         let summary: SessionSummary?
         if let currentSession {
             let counts = triageCounts(for: currentSession.mediaItems)
@@ -3999,7 +4099,7 @@ final class AppState: ObservableObject {
         }
     }
 
-    private func refreshReviewState() {
+    private func performRefreshReviewState() {
         let ownershipByPath = currentSourceLogOwnershipByRelativePath()
         let archiveCopiesByPath = currentSession?.sessionKind == .inbox ? sourceArchiveCopiesByRelativePath : [:]
         let snapshots = visibleMediaItems.map {
@@ -4009,13 +4109,13 @@ final class AppState: ObservableObject {
                 sourceArchiveCopy: archiveCopiesByPath[$0.relativePath]
             )
         }
-        let itemSnapshotsByID = Dictionary(uniqueKeysWithValues: snapshots.map { ($0.id, $0) })
+        let itemSnapshotsByID = ReviewItemSnapshotIndex(Dictionary(uniqueKeysWithValues: snapshots.map { ($0.id, $0) }))
         let canUseGroupedReviewModeValue = canUseGroupedReviewMode
         let isGroupedReviewActive = canUseGroupedReviewModeValue && dayDetailDisplayMode == .sections
         let organizedSections = isGroupedReviewActive ? organizedInlineSections : []
-        let groupedSections = isGroupedReviewActive
-            ? inlineSectionOrganizer.groupedReviewSections(from: organizedSections)
-            : []
+        // `groupedReviewSections` is memoized by `inlineSectionCacheGeneration` + mode, so this
+        // no longer re-runs the organizer transform on every selection-driven review refresh.
+        let groupedSections = isGroupedReviewActive ? groupedReviewSections : []
         let canUseGroupedSectionNavigation = isGroupedReviewActive && !groupedSections.isEmpty
 
         let snapshot = ReviewSnapshot(
@@ -4054,7 +4154,7 @@ final class AppState: ObservableObject {
         reviewState.update(snapshot)
     }
 
-    private func refreshNavigationState() {
+    private func performRefreshNavigationState() {
         let snapshot = ReviewNavigationSnapshot(
             activePane: activePane,
             reviewGridHasFocus: reviewGridHasFocus,
@@ -4067,7 +4167,7 @@ final class AppState: ObservableObject {
         reviewNavigationState.update(snapshot)
     }
 
-    private func refreshInspectorState() {
+    private func performRefreshInspectorState() {
         guard isDetailsInspectorVisible else {
             inspectorState.update(
                 InspectorSnapshot(
@@ -4096,7 +4196,7 @@ final class AppState: ObservableObject {
         inspectorState.update(snapshot)
     }
 
-    private func refreshCompareState() {
+    private func performRefreshCompareState() {
         let ownershipByPath = currentSourceLogOwnershipByRelativePath()
         let archiveCopiesByPath = currentSession?.sessionKind == .inbox ? sourceArchiveCopiesByRelativePath : [:]
         let snapshots = comparingMediaItems.map {
@@ -4115,7 +4215,7 @@ final class AppState: ObservableObject {
         compareState.update(snapshot)
     }
 
-    private func refreshPresentationState() {
+    private func performRefreshPresentationState() {
         let snapshot = PresentationSnapshot(
             showKeyboardHelp: showKeyboardHelp,
             startupAlert: startupAlert,
@@ -4937,6 +5037,13 @@ final class AppState: ObservableObject {
         "thumbnail:\(imageURL.path)"
     }
 
+    private static func thumbnailCacheCost(for image: NSImage) -> Int {
+        let representation = image.representations.first
+        let width = representation?.pixelsWide ?? Int(image.size.width)
+        let height = representation?.pixelsHigh ?? Int(image.size.height)
+        return max(width, 1) * max(height, 1) * 4
+    }
+
     private func decodeThumbnailIfNeeded(from imageURL: URL, itemID: UUID) {
         let path = imageURL.path
         guard thumbnailDecodeTasks[path] == nil else { return }
@@ -4957,7 +5064,7 @@ final class AppState: ObservableObject {
         thumbnailDecodeTasks[imageURL.path] = nil
         if let image {
             missingThumbnailPaths.remove(imageURL.path)
-            thumbnailImageCache.setObject(image, forKey: imageURL as NSURL)
+            thumbnailImageCache.setObject(image, forKey: imageURL as NSURL, cost: Self.thumbnailCacheCost(for: image))
             thumbnailRegistry.update(itemID: itemID, image: image, isMissing: false)
         } else {
             missingThumbnailPaths.insert(imageURL.path)

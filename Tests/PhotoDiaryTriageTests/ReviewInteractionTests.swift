@@ -2081,6 +2081,79 @@ private actor SourceScanGate {
 }
 
 @MainActor
+@Test func singleGridSelectionPublishesReviewStateOnce() {
+    // Regression guard for the refresh-coalescing optimization (PDT-2026-05-29-088).
+    // A single click sets both focus and selection; before coalescing this produced two
+    // distinct review-state publishes (an intermediate focus-only snapshot, then the
+    // focus+selection snapshot). After coalescing it must produce exactly one.
+    let items = makeSelectionItems(count: 6)
+    let state = makeReviewAppState(items: items)
+    state.activateReviewGridFocus()
+
+    let before = state.reviewState.generation
+    state.handleGridSelection(
+        for: items[3].id,
+        click: ReviewGridClickContext(modifiers: [], clickCount: 1)
+    )
+    let after = state.reviewState.generation
+
+    #expect(after - before == 1)
+    #expect(state.selectedMediaItemIDs == [items[3].id])
+    #expect(state.focusedReviewItemID == items[3].id)
+    #expect(state.reviewState.snapshot.selectedMediaItemIDs == [items[3].id])
+    #expect(state.reviewState.snapshot.focusedReviewItemID == items[3].id)
+    #expect(state.reviewState.snapshot.visibleItems.first { $0.id == items[3].id }?.isSelected == true)
+}
+
+@MainActor
+@Test func selectMediaItemsPublishesReviewStateOnce() {
+    // selectMediaItems routes through applyReviewSelectionState; verify a programmatic
+    // selection of a single item yields exactly one review-state publish.
+    let items = makeSelectionItems(count: 5)
+    let state = makeReviewAppState(items: items)
+    state.activateReviewGridFocus()
+
+    let before = state.reviewState.generation
+    state.selectMediaItems([items[1].id])
+    let after = state.reviewState.generation
+
+    #expect(after - before == 1)
+    #expect(state.selectedMediaItemIDs == [items[1].id])
+}
+
+@Test func reviewItemSnapshotIndexEqualityIsDerivedAndLookupWorks() {
+    // The index is derived purely from `visibleItems`, so its `==` is a no-op `true`
+    // (equality of the owning snapshot is decided by `visibleItems`). The subscript must
+    // still resolve ids for grouped-review lookups.
+    let item = MediaItem(
+        sourceURL: URL(fileURLWithPath: "/tmp/idx.jpg"),
+        relativePath: "idx.jpg",
+        fileName: "idx.jpg",
+        baseName: "idx",
+        mediaKind: .jpeg,
+        fileSizeBytes: 1,
+        capturedAt: nil,
+        metadata: MediaMetadata(capturedAt: nil, pixelWidth: nil, pixelHeight: nil, cameraModel: nil, lensModel: nil, latitude: nil, longitude: nil, raw: [:]),
+        thumbnailCacheKey: "idx"
+    )
+    let snapshot = ReviewItemSnapshot(
+        item: item,
+        archivePreview: "",
+        sourceLogOwnership: nil,
+        sourceArchiveCopy: nil,
+        isSelected: false,
+        isFocused: false,
+        thumbnailFailed: false
+    )
+    let populated = ReviewItemSnapshotIndex([item.id: snapshot])
+    let empty = ReviewItemSnapshotIndex([:])
+
+    #expect(populated[item.id]?.id == item.id)
+    #expect(empty[item.id] == nil)
+    #expect(populated == empty)
+}
+
+@MainActor
 private func makeReviewAppState(items: [MediaItem]) -> AppState {
     let state = AppState(testing: true)
     let root = URL(fileURLWithPath: "/tmp/review-state", isDirectory: true)

@@ -656,9 +656,6 @@ struct ReviewPaneView: View {
                             }
                         )
                         .id(item.id)
-                        .onAppear {
-                            appState.requestThumbnail(for: item)
-                        }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -776,9 +773,6 @@ struct ReviewPaneView: View {
                         }
                     }
                 )
-                .onAppear {
-                    appState.requestThumbnail(for: item)
-                }
                 .tag(item.id)
             }
         }
