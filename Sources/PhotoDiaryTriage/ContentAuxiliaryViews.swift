@@ -1984,13 +1984,9 @@ final class LockedCompareCanvasView: NSScrollView {
         cropHandleLayer.strokeColor = NSColor.controlAccentColor.cgColor
         cropHandleLayer.lineWidth = 1.5
         cropHandleLayer.isHidden = true
-        imageView.layer?.addSublayer(visibleCropLayer)
-        imageView.layer?.addSublayer(cropMaskLayer)
-        imageView.layer?.addSublayer(cropSelectionLayer)
-        imageView.layer?.addSublayer(cropGridLayer)
-        imageView.layer?.addSublayer(cropHandleLayer)
         documentView = imageView
         imageView.eventHandler = self
+        ensureCropLayersAttached()
     }
 
     @available(*, unavailable)
@@ -2042,6 +2038,7 @@ final class LockedCompareCanvasView: NSScrollView {
     }
 
     func handleCanvasMouseDown(with event: NSEvent) {
+        logCropDebug("DOWN received crop=\(isCropSelectionEnabled) zoom=\(currentZoom) imgBounds=\(Int(imageView.bounds.width))x\(Int(imageView.bounds.height)) hostLayer=\(imageView.layer != nil)", reset: true)
         guard isCropSelectionEnabled else {
             if canPointerPan {
                 beginPointerPan(with: event)
@@ -2328,11 +2325,7 @@ final class LockedCompareCanvasView: NSScrollView {
             height: max(1, currentImageSize.height * displayScale)
         )
         imageView.frame = NSRect(origin: .zero, size: scaledSize)
-        visibleCropLayer.frame = imageView.bounds
-        cropMaskLayer.frame = imageView.bounds
-        cropSelectionLayer.frame = imageView.bounds
-        cropGridLayer.frame = imageView.bounds
-        cropHandleLayer.frame = imageView.bounds
+        ensureCropLayersAttached()
         if let previousManualCrop {
             manualCropDocumentRect = CropGeometryMapper.documentRect(
                 normalizedRect: previousManualCrop,
@@ -2375,7 +2368,46 @@ final class LockedCompareCanvasView: NSScrollView {
         visibleCropLayer.path = CGPath(rect: visibleRect, transform: nil)
     }
 
+    /// Keeps the crop overlay layers attached to the image view's current backing layer and on top.
+    /// `NSImageView` can rebuild its layer when the image/contents change, orphaning sublayers; this
+    /// re-adds them defensively and reasserts z-order and frame so the overlay always renders.
+    private func ensureCropLayersAttached() {
+        guard let host = imageView.layer else { return }
+        let layered: [(CALayer, CGFloat)] = [
+            (visibleCropLayer, 40),
+            (cropMaskLayer, 50),
+            (cropSelectionLayer, 51),
+            (cropGridLayer, 52),
+            (cropHandleLayer, 53)
+        ]
+        for (layer, z) in layered {
+            if layer.superlayer !== host {
+                host.addSublayer(layer)
+            }
+            layer.zPosition = z
+            layer.frame = imageView.bounds
+        }
+    }
+
+    /// Diagnostic log written to /tmp so crop-drag behavior can be inspected without a debugger.
+    private func logCropDebug(_ message: String, reset: Bool = false) {
+        let url = URL(fileURLWithPath: "/tmp/photodiary-crop-debug.log")
+        guard let data = (message + "\n").data(using: .utf8) else { return }
+        if reset {
+            try? data.write(to: url)
+            return
+        }
+        if let handle = try? FileHandle(forWritingTo: url) {
+            defer { try? handle.close() }
+            handle.seekToEndOfFile()
+            handle.write(data)
+        } else {
+            try? data.write(to: url)
+        }
+    }
+
     private func updateCropSelectionLayer() {
+        ensureCropLayersAttached()
         guard let rect = manualCropDocumentRect else {
             cropMaskLayer.isHidden = true
             cropMaskLayer.path = nil
@@ -2385,6 +2417,7 @@ final class LockedCompareCanvasView: NSScrollView {
             cropGridLayer.path = nil
             cropHandleLayer.isHidden = true
             cropHandleLayer.path = nil
+            logCropDebug("UPDATE rect=nil")
             return
         }
 
@@ -2422,6 +2455,8 @@ final class LockedCompareCanvasView: NSScrollView {
             handlePath.addRect(handleRect)
         }
         cropHandleLayer.path = handlePath
+
+        logCropDebug("UPDATE rect=\(Int(rect.minX)),\(Int(rect.minY)) \(Int(rect.width))x\(Int(rect.height)) tooSmall=\(tooSmall) hostLayer=\(imageView.layer != nil) attached=\(cropMaskLayer.superlayer === imageView.layer) subCount=\(imageView.layer?.sublayers?.count ?? -1) maskHidden=\(cropMaskLayer.isHidden) maskOpacity=\(cropMaskLayer.opacity) maskFrame=\(Int(cropMaskLayer.frame.width))x\(Int(cropMaskLayer.frame.height)) imgBounds=\(Int(imageView.bounds.width))x\(Int(imageView.bounds.height)) imgLayerBounds=\(Int(imageView.layer?.bounds.width ?? -1))x\(Int(imageView.layer?.bounds.height ?? -1))")
     }
 
     private func clearCropSelection() {
