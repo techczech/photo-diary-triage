@@ -366,12 +366,36 @@ struct SidebarSnapshot: Equatable, Sendable {
     )
 }
 
+/// O(1)-lookup index of the visible review snapshots, keyed by item id.
+///
+/// This is derived purely from `ReviewSnapshot.visibleItems` (it is always built as
+/// `Dictionary(visibleItems by id)`), so it can never differ between two snapshots whose
+/// `visibleItems` are equal. Its `==` is therefore a constant `true`: equality of the
+/// owning `ReviewSnapshot` is decided by `visibleItems` and the other fields, and this
+/// index is skipped to avoid comparing the same N item snapshots a second time on every
+/// review-state refresh.
+struct ReviewItemSnapshotIndex: Equatable, Sendable {
+    private let storage: [UUID: ReviewItemSnapshot]
+
+    init(_ storage: [UUID: ReviewItemSnapshot]) {
+        self.storage = storage
+    }
+
+    subscript(_ id: UUID) -> ReviewItemSnapshot? {
+        storage[id]
+    }
+
+    static func == (lhs: ReviewItemSnapshotIndex, rhs: ReviewItemSnapshotIndex) -> Bool {
+        true
+    }
+}
+
 struct ReviewSnapshot: Equatable, Sendable {
     let breadcrumbTitles: [String]
     let contextMediaItemCount: Int
     let detailFolderNodes: [BrowserNode]
     let visibleItems: [ReviewItemSnapshot]
-    let itemSnapshotsByID: [UUID: ReviewItemSnapshot]
+    let itemSnapshotsByID: ReviewItemSnapshotIndex
     let organizedInlineSections: [InlineSection]
     let groupedReviewSections: [GroupedReviewSection]
     let canUseGroupedReviewMode: Bool
@@ -404,7 +428,7 @@ struct ReviewSnapshot: Equatable, Sendable {
         contextMediaItemCount: 0,
         detailFolderNodes: [],
         visibleItems: [],
-        itemSnapshotsByID: [:],
+        itemSnapshotsByID: ReviewItemSnapshotIndex([:]),
         organizedInlineSections: [],
         groupedReviewSections: [],
         canUseGroupedReviewMode: false,
