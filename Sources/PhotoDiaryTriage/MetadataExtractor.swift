@@ -20,8 +20,16 @@ struct MetadataExtractor {
         let pixelHeight = properties[kCGImagePropertyPixelHeight] as? Int
         let cameraModel = tiff?[kCGImagePropertyTIFFModel] as? String
         let lensModel = exif?[kCGImagePropertyExifLensModel] as? String
-        let latitude = gps?[kCGImagePropertyGPSLatitude] as? Double
-        let longitude = gps?[kCGImagePropertyGPSLongitude] as? Double
+        let latitude = Self.signedCoordinate(
+            magnitude: gps?[kCGImagePropertyGPSLatitude] as? Double,
+            ref: gps?[kCGImagePropertyGPSLatitudeRef] as? String,
+            negativeRef: "S"
+        )
+        let longitude = Self.signedCoordinate(
+            magnitude: gps?[kCGImagePropertyGPSLongitude] as? Double,
+            ref: gps?[kCGImagePropertyGPSLongitudeRef] as? String,
+            negativeRef: "W"
+        )
 
         var raw: [String: String] = [:]
         for (key, value) in properties {
@@ -38,6 +46,15 @@ struct MetadataExtractor {
             longitude: longitude,
             raw: raw
         )
+    }
+
+    /// EXIF stores GPS as an unsigned magnitude plus a hemisphere reference ("N"/"S", "E"/"W").
+    /// Apply the reference so southern/western coordinates are negative (else UK longitudes,
+    /// which are West, plot on the wrong side of the prime meridian).
+    static func signedCoordinate(magnitude: Double?, ref: String?, negativeRef: String) -> Double? {
+        guard let magnitude else { return nil }
+        let isNegative = ref?.uppercased().hasPrefix(negativeRef) == true
+        return isNegative ? -abs(magnitude) : abs(magnitude)
     }
 
     private func parseCapturedDate(exif: [CFString: Any]?, tiff: [CFString: Any]?) -> Date? {
