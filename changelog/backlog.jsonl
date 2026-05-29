@@ -450,3 +450,4 @@
 {"ts":"2026-05-29T20:11:00Z","item_id":"PDT-2026-05-29-094","event":"implemented_pending_review","status":"awaiting_user_review","title":"crop drag event routing","file":"changelog/backlog/PDT-2026-05-29-094-crop-drag-event-routing.md"}
 {"ts":"2026-05-29T20:25:00Z","item_id":"PDT-2026-05-29-095","event":"implementation_started","status":"approved_for_implementation","title":"crop overlay visibility debug","file":"changelog/backlog/PDT-2026-05-29-095-crop-overlay-visibility.md"}
 {"ts":"2026-05-29T20:25:30Z","item_id":"PDT-2026-05-29-095","event":"implemented_pending_review","status":"awaiting_user_review","title":"crop overlay visibility debug","file":"changelog/backlog/PDT-2026-05-29-095-crop-overlay-visibility.md"}
+{"ts":"2026-05-29T20:35:00Z","item_id":"PDT-2026-05-29-095","event":"user_confirmed","status":"approved_done","title":"crop overlay visibility fix","file":"changelog/changelog/PDT-2026-05-29-095-crop-overlay-visibility-report.md"}
