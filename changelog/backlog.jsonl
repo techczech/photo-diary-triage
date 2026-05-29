@@ -440,3 +440,5 @@
 {"ts":"2026-05-29T09:47:00Z","item_id":"PDT-2026-05-29-088","event":"implementation_started","status":"approved_for_implementation","title":"speed optimization pass","file":"changelog/backlog/PDT-2026-05-29-088-speed-optimization-pass.md"}
 {"ts":"2026-05-29T10:05:00Z","item_id":"PDT-2026-05-29-088","event":"implemented_pending_review","status":"awaiting_user_review","title":"speed optimization pass","file":"changelog/backlog/PDT-2026-05-29-088-speed-optimization-pass.md"}
 {"ts":"2026-05-29T10:40:00Z","item_id":"PDT-2026-05-29-089","event":"spec_created","status":"proposed","title":"crop and culling UX improvements","file":"changelog/backlog/PDT-2026-05-29-089-crop-and-culling-ux-improvements.md"}
+{"ts":"2026-05-29T11:05:00Z","item_id":"PDT-2026-05-29-090","event":"spec_created","status":"planned","title":"crop rework + straighten + map","file":"changelog/backlog/PDT-2026-05-29-090-crop-rework-and-map.md"}
+{"ts":"2026-05-29T11:05:00Z","item_id":"PDT-2026-05-29-091","event":"spec_created","status":"research","title":"archive + onedrive awareness + markdown sync","file":"changelog/backlog/PDT-2026-05-29-091-archive-onedrive-sync-research.md"}
