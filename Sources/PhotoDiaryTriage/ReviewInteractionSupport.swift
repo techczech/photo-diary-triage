@@ -239,15 +239,37 @@ enum CropSelectionDragMode: Equatable, Sendable {
 
 struct CropSelectionGeometry {
     static func dragMode(at point: CGPoint, in selection: CGRect, tolerance: CGFloat) -> CropSelectionDragMode? {
-        for handle in CropSelectionHandle.allCases {
+        // Corner targets first (square hit zones), then full-length edge bands, then interior move.
+        for handle in [CropSelectionHandle.topLeft, .topRight, .bottomRight, .bottomLeft] {
             if handleRect(for: handle, in: selection, tolerance: tolerance).contains(point) {
                 return .resize(handle)
             }
+        }
+        for (handle, band) in edgeHitBands(in: selection, tolerance: tolerance) where band.contains(point) {
+            return .resize(handle)
         }
         if selection.contains(point) {
             return .move
         }
         return nil
+    }
+
+    /// Full-length grab bands straddling each edge, so the whole edge resizes (not just a tiny square).
+    static func edgeHitBands(in selection: CGRect, tolerance: CGFloat) -> [(CropSelectionHandle, CGRect)] {
+        let t = max(tolerance, 1)
+        return [
+            (.left, CGRect(x: selection.minX - t, y: selection.minY, width: t * 2, height: selection.height)),
+            (.right, CGRect(x: selection.maxX - t, y: selection.minY, width: t * 2, height: selection.height)),
+            (.bottom, CGRect(x: selection.minX, y: selection.minY - t, width: selection.width, height: t * 2)),
+            (.top, CGRect(x: selection.minX, y: selection.maxY - t, width: selection.width, height: t * 2))
+        ]
+    }
+
+    /// Move the whole normalized crop rect by integer steps, clamped so it stays inside the image.
+    static func nudgedNormalizedRect(_ rect: CropNormalizedRect, dx: Int, dy: Int, step: Double) -> CropNormalizedRect {
+        let newX = min(max(rect.x + Double(dx) * step, 0), max(0, 1 - rect.width))
+        let newY = min(max(rect.y + Double(dy) * step, 0), max(0, 1 - rect.height))
+        return CropNormalizedRect(x: newX, y: newY, width: rect.width, height: rect.height)
     }
 
     static func updatedRect(

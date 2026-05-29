@@ -1,6 +1,30 @@
+import CoreGraphics
 import Foundation
 import Testing
 @testable import PhotoDiaryTriage
+
+@Test func cropDragModeUsesEdgeBandsAndCorners() {
+    // Slice A (#3): whole edges resize, not just tiny squares; corners win at overlaps.
+    let selection = CGRect(x: 100, y: 100, width: 200, height: 200)
+    let tolerance: CGFloat = 12
+    #expect(CropSelectionGeometry.dragMode(at: CGPoint(x: 300, y: 200), in: selection, tolerance: tolerance) == .resize(.right))
+    #expect(CropSelectionGeometry.dragMode(at: CGPoint(x: 200, y: 300), in: selection, tolerance: tolerance) == .resize(.top))
+    #expect(CropSelectionGeometry.dragMode(at: CGPoint(x: 300, y: 300), in: selection, tolerance: tolerance) == .resize(.topRight))
+    #expect(CropSelectionGeometry.dragMode(at: CGPoint(x: 200, y: 200), in: selection, tolerance: tolerance) == .move)
+    #expect(CropSelectionGeometry.dragMode(at: CGPoint(x: 500, y: 500), in: selection, tolerance: tolerance) == nil)
+}
+
+@Test func cropNudgeClampsWithinImage() {
+    // Slice A (#5): arrow-key nudge keeps the crop rect inside the unit square.
+    let rect = CropNormalizedRect(x: 0.8, y: 0.8, width: 0.3, height: 0.3)
+    let pushed = CropSelectionGeometry.nudgedNormalizedRect(rect, dx: 1, dy: 1, step: 0.5)
+    #expect(abs(pushed.x - 0.7) < 0.0001)
+    #expect(abs(pushed.y - 0.7) < 0.0001)
+    #expect(abs(pushed.width - 0.3) < 0.0001)
+    let pulled = CropSelectionGeometry.nudgedNormalizedRect(rect, dx: -1, dy: -1, step: 0.5)
+    #expect(abs(pulled.x - 0.3) < 0.0001)
+    #expect(abs(pulled.y - 0.3) < 0.0001)
+}
 
 @Test func reviewGridMetricsUseRequestedColumnsForCardWidth() {
     let compact = ReviewGridMetrics(availableWidth: 540, requestedColumnCount: 2)
