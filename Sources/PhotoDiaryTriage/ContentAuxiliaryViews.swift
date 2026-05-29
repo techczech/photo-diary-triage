@@ -2038,7 +2038,6 @@ final class LockedCompareCanvasView: NSScrollView {
     }
 
     func handleCanvasMouseDown(with event: NSEvent) {
-        logCropDebug("DOWN received crop=\(isCropSelectionEnabled) zoom=\(currentZoom) imgBounds=\(Int(imageView.bounds.width))x\(Int(imageView.bounds.height)) hostLayer=\(imageView.layer != nil)", reset: true)
         guard isCropSelectionEnabled else {
             if canPointerPan {
                 beginPointerPan(with: event)
@@ -2389,23 +2388,6 @@ final class LockedCompareCanvasView: NSScrollView {
         }
     }
 
-    /// Diagnostic log written to /tmp so crop-drag behavior can be inspected without a debugger.
-    private func logCropDebug(_ message: String, reset: Bool = false) {
-        let url = URL(fileURLWithPath: "/tmp/photodiary-crop-debug.log")
-        guard let data = (message + "\n").data(using: .utf8) else { return }
-        if reset {
-            try? data.write(to: url)
-            return
-        }
-        if let handle = try? FileHandle(forWritingTo: url) {
-            defer { try? handle.close() }
-            handle.seekToEndOfFile()
-            handle.write(data)
-        } else {
-            try? data.write(to: url)
-        }
-    }
-
     private func updateCropSelectionLayer() {
         ensureCropLayersAttached()
         guard let rect = manualCropDocumentRect else {
@@ -2417,7 +2399,6 @@ final class LockedCompareCanvasView: NSScrollView {
             cropGridLayer.path = nil
             cropHandleLayer.isHidden = true
             cropHandleLayer.path = nil
-            logCropDebug("UPDATE rect=nil")
             return
         }
 
@@ -2455,8 +2436,6 @@ final class LockedCompareCanvasView: NSScrollView {
             handlePath.addRect(handleRect)
         }
         cropHandleLayer.path = handlePath
-
-        logCropDebug("UPDATE rect=\(Int(rect.minX)),\(Int(rect.minY)) \(Int(rect.width))x\(Int(rect.height)) tooSmall=\(tooSmall) hostLayer=\(imageView.layer != nil) attached=\(cropMaskLayer.superlayer === imageView.layer) subCount=\(imageView.layer?.sublayers?.count ?? -1) maskHidden=\(cropMaskLayer.isHidden) maskOpacity=\(cropMaskLayer.opacity) maskFrame=\(Int(cropMaskLayer.frame.width))x\(Int(cropMaskLayer.frame.height)) imgBounds=\(Int(imageView.bounds.width))x\(Int(imageView.bounds.height)) imgLayerBounds=\(Int(imageView.layer?.bounds.width ?? -1))x\(Int(imageView.layer?.bounds.height ?? -1))")
     }
 
     private func clearCropSelection() {
