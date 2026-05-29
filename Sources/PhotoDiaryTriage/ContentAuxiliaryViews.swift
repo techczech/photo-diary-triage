@@ -695,7 +695,13 @@ struct FullPhotoSheet: View {
         ZStack {
             ReviewKeyInputView(
                 isFocused: true,
-                onArrow: { dx, _, _ in
+                onArrow: { dx, dy, extending in
+                    // While a crop is pending, arrows nudge the crop rect; Shift takes a larger step.
+                    if isManualCropEnabled, let rect = pendingManualCropRect {
+                        let step = extending ? 0.02 : 0.004
+                        pendingManualCropRect = CropSelectionGeometry.nudgedNormalizedRect(rect, dx: dx, dy: dy, step: step)
+                        return
+                    }
                     if dx < 0 {
                         appState.navigatePreview(by: -1)
                     } else if dx > 0 {
@@ -730,7 +736,12 @@ struct FullPhotoSheet: View {
                     )
                 },
                 onSpace: { },
-                onOpen: { },
+                onOpen: {
+                    // Enter commits a usable pending crop.
+                    if isManualCropEnabled, pendingManualCropRect?.isUsableCrop == true {
+                        applyManualCrop(for: displayItem)
+                    }
+                },
                 onCommandOpen: { },
                 onEscape: {
                     if isManualCropEnabled {
@@ -1919,7 +1930,9 @@ final class LockedCompareCanvasView: NSScrollView {
     private var currentImageSize: CGSize = .zero
     private var currentZoom: CGFloat = 1
     private let visibleCropLayer = CAShapeLayer()
+    private let cropMaskLayer = CAShapeLayer()
     private let cropSelectionLayer = CAShapeLayer()
+    private let cropGridLayer = CAShapeLayer()
     private let cropHandleLayer = CAShapeLayer()
     private var cropDragStart: CGPoint?
     private var cropDragCurrent: CGPoint?
@@ -1959,16 +1972,26 @@ final class LockedCompareCanvasView: NSScrollView {
         visibleCropLayer.lineWidth = 2
         visibleCropLayer.lineDashPattern = [6, 4]
         visibleCropLayer.isHidden = true
-        cropSelectionLayer.fillColor = NSColor.controlAccentColor.withAlphaComponent(0.16).cgColor
+        cropMaskLayer.fillColor = NSColor.black.withAlphaComponent(0.52).cgColor
+        cropMaskLayer.fillRule = .evenOdd
+        cropMaskLayer.strokeColor = NSColor.clear.cgColor
+        cropMaskLayer.isHidden = true
+        cropSelectionLayer.fillColor = NSColor.clear.cgColor
         cropSelectionLayer.strokeColor = NSColor.controlAccentColor.cgColor
         cropSelectionLayer.lineWidth = 2
         cropSelectionLayer.isHidden = true
+        cropGridLayer.fillColor = NSColor.clear.cgColor
+        cropGridLayer.strokeColor = NSColor.white.withAlphaComponent(0.5).cgColor
+        cropGridLayer.lineWidth = 1
+        cropGridLayer.isHidden = true
         cropHandleLayer.fillColor = NSColor.windowBackgroundColor.cgColor
         cropHandleLayer.strokeColor = NSColor.controlAccentColor.cgColor
         cropHandleLayer.lineWidth = 1.5
         cropHandleLayer.isHidden = true
         imageView.layer?.addSublayer(visibleCropLayer)
+        imageView.layer?.addSublayer(cropMaskLayer)
         imageView.layer?.addSublayer(cropSelectionLayer)
+        imageView.layer?.addSublayer(cropGridLayer)
         imageView.layer?.addSublayer(cropHandleLayer)
         documentView = imageView
     }
@@ -1989,7 +2012,11 @@ final class LockedCompareCanvasView: NSScrollView {
             addCursorRect(bounds, cursor: .crosshair)
             if let manualCropDocumentRect {
                 addCursorRect(imageView.convert(manualCropDocumentRect, to: self), cursor: .openHand)
-                for handle in CropSelectionHandle.allCases {
+                // Edge bands first, then corner squares on top, matching the hit-test order.
+                for (handle, band) in CropSelectionGeometry.edgeHitBands(in: manualCropDocumentRect, tolerance: cropHandleTolerance) {
+                    addCursorRect(imageView.convert(band, to: self), cursor: cropCursor(for: handle))
+                }
+                for handle in [CropSelectionHandle.topLeft, .topRight, .bottomRight, .bottomLeft] {
                     addCursorRect(
                         imageView.convert(
                             CropSelectionGeometry.handleRect(for: handle, in: manualCropDocumentRect, tolerance: cropHandleTolerance),
@@ -2056,9 +2083,9 @@ final class LockedCompareCanvasView: NSScrollView {
         guard let rect = manualCropDocumentRect,
               let normalized = normalizedCropRect(forDocumentRect: rect),
               normalized.isUsableCrop else {
+            // A click or too-small drag is not an error: restore a prior valid selection,
+            // or clear silently. No beep, no rejection message.
             restoreOrClearRejectedCropSelection()
-            NSSound.beep()
-            onManualCropRejected?()
             return
         }
         finishCropDrag()
@@ -2141,7 +2168,7 @@ final class LockedCompareCanvasView: NSScrollView {
     }
 
     private var cropHandleTolerance: CGFloat {
-        max(7, min(14, min(imageView.bounds.width, imageView.bounds.height) * 0.015))
+        max(11, min(20, min(imageView.bounds.width, imageView.bounds.height) * 0.02))
     }
 
     private func cropCursor(for handle: CropSelectionHandle) -> NSCursor {
@@ -2284,7 +2311,9 @@ final class LockedCompareCanvasView: NSScrollView {
         )
         imageView.frame = NSRect(origin: .zero, size: scaledSize)
         visibleCropLayer.frame = imageView.bounds
+        cropMaskLayer.frame = imageView.bounds
         cropSelectionLayer.frame = imageView.bounds
+        cropGridLayer.frame = imageView.bounds
         cropHandleLayer.frame = imageView.bounds
         if let previousManualCrop {
             manualCropDocumentRect = CropGeometryMapper.documentRect(
@@ -2330,16 +2359,46 @@ final class LockedCompareCanvasView: NSScrollView {
 
     private func updateCropSelectionLayer() {
         guard let rect = manualCropDocumentRect else {
+            cropMaskLayer.isHidden = true
+            cropMaskLayer.path = nil
             cropSelectionLayer.isHidden = true
             cropSelectionLayer.path = nil
+            cropGridLayer.isHidden = true
+            cropGridLayer.path = nil
             cropHandleLayer.isHidden = true
             cropHandleLayer.path = nil
             return
         }
 
-        cropSelectionLayer.isHidden = rect.width <= 1 || rect.height <= 1
+        let tooSmall = rect.width <= 1 || rect.height <= 1
+
+        // Dim the discarded area: fill the whole image minus the selection (even-odd rule),
+        // leaving the kept area at true brightness.
+        let maskPath = CGMutablePath()
+        maskPath.addRect(imageView.bounds)
+        maskPath.addRect(rect)
+        cropMaskLayer.isHidden = tooSmall
+        cropMaskLayer.path = maskPath
+
+        cropSelectionLayer.isHidden = tooSmall
         cropSelectionLayer.path = CGPath(rect: rect, transform: nil)
-        cropHandleLayer.isHidden = rect.width <= 1 || rect.height <= 1
+
+        // Rule-of-thirds guides inside the selection.
+        cropGridLayer.isHidden = tooSmall
+        let gridPath = CGMutablePath()
+        let thirdWidth = rect.width / 3
+        let thirdHeight = rect.height / 3
+        for index in 1...2 {
+            let x = rect.minX + thirdWidth * CGFloat(index)
+            gridPath.move(to: CGPoint(x: x, y: rect.minY))
+            gridPath.addLine(to: CGPoint(x: x, y: rect.maxY))
+            let y = rect.minY + thirdHeight * CGFloat(index)
+            gridPath.move(to: CGPoint(x: rect.minX, y: y))
+            gridPath.addLine(to: CGPoint(x: rect.maxX, y: y))
+        }
+        cropGridLayer.path = gridPath
+
+        cropHandleLayer.isHidden = tooSmall
         let handlePath = CGMutablePath()
         for handleRect in CropSelectionGeometry.handleRects(in: rect, tolerance: cropHandleTolerance) {
             handlePath.addRect(handleRect)
@@ -2350,10 +2409,7 @@ final class LockedCompareCanvasView: NSScrollView {
     private func clearCropSelection() {
         finishCropDrag()
         manualCropDocumentRect = nil
-        cropSelectionLayer.isHidden = true
-        cropSelectionLayer.path = nil
-        cropHandleLayer.isHidden = true
-        cropHandleLayer.path = nil
+        updateCropSelectionLayer()
         window?.invalidateCursorRects(for: self)
     }
 }
