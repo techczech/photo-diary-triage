@@ -261,6 +261,7 @@ struct ReviewPaneView: View {
     let appState: AppState
     @ObservedObject var state: ReviewState
     @ObservedObject var navigationState: ReviewNavigationState
+    @State private var showMap = false
 
     var body: some View {
         let snapshot = state.snapshot
@@ -268,6 +269,11 @@ struct ReviewPaneView: View {
 
         VStack(alignment: .leading, spacing: 6) {
             compactReviewTopBar
+
+            if showMap {
+                MapPanelView(items: snapshot.visibleItems)
+                    .frame(height: 280)
+            }
 
             GeometryReader { proxy in
                 ZStack(alignment: .topLeading) {
@@ -404,6 +410,15 @@ struct ReviewPaneView: View {
 
                 reviewFilterMenu
                 reviewPresentationMenu
+
+                Button {
+                    showMap.toggle()
+                } label: {
+                    Label("Map", systemImage: showMap ? "map.fill" : "map")
+                }
+                .buttonStyle(.bordered)
+                .help("Show a map of the photos that have GPS locations")
+
                 sizeControls
                 reviewActionsMenu
 

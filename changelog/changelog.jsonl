@@ -176,3 +176,4 @@
 {"ts":"2026-05-29T19:56:00Z","item_id":"PDT-2026-05-29-093","event":"report_created","status":"implemented","title":"crop drag no-mode + crash fix","file":"changelog/changelog/PDT-2026-05-29-093-crop-drag-no-mode-and-crash-fix-report.md"}
 {"ts":"2026-05-29T20:11:00Z","item_id":"PDT-2026-05-29-094","event":"report_created","status":"implemented","title":"crop drag event routing","file":"changelog/changelog/PDT-2026-05-29-094-crop-drag-event-routing-report.md"}
 {"ts":"2026-05-29T20:35:00Z","item_id":"PDT-2026-05-29-095","event":"report_created","status":"implemented","title":"crop overlay visibility fix","file":"changelog/changelog/PDT-2026-05-29-095-crop-overlay-visibility-report.md"}
+{"ts":"2026-05-30T08:31:00Z","item_id":"PDT-2026-05-30-096","event":"report_created","status":"implemented","title":"map view slice C.1","file":"changelog/changelog/PDT-2026-05-30-096-map-view-slice-c-report.md"}

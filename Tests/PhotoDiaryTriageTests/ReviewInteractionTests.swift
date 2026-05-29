@@ -3,6 +3,16 @@ import Foundation
 import Testing
 @testable import PhotoDiaryTriage
 
+@Test func gpsSignedCoordinateAppliesHemisphereRef() {
+    // West longitude / South latitude must be negative so UK (west) coordinates plot correctly.
+    #expect(MetadataExtractor.signedCoordinate(magnitude: 1.35, ref: "W", negativeRef: "W") == -1.35)
+    #expect(MetadataExtractor.signedCoordinate(magnitude: 51.85, ref: "N", negativeRef: "S") == 51.85)
+    #expect(MetadataExtractor.signedCoordinate(magnitude: 33.9, ref: "S", negativeRef: "S") == -33.9)
+    #expect(MetadataExtractor.signedCoordinate(magnitude: 2.3, ref: "E", negativeRef: "W") == 2.3)
+    #expect(MetadataExtractor.signedCoordinate(magnitude: nil, ref: "W", negativeRef: "W") == nil)
+    #expect(MetadataExtractor.signedCoordinate(magnitude: 1.35, ref: nil, negativeRef: "W") == 1.35)
+}
+
 @Test func cropDragModeUsesEdgeBandsAndCorners() {
     // Slice A (#3): whole edges resize, not just tiny squares; corners win at overlaps.
     let selection = CGRect(x: 100, y: 100, width: 200, height: 200)
