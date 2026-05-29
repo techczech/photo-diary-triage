@@ -80,7 +80,7 @@ struct DetailsInspectorView: View {
     }
 
     private var workflowSection: some View {
-        GroupBox("Workflow") {
+        InspectorSectionPanel(title: "Workflow") {
             InspectorWorkflowPanel(
                 appState: appState,
                 guidance: sidebarState.snapshot.workflowGuidance,
@@ -93,7 +93,7 @@ struct DetailsInspectorView: View {
     @ViewBuilder
     private var sessionSection: some View {
         if let session = sidebarState.snapshot.sessionSummary {
-            GroupBox("Current Log") {
+            InspectorSectionPanel(title: "Current Log") {
                 VStack(alignment: .leading, spacing: 10) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(logTitle(for: session))
@@ -109,11 +109,16 @@ struct DetailsInspectorView: View {
                         }
                     }
 
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 8) {
-                        InspectorMetricBadge(label: "Selected", value: "\(session.includedCount)")
-                        InspectorMetricBadge(label: "Candidate", value: "\(session.candidateCount)")
-                        InspectorMetricBadge(label: "Excluded", value: "\(session.excludedCount)")
-                        InspectorMetricBadge(label: "Visible", value: "\(session.itemCount)")
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 8) {
+                            InspectorMetricBadge(label: "Selected", value: "\(session.includedCount)")
+                            InspectorMetricBadge(label: "Candidate", value: "\(session.candidateCount)")
+                        }
+
+                        HStack(spacing: 8) {
+                            InspectorMetricBadge(label: "Excluded", value: "\(session.excludedCount)")
+                            InspectorMetricBadge(label: "Visible", value: "\(session.itemCount)")
+                        }
                     }
 
                     InspectorPathRow(label: "Source", path: session.sourceFolderPath)
@@ -139,13 +144,14 @@ struct DetailsInspectorView: View {
                             TextField("Notes", text: $walkNotes, axis: .vertical)
                                 .lineLimit(2...4)
 
-                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 136), spacing: 6)], alignment: .leading, spacing: 6) {
+                            VStack(alignment: .leading, spacing: 6) {
                                 Button {
                                     appState.updateWalkMetadata(title: walkTitle, location: walkLocation, notes: walkNotes)
                                 } label: {
                                     Label("Save Details", systemImage: "checkmark")
                                 }
                                 .buttonStyle(.bordered)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                                 .help("Save the current log title, location, and notes.")
 
                                 Button {
@@ -154,6 +160,7 @@ struct DetailsInspectorView: View {
                                     Label("Open Logs", systemImage: "books.vertical")
                                 }
                                 .buttonStyle(.bordered)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                                 .help("Open the photo log list.")
 
                                 Button {
@@ -166,6 +173,7 @@ struct DetailsInspectorView: View {
                                     Label(appState.photoLogSessionStartActionTitle, systemImage: "plus.square.on.square")
                                 }
                                 .buttonStyle(.borderedProminent)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                                 .disabled(!appState.canStartNewPhotoLogSession)
                                 .help(appState.photoLogSessionStartActionHelp)
                             }
@@ -182,7 +190,7 @@ struct DetailsInspectorView: View {
     private var walkDetailsSection: some View {
         if sidebarState.snapshot.canMutateImportSelection,
            sidebarState.snapshot.sessionSummary?.sessionKind == .walkDraft {
-            GroupBox("Log Details") {
+            InspectorSectionPanel(title: "Log Details") {
                 WalkDetailsPaneView(
                     appState: appState,
                     isExpanded: Binding(
@@ -201,7 +209,7 @@ struct DetailsInspectorView: View {
     }
 
     private var storageDetailsSection: some View {
-        GroupBox {
+        InspectorSectionPanel {
             DisclosureGroup(isExpanded: $isStorageDetailsExpanded) {
                 VStack(alignment: .leading, spacing: 12) {
                     SourceWorkspaceStatusPane(
@@ -245,7 +253,7 @@ struct DetailsInspectorView: View {
 
     @ViewBuilder
     private var photoSection: some View {
-        GroupBox("Selected Photo") {
+        InspectorSectionPanel(title: "Selected Photo") {
             VStack(alignment: .leading, spacing: 8) {
                 if let item = state.snapshot.mediaItem {
                     ThumbnailImageSurface(
@@ -409,6 +417,35 @@ struct DetailsInspectorView: View {
             return "Time Cluster"
         case .archiveWalkFolder:
             return "Archive Walk Folder"
+        }
+    }
+}
+
+private struct InspectorSectionPanel<Content: View>: View {
+    let title: String?
+    @ViewBuilder let content: Content
+
+    init(title: String? = nil, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let title {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+            }
+
+            content
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
         }
     }
 }

@@ -223,13 +223,13 @@ struct InspectorWorkflowActions: View {
     let readiness: ImportReadinessSnapshot?
 
     var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 126), spacing: 8)], alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 8) {
             if readiness?.hasFilesToCopy == true || appState.canCommitImport {
                 Button("Copy To Archive") {
                     appState.commitImport()
                 }
                 .buttonStyle(.borderedProminent)
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .disabled(!appState.canCommitImport)
                 .help(readiness?.copyButtonHelp ?? "Copy included files into the archive.")
             }
@@ -239,7 +239,7 @@ struct InspectorWorkflowActions: View {
                     appState.openArchiveDestinationForCurrentSession()
                 }
                 .buttonStyle(.bordered)
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .disabled(!appState.canOpenArchiveDestination)
                 .help("Open the copied archive folder in Finder.")
             }
@@ -249,7 +249,7 @@ struct InspectorWorkflowActions: View {
                     appState.markBackupConfirmed()
                 }
                 .buttonStyle(.borderedProminent)
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .disabled(!appState.canConfirmBackup)
                 .help(readiness?.confirmBackupButtonHelp ?? "Confirm backup after copy verification.")
             }
@@ -260,7 +260,7 @@ struct InspectorWorkflowActions: View {
                 }
                 .buttonStyle(.bordered)
                 .tint(.red)
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .disabled(!appState.canCleanupImportedSources)
                 .help(readiness?.cleanupButtonHelp ?? "Clean copied source files from the SSD when allowed.")
             }
