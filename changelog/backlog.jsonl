@@ -442,3 +442,4 @@
 {"ts":"2026-05-29T10:40:00Z","item_id":"PDT-2026-05-29-089","event":"spec_created","status":"proposed","title":"crop and culling UX improvements","file":"changelog/backlog/PDT-2026-05-29-089-crop-and-culling-ux-improvements.md"}
 {"ts":"2026-05-29T11:05:00Z","item_id":"PDT-2026-05-29-090","event":"spec_created","status":"planned","title":"crop rework + straighten + map","file":"changelog/backlog/PDT-2026-05-29-090-crop-rework-and-map.md"}
 {"ts":"2026-05-29T11:05:00Z","item_id":"PDT-2026-05-29-091","event":"spec_created","status":"research","title":"archive + onedrive awareness + markdown sync","file":"changelog/backlog/PDT-2026-05-29-091-archive-onedrive-sync-research.md"}
+{"ts":"2026-05-29T11:20:00Z","item_id":"PDT-2026-05-29-092","event":"implementation_started","status":"approved_for_implementation","title":"crop overlay rework","file":"changelog/backlog/PDT-2026-05-29-092-crop-overlay-rework.md"}
