@@ -129,6 +129,7 @@ enum CropServiceError: LocalizedError, Equatable {
 
 struct CropService {
     private let fileManager: FileManager
+    private let lossyPhotoCropQuality: CGFloat = 0.88
 
     init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
@@ -164,23 +165,39 @@ struct CropService {
             sourceURL: sourceURL,
             outputExtension: output.fileExtension
         )
+        let temporaryURL = temporaryDestinationURL(for: destinationURL)
+        var movedCropToFinalDestination = false
+        defer {
+            if fileManager.fileExists(atPath: temporaryURL.path) {
+                try? fileManager.removeItem(at: temporaryURL)
+            }
+        }
+
         guard let destination = CGImageDestinationCreateWithURL(
-            destinationURL as CFURL,
+            temporaryURL as CFURL,
             output.typeIdentifier as CFString,
             1,
             nil
         ) else {
-            throw CropServiceError.cannotCreateDestination(destinationURL.path)
+            throw CropServiceError.cannotCreateDestination(temporaryURL.path)
         }
 
         let properties = destinationProperties(
             from: source,
             outputWidth: croppedImage.width,
-            outputHeight: croppedImage.height
+            outputHeight: croppedImage.height,
+            lossyCompressionQuality: output.lossyCompressionQuality
         )
         CGImageDestinationAddImage(destination, croppedImage, properties as CFDictionary)
 
         guard CGImageDestinationFinalize(destination) else {
+            throw CropServiceError.cannotWriteDestination(temporaryURL.path)
+        }
+
+        do {
+            try fileManager.moveItem(at: temporaryURL, to: destinationURL)
+            movedCropToFinalDestination = true
+        } catch {
             throw CropServiceError.cannotWriteDestination(destinationURL.path)
         }
 
@@ -206,6 +223,9 @@ struct CropService {
         do {
             try appendManifestEntry(entry, for: item, manifestURL: manifestURL)
         } catch {
+            if movedCropToFinalDestination {
+                try? fileManager.removeItem(at: destinationURL)
+            }
             throw CropServiceError.cannotWriteManifest(manifestURL.path)
         }
 
@@ -236,13 +256,16 @@ struct CropService {
     private func destinationProperties(
         from source: CGImageSource,
         outputWidth: Int,
-        outputHeight: Int
+        outputHeight: Int,
+        lossyCompressionQuality: CGFloat?
     ) -> [CFString: Any] {
         var properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] ?? [:]
         properties[kCGImagePropertyPixelWidth] = outputWidth
         properties[kCGImagePropertyPixelHeight] = outputHeight
         properties[kCGImagePropertyOrientation] = 1
-        properties[kCGImageDestinationLossyCompressionQuality] = 1.0
+        if let lossyCompressionQuality {
+            properties[kCGImageDestinationLossyCompressionQuality] = lossyCompressionQuality
+        }
         return properties
     }
 
@@ -274,18 +297,38 @@ struct CropService {
         return try JSONDecoder().decode(CropManifest.self, from: data)
     }
 
-    private func outputTarget(for sourceURL: URL) -> (typeIdentifier: String, fileExtension: String) {
+    private struct CropOutputTarget {
+        let typeIdentifier: String
+        let fileExtension: String
+        let lossyCompressionQuality: CGFloat?
+    }
+
+    private func outputTarget(for sourceURL: URL) -> CropOutputTarget {
         switch sourceURL.pathExtension.lowercased() {
         case "jpg", "jpeg":
-            return (UTType.jpeg.identifier, "jpg")
+            return CropOutputTarget(
+                typeIdentifier: UTType.jpeg.identifier,
+                fileExtension: "jpg",
+                lossyCompressionQuality: lossyPhotoCropQuality
+            )
         case "heic":
-            return (UTType.heic.identifier, "heic")
+            return CropOutputTarget(
+                typeIdentifier: UTType.heic.identifier,
+                fileExtension: "heic",
+                lossyCompressionQuality: lossyPhotoCropQuality
+            )
         case "png":
-            return (UTType.png.identifier, "png")
-        case "tif", "tiff":
-            return (UTType.tiff.identifier, "tiff")
+            return CropOutputTarget(
+                typeIdentifier: UTType.png.identifier,
+                fileExtension: "png",
+                lossyCompressionQuality: nil
+            )
         default:
-            return (UTType.tiff.identifier, "tiff")
+            return CropOutputTarget(
+                typeIdentifier: UTType.jpeg.identifier,
+                fileExtension: "jpg",
+                lossyCompressionQuality: lossyPhotoCropQuality
+            )
         }
     }
 
@@ -307,6 +350,13 @@ struct CropService {
             }
             index += 1
         }
+    }
+
+    private func temporaryDestinationURL(for destinationURL: URL) -> URL {
+        destinationURL
+            .deletingLastPathComponent()
+            .appendingPathComponent(".\(destinationURL.deletingPathExtension().lastPathComponent)-\(UUID().uuidString).tmp")
+            .appendingPathExtension(destinationURL.pathExtension)
     }
 
     private func cropManifestURL(for sourceURL: URL) -> URL {

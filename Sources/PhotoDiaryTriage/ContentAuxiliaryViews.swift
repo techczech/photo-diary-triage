@@ -682,6 +682,7 @@ struct FullPhotoSheet: View {
     @State private var viewport = CompareViewport.zero
     @State private var visibleCropRect = CropNormalizedRect.fullFrame
     @State private var isManualCropEnabled = false
+    @State private var pendingManualCropRect: CropNormalizedRect?
     @State private var panCommand = ComparePanCommand.idle
 
     private var currentItem: MediaItem {
@@ -733,8 +734,7 @@ struct FullPhotoSheet: View {
                 onCommandOpen: { },
                 onEscape: {
                     if isManualCropEnabled {
-                        isManualCropEnabled = false
-                        appState.statusMessage = "Cancelled drag crop."
+                        cancelManualCrop()
                     } else {
                         dismiss()
                     }
@@ -772,6 +772,7 @@ struct FullPhotoSheet: View {
                 panCommand = .idle
                 visibleCropRect = .fullFrame
                 isManualCropEnabled = false
+                pendingManualCropRect = nil
             }
 
             VStack(alignment: .leading, spacing: 10) {
@@ -816,9 +817,12 @@ struct FullPhotoSheet: View {
                     visibleCropRect: $visibleCropRect,
                     panCommand: panCommand,
                     isCropSelectionEnabled: isManualCropEnabled,
-                    onManualCrop: { rect in
-                        appState.cropMediaItem(displayItem, normalizedRect: rect, trigger: .manualDrag)
-                        isManualCropEnabled = false
+                    manualCropRect: $pendingManualCropRect,
+                    onManualCropSelectionChanged: { rect in
+                        pendingManualCropRect = rect
+                        if rect != nil {
+                            appState.statusMessage = "Crop area selected. Adjust it, then Save Crop."
+                        }
                     },
                     onManualCropRejected: {
                         appState.statusMessage = "Drag a larger crop area before releasing."
@@ -835,10 +839,15 @@ struct FullPhotoSheet: View {
             panCommand = .idle
             visibleCropRect = .fullFrame
             isManualCropEnabled = false
+            pendingManualCropRect = nil
         }
         .onChange(of: isManualCropEnabled) { _, enabled in
-            guard enabled else { return }
-            appState.statusMessage = "Drag Crop on. Drag over the image to create a crop."
+            if enabled {
+                appState.statusMessage = "Drag Crop on. Drag to select, adjust the rectangle, then Save Crop."
+            } else if pendingManualCropRect != nil {
+                pendingManualCropRect = nil
+                appState.statusMessage = "Cancelled drag crop."
+            }
         }
     }
 
@@ -871,13 +880,51 @@ struct FullPhotoSheet: View {
             .toggleStyle(.button)
             .controlSize(.small)
             .disabled(isSavingCrop)
-            .help("Drag over the image to save a manual crop")
+            .help("Drag over the image to define an adjustable crop")
+
+            if isManualCropEnabled || pendingManualCropRect != nil {
+                Button {
+                    applyManualCrop(for: item)
+                } label: {
+                    Label("Save Crop", systemImage: "checkmark")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(isSavingCrop || pendingManualCropRect?.isUsableCrop != true)
+                .help("Save the selected crop rectangle")
+
+                Button {
+                    cancelManualCrop()
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help("Cancel the pending crop")
+            }
         }
     }
 
     private func cropVisibleArea(for item: MediaItem) {
         guard !appState.isCropInProgress(for: item) else { return }
         appState.cropMediaItem(item, normalizedRect: visibleCropRect, trigger: .visibleZoom)
+    }
+
+    private func applyManualCrop(for item: MediaItem) {
+        guard let rect = pendingManualCropRect, rect.isUsableCrop else {
+            appState.statusMessage = "Select a crop area before saving."
+            return
+        }
+        guard !appState.isCropInProgress(for: item) else { return }
+        appState.cropMediaItem(item, normalizedRect: rect, trigger: .manualDrag)
+        pendingManualCropRect = nil
+        isManualCropEnabled = false
+    }
+
+    private func cancelManualCrop() {
+        pendingManualCropRect = nil
+        isManualCropEnabled = false
+        appState.statusMessage = "Cancelled drag crop."
     }
 
     @ViewBuilder
@@ -992,7 +1039,8 @@ struct FullPhotoPreviewCanvas: View {
     @Binding var visibleCropRect: CropNormalizedRect
     let panCommand: ComparePanCommand
     let isCropSelectionEnabled: Bool
-    let onManualCrop: (CropNormalizedRect) -> Void
+    @Binding var manualCropRect: CropNormalizedRect?
+    let onManualCropSelectionChanged: (CropNormalizedRect?) -> Void
     let onManualCropRejected: () -> Void
 
     @ObservedObject private var thumbnailSlot: ThumbnailSlot
@@ -1005,7 +1053,8 @@ struct FullPhotoPreviewCanvas: View {
         visibleCropRect: Binding<CropNormalizedRect>,
         panCommand: ComparePanCommand,
         isCropSelectionEnabled: Bool,
-        onManualCrop: @escaping (CropNormalizedRect) -> Void,
+        manualCropRect: Binding<CropNormalizedRect?>,
+        onManualCropSelectionChanged: @escaping (CropNormalizedRect?) -> Void,
         onManualCropRejected: @escaping () -> Void
     ) {
         self.appState = appState
@@ -1015,7 +1064,8 @@ struct FullPhotoPreviewCanvas: View {
         _visibleCropRect = visibleCropRect
         self.panCommand = panCommand
         self.isCropSelectionEnabled = isCropSelectionEnabled
-        self.onManualCrop = onManualCrop
+        _manualCropRect = manualCropRect
+        self.onManualCropSelectionChanged = onManualCropSelectionChanged
         self.onManualCropRejected = onManualCropRejected
         _thumbnailSlot = ObservedObject(wrappedValue: appState.thumbnailSlot(for: item))
     }
@@ -1029,7 +1079,8 @@ struct FullPhotoPreviewCanvas: View {
             visibleCropRect: $visibleCropRect,
             panCommand: panCommand,
             isCropSelectionEnabled: isCropSelectionEnabled,
-            onManualCrop: onManualCrop,
+            manualCropRect: $manualCropRect,
+            onManualCropSelectionChanged: onManualCropSelectionChanged,
             onManualCropRejected: onManualCropRejected,
             placeholderImage: thumbnailSlot.image
         )
@@ -1049,6 +1100,7 @@ struct CompareSheet: View {
     @State private var synchronizedViewport = CompareViewport.zero
     @State private var panCommand = ComparePanCommand.idle
     @State private var visibleCropRects: [UUID: CropNormalizedRect] = [:]
+    @State private var pendingManualCropRects: [UUID: CropNormalizedRect] = [:]
     @State private var isManualCropEnabled = false
 
     var body: some View {
@@ -1089,8 +1141,7 @@ struct CompareSheet: View {
                 },
                 onEscape: {
                     if isManualCropEnabled {
-                        isManualCropEnabled = false
-                        appState.statusMessage = "Cancelled drag crop."
+                        cancelCompareManualCrop()
                     } else {
                         onClose()
                     }
@@ -1161,7 +1212,28 @@ struct CompareSheet: View {
                 .toggleStyle(.button)
                 .controlSize(.small)
                 .disabled(snapshot.items.contains { appState.isCropInProgress(for: $0.item) })
-                .help("Drag over any compare image to save a manual crop")
+                .help("Drag over any compare image to define an adjustable crop")
+
+                if isManualCropEnabled || !pendingManualCropRects.isEmpty {
+                    Button {
+                        applyFocusedManualCrop(snapshot: snapshot)
+                    } label: {
+                        Label("Save Crop", systemImage: "checkmark")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .disabled(focusedPendingManualCrop(in: snapshot)?.isUsableCrop != true || focusedCropIsSaving(in: snapshot))
+                    .help("Save the selected manual crop on the focused compare image")
+
+                    Button {
+                        cancelCompareManualCrop()
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("Cancel pending manual crop selection")
+                }
 
                 Button("Close") {
                     onClose()
@@ -1206,9 +1278,16 @@ struct CompareSheet: View {
                                             get: { visibleCropRects[itemSnapshot.id] ?? .fullFrame },
                                             set: { visibleCropRects[itemSnapshot.id] = $0 }
                                         ),
-                                        onManualCrop: { rect in
-                                            appState.cropMediaItem(itemSnapshot.item, normalizedRect: rect, trigger: .manualDrag)
-                                            isManualCropEnabled = false
+                                        manualCropRect: Binding(
+                                            get: { pendingManualCropRects[itemSnapshot.id] },
+                                            set: { pendingManualCropRects[itemSnapshot.id] = $0 }
+                                        ),
+                                        onManualCropSelectionChanged: { rect in
+                                            pendingManualCropRects[itemSnapshot.id] = rect
+                                            appState.focusComparisonItem(itemSnapshot.id)
+                                            if rect != nil {
+                                                appState.statusMessage = "Crop area selected on \(itemSnapshot.item.fileName). Adjust it, then Save Crop."
+                                            }
                                         },
                                         onManualCropRejected: {
                                             appState.statusMessage = "Drag a larger crop area on \(itemSnapshot.item.fileName) before releasing."
@@ -1239,8 +1318,12 @@ struct CompareSheet: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onChange(of: isManualCropEnabled) { _, enabled in
-            guard enabled else { return }
-            appState.statusMessage = "Drag Crop on. Drag over any compare image to create a crop."
+            if enabled {
+                appState.statusMessage = "Drag Crop on. Drag over any compare image, adjust the rectangle, then Save Crop."
+            } else if !pendingManualCropRects.isEmpty {
+                pendingManualCropRects.removeAll()
+                appState.statusMessage = "Cancelled drag crop."
+            }
         }
     }
 
@@ -1284,6 +1367,11 @@ struct CompareSheet: View {
         return visibleCropRects[focusedID] ?? .fullFrame
     }
 
+    private func focusedPendingManualCrop(in snapshot: CompareSnapshot) -> CropNormalizedRect? {
+        guard let focusedID = snapshot.preferredScrollTargetID else { return nil }
+        return pendingManualCropRects[focusedID]
+    }
+
     private func focusedCropIsSaving(in snapshot: CompareSnapshot) -> Bool {
         guard let focusedID = snapshot.preferredScrollTargetID,
               let item = snapshot.items.first(where: { $0.id == focusedID })?.item else { return false }
@@ -1297,6 +1385,26 @@ struct CompareSheet: View {
         let rect = visibleCropRects[focusedID] ?? .fullFrame
         appState.cropMediaItem(item, normalizedRect: rect, trigger: .visibleZoom)
     }
+
+    private func applyFocusedManualCrop(snapshot: CompareSnapshot) {
+        guard let focusedID = snapshot.preferredScrollTargetID,
+              let item = snapshot.items.first(where: { $0.id == focusedID })?.item,
+              let rect = pendingManualCropRects[focusedID],
+              rect.isUsableCrop else {
+            appState.statusMessage = "Select a crop area before saving."
+            return
+        }
+        guard !appState.isCropInProgress(for: item) else { return }
+        appState.cropMediaItem(item, normalizedRect: rect, trigger: .manualDrag)
+        pendingManualCropRects.removeValue(forKey: focusedID)
+        isManualCropEnabled = false
+    }
+
+    private func cancelCompareManualCrop() {
+        pendingManualCropRects.removeAll()
+        isManualCropEnabled = false
+        appState.statusMessage = "Cancelled drag crop."
+    }
 }
 
 struct CompareItemCard: View {
@@ -1309,7 +1417,8 @@ struct CompareItemCard: View {
     let imageWidth: CGFloat
     let isCropSelectionEnabled: Bool
     @Binding var visibleCropRect: CropNormalizedRect
-    let onManualCrop: (CropNormalizedRect) -> Void
+    @Binding var manualCropRect: CropNormalizedRect?
+    let onManualCropSelectionChanged: (CropNormalizedRect?) -> Void
     let onManualCropRejected: () -> Void
 
     private var item: MediaItem {
@@ -1448,7 +1557,8 @@ struct CompareItemCard: View {
                 isPanLocked: isPanLocked,
                 visibleCropRect: $visibleCropRect,
                 isCropSelectionEnabled: isCropSelectionEnabled,
-                onManualCrop: onManualCrop,
+                manualCropRect: $manualCropRect,
+                onManualCropSelectionChanged: onManualCropSelectionChanged,
                 onManualCropRejected: onManualCropRejected
             )
                 .frame(width: imageWidth, height: imageHeight)
@@ -1528,7 +1638,8 @@ struct ZoomableImageCanvas: View {
     @Binding var visibleCropRect: CropNormalizedRect
     let panCommand: ComparePanCommand
     let isCropSelectionEnabled: Bool
-    let onManualCrop: (CropNormalizedRect) -> Void
+    @Binding var manualCropRect: CropNormalizedRect?
+    let onManualCropSelectionChanged: (CropNormalizedRect?) -> Void
     let onManualCropRejected: () -> Void
     var placeholderImage: NSImage?
     @StateObject private var imageModel = DecodedImageModel()
@@ -1545,7 +1656,8 @@ struct ZoomableImageCanvas: View {
                     panCommand: panCommand,
                     isPanLocked: false,
                     isCropSelectionEnabled: isCropSelectionEnabled,
-                    onManualCrop: onManualCrop,
+                    manualCropRect: $manualCropRect,
+                    onManualCropSelectionChanged: onManualCropSelectionChanged,
                     onManualCropRejected: onManualCropRejected
                 )
             } else if let placeholderImage {
@@ -1582,7 +1694,8 @@ struct LoadedLockedCompareImageCanvas: View {
     let isPanLocked: Bool
     @Binding var visibleCropRect: CropNormalizedRect
     let isCropSelectionEnabled: Bool
-    let onManualCrop: (CropNormalizedRect) -> Void
+    @Binding var manualCropRect: CropNormalizedRect?
+    let onManualCropSelectionChanged: (CropNormalizedRect?) -> Void
     let onManualCropRejected: () -> Void
     @StateObject private var imageModel = DecodedImageModel()
     @ObservedObject private var thumbnailSlot: ThumbnailSlot
@@ -1596,7 +1709,8 @@ struct LoadedLockedCompareImageCanvas: View {
         isPanLocked: Bool,
         visibleCropRect: Binding<CropNormalizedRect>,
         isCropSelectionEnabled: Bool,
-        onManualCrop: @escaping (CropNormalizedRect) -> Void,
+        manualCropRect: Binding<CropNormalizedRect?>,
+        onManualCropSelectionChanged: @escaping (CropNormalizedRect?) -> Void,
         onManualCropRejected: @escaping () -> Void
     ) {
         self.appState = appState
@@ -1607,7 +1721,8 @@ struct LoadedLockedCompareImageCanvas: View {
         self.isPanLocked = isPanLocked
         _visibleCropRect = visibleCropRect
         self.isCropSelectionEnabled = isCropSelectionEnabled
-        self.onManualCrop = onManualCrop
+        _manualCropRect = manualCropRect
+        self.onManualCropSelectionChanged = onManualCropSelectionChanged
         self.onManualCropRejected = onManualCropRejected
         _thumbnailSlot = ObservedObject(wrappedValue: appState.thumbnailSlot(for: item))
     }
@@ -1624,7 +1739,8 @@ struct LoadedLockedCompareImageCanvas: View {
                     panCommand: panCommand,
                     isPanLocked: isPanLocked,
                     isCropSelectionEnabled: isCropSelectionEnabled,
-                    onManualCrop: onManualCrop,
+                    manualCropRect: $manualCropRect,
+                    onManualCropSelectionChanged: onManualCropSelectionChanged,
                     onManualCropRejected: onManualCropRejected
                 )
             } else {
@@ -1668,7 +1784,8 @@ struct LockedCompareImageCanvas: NSViewRepresentable {
     let panCommand: ComparePanCommand
     let isPanLocked: Bool
     let isCropSelectionEnabled: Bool
-    let onManualCrop: (CropNormalizedRect) -> Void
+    @Binding var manualCropRect: CropNormalizedRect?
+    let onManualCropSelectionChanged: (CropNormalizedRect?) -> Void
     let onManualCropRejected: () -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -1685,10 +1802,13 @@ struct LockedCompareImageCanvas: NSViewRepresentable {
         context.coordinator.parent = self
         nsView.updateImage(image: image, zoom: zoom)
         nsView.isCropSelectionEnabled = isCropSelectionEnabled
+        nsView.updateManualCropRect(manualCropRect)
         nsView.onVisibleCropChanged = { rect in
             context.coordinator.updateVisibleCrop(rect)
         }
-        nsView.onManualCrop = onManualCrop
+        nsView.onManualCropSelectionChanged = { rect in
+            context.coordinator.updateManualCropSelection(rect)
+        }
         nsView.onManualCropRejected = onManualCropRejected
         nsView.onZoomChanged = { nextZoom in
             context.coordinator.updateZoom(nextZoom)
@@ -1706,6 +1826,7 @@ struct LockedCompareImageCanvas: NSViewRepresentable {
         private var lastAppliedDocumentSize: CGSize = .zero
         private var lastAppliedPanRevision: Int = 0
         private var lastVisibleCropRect = CropNormalizedRect.fullFrame
+        private var lastManualCropRect: CropNormalizedRect?
 
         init(_ parent: LockedCompareImageCanvas) {
             self.parent = parent
@@ -1768,6 +1889,15 @@ struct LockedCompareImageCanvas: NSViewRepresentable {
             }
         }
 
+        func updateManualCropSelection(_ rect: CropNormalizedRect?) {
+            guard rect != lastManualCropRect else { return }
+            lastManualCropRect = rect
+            DispatchQueue.main.async {
+                self.parent.manualCropRect = rect
+                self.parent.onManualCropSelectionChanged(rect)
+            }
+        }
+
         private func boundsDidChange() {
             guard let scrollView else { return }
             scrollView.publishVisibleCrop()
@@ -1790,8 +1920,12 @@ final class LockedCompareCanvasView: NSScrollView {
     private var currentZoom: CGFloat = 1
     private let visibleCropLayer = CAShapeLayer()
     private let cropSelectionLayer = CAShapeLayer()
+    private let cropHandleLayer = CAShapeLayer()
     private var cropDragStart: CGPoint?
     private var cropDragCurrent: CGPoint?
+    private var cropDragMode: CropSelectionDragMode?
+    private var cropDragStartRect: CGRect?
+    private var manualCropDocumentRect: CGRect?
     private var panDragStartInWindow: CGPoint?
     private var panDragStartOrigin: CGPoint?
     private var isPointerPanning = false
@@ -1805,7 +1939,7 @@ final class LockedCompareCanvasView: NSScrollView {
         }
     }
     var onVisibleCropChanged: ((CropNormalizedRect) -> Void)?
-    var onManualCrop: ((CropNormalizedRect) -> Void)?
+    var onManualCropSelectionChanged: ((CropNormalizedRect?) -> Void)?
     var onManualCropRejected: (() -> Void)?
     var onZoomChanged: ((CGFloat) -> Void)?
 
@@ -1829,8 +1963,13 @@ final class LockedCompareCanvasView: NSScrollView {
         cropSelectionLayer.strokeColor = NSColor.controlAccentColor.cgColor
         cropSelectionLayer.lineWidth = 2
         cropSelectionLayer.isHidden = true
+        cropHandleLayer.fillColor = NSColor.windowBackgroundColor.cgColor
+        cropHandleLayer.strokeColor = NSColor.controlAccentColor.cgColor
+        cropHandleLayer.lineWidth = 1.5
+        cropHandleLayer.isHidden = true
         imageView.layer?.addSublayer(visibleCropLayer)
         imageView.layer?.addSublayer(cropSelectionLayer)
+        imageView.layer?.addSublayer(cropHandleLayer)
         documentView = imageView
     }
 
@@ -1848,6 +1987,18 @@ final class LockedCompareCanvasView: NSScrollView {
         super.resetCursorRects()
         if isCropSelectionEnabled {
             addCursorRect(bounds, cursor: .crosshair)
+            if let manualCropDocumentRect {
+                addCursorRect(imageView.convert(manualCropDocumentRect, to: self), cursor: .openHand)
+                for handle in CropSelectionHandle.allCases {
+                    addCursorRect(
+                        imageView.convert(
+                            CropSelectionGeometry.handleRect(for: handle, in: manualCropDocumentRect, tolerance: cropHandleTolerance),
+                            to: self
+                        ),
+                        cursor: cropCursor(for: handle)
+                    )
+                }
+            }
         } else if canPointerPan {
             addCursorRect(bounds, cursor: .openHand)
         }
@@ -1862,9 +2013,21 @@ final class LockedCompareCanvasView: NSScrollView {
             super.mouseDown(with: event)
             return
         }
-        cropDragStart = imageView.convert(event.locationInWindow, from: nil)
+        let point = imageView.convert(event.locationInWindow, from: nil)
+        let mode = manualCropDocumentRect
+            .flatMap { CropSelectionGeometry.dragMode(at: point, in: $0, tolerance: cropHandleTolerance) }
+            ?? .create
+        cropDragMode = mode
+        cropDragStartRect = manualCropDocumentRect
+        cropDragStart = point
         cropDragCurrent = cropDragStart
-        updateCropSelectionLayer()
+        updateManualCropDocumentRect(to: CropSelectionGeometry.updatedRect(
+            mode: mode,
+            startRect: cropDragStartRect,
+            startPoint: point,
+            currentPoint: point,
+            documentSize: imageView.bounds.size
+        ))
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -1876,8 +2039,7 @@ final class LockedCompareCanvasView: NSScrollView {
             super.mouseDragged(with: event)
             return
         }
-        cropDragCurrent = imageView.convert(event.locationInWindow, from: nil)
-        updateCropSelectionLayer()
+        updateCropSelection(with: imageView.convert(event.locationInWindow, from: nil))
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -1885,20 +2047,22 @@ final class LockedCompareCanvasView: NSScrollView {
             finishPointerPan()
             return
         }
-        guard isCropSelectionEnabled, let cropDragStart else {
+        guard isCropSelectionEnabled, cropDragStart != nil else {
             super.mouseUp(with: event)
             return
         }
-        cropDragCurrent = imageView.convert(event.locationInWindow, from: nil)
-        let rect = standardizedDocumentRect(from: cropDragStart, to: cropDragCurrent ?? cropDragStart)
-        clearCropSelection()
+        updateCropSelection(with: imageView.convert(event.locationInWindow, from: nil))
 
-        guard let normalized = normalizedCropRect(forDocumentRect: rect), normalized.isUsableCrop else {
+        guard let rect = manualCropDocumentRect,
+              let normalized = normalizedCropRect(forDocumentRect: rect),
+              normalized.isUsableCrop else {
+            restoreOrClearRejectedCropSelection()
             NSSound.beep()
             onManualCropRejected?()
             return
         }
-        onManualCrop?(normalized)
+        finishCropDrag()
+        onManualCropSelectionChanged?(normalized)
     }
 
     override func scrollWheel(with event: NSEvent) {
@@ -1959,11 +2123,81 @@ final class LockedCompareCanvasView: NSScrollView {
         applySynchronizedViewport(viewport)
     }
 
+    func updateManualCropRect(_ normalizedRect: CropNormalizedRect?) {
+        let nextRect = normalizedRect.flatMap {
+            CropGeometryMapper.documentRect(normalizedRect: $0, documentSize: imageView.bounds.size)
+        }
+        guard manualCropDocumentRect != nextRect else { return }
+        manualCropDocumentRect = nextRect
+        updateCropSelectionLayer()
+        window?.invalidateCursorRects(for: self)
+    }
+
     private var canPointerPan: Bool {
         currentZoom > 1.0001 && (
             imageView.bounds.width > contentView.bounds.width + 1 ||
             imageView.bounds.height > contentView.bounds.height + 1
         )
+    }
+
+    private var cropHandleTolerance: CGFloat {
+        max(7, min(14, min(imageView.bounds.width, imageView.bounds.height) * 0.015))
+    }
+
+    private func cropCursor(for handle: CropSelectionHandle) -> NSCursor {
+        switch handle {
+        case .left, .right:
+            return .resizeLeftRight
+        case .top, .bottom:
+            return .resizeUpDown
+        case .topLeft, .topRight, .bottomRight, .bottomLeft:
+            return .crosshair
+        }
+    }
+
+    private func updateCropSelection(with currentPoint: CGPoint) {
+        guard let cropDragMode, let cropDragStart else { return }
+        cropDragCurrent = currentPoint
+        updateManualCropDocumentRect(to: CropSelectionGeometry.updatedRect(
+            mode: cropDragMode,
+            startRect: cropDragStartRect,
+            startPoint: cropDragStart,
+            currentPoint: currentPoint,
+            documentSize: imageView.bounds.size
+        ))
+    }
+
+    private func updateManualCropDocumentRect(to rect: CGRect) {
+        manualCropDocumentRect = rect
+        updateCropSelectionLayer()
+        window?.invalidateCursorRects(for: self)
+        guard let normalized = normalizedCropRect(forDocumentRect: rect), normalized.isUsableCrop else { return }
+        onManualCropSelectionChanged?(normalized)
+    }
+
+    private func restoreOrClearRejectedCropSelection() {
+        switch cropDragMode {
+        case .move, .resize:
+            manualCropDocumentRect = cropDragStartRect
+            if let rect = manualCropDocumentRect,
+               let normalized = normalizedCropRect(forDocumentRect: rect),
+               normalized.isUsableCrop {
+                onManualCropSelectionChanged?(normalized)
+            }
+        default:
+            manualCropDocumentRect = nil
+            onManualCropSelectionChanged?(nil)
+        }
+        finishCropDrag()
+        updateCropSelectionLayer()
+        window?.invalidateCursorRects(for: self)
+    }
+
+    private func finishCropDrag() {
+        cropDragStart = nil
+        cropDragCurrent = nil
+        cropDragMode = nil
+        cropDragStartRect = nil
     }
 
     private func beginPointerPan(with event: NSEvent) {
@@ -2030,6 +2264,14 @@ final class LockedCompareCanvasView: NSScrollView {
     private func updateImageLayout() {
         guard currentImageSize.width > 0, currentImageSize.height > 0 else { return }
 
+        let previousDocumentSize = imageView.bounds.size
+        let previousManualCrop = manualCropDocumentRect.flatMap {
+            CropGeometryMapper.normalizedCropRect(
+                documentRect: $0,
+                imageSize: currentImageSize,
+                documentSize: previousDocumentSize
+            )
+        }
         let viewportSize = contentSize
         let fitScale = min(
             max(viewportSize.width, 1) / max(currentImageSize.width, 1),
@@ -2043,6 +2285,15 @@ final class LockedCompareCanvasView: NSScrollView {
         imageView.frame = NSRect(origin: .zero, size: scaledSize)
         visibleCropLayer.frame = imageView.bounds
         cropSelectionLayer.frame = imageView.bounds
+        cropHandleLayer.frame = imageView.bounds
+        if let previousManualCrop {
+            manualCropDocumentRect = CropGeometryMapper.documentRect(
+                normalizedRect: previousManualCrop,
+                documentSize: imageView.bounds.size
+            )
+        } else if let manualCropDocumentRect {
+            self.manualCropDocumentRect = manualCropDocumentRect.intersection(imageView.bounds)
+        }
         updateVisibleCropLayer()
         updateCropSelectionLayer()
         publishVisibleCrop()
@@ -2078,21 +2329,32 @@ final class LockedCompareCanvasView: NSScrollView {
     }
 
     private func updateCropSelectionLayer() {
-        guard let cropDragStart, let cropDragCurrent else {
+        guard let rect = manualCropDocumentRect else {
             cropSelectionLayer.isHidden = true
+            cropSelectionLayer.path = nil
+            cropHandleLayer.isHidden = true
+            cropHandleLayer.path = nil
             return
         }
 
-        let rect = standardizedDocumentRect(from: cropDragStart, to: cropDragCurrent)
         cropSelectionLayer.isHidden = rect.width <= 1 || rect.height <= 1
         cropSelectionLayer.path = CGPath(rect: rect, transform: nil)
+        cropHandleLayer.isHidden = rect.width <= 1 || rect.height <= 1
+        let handlePath = CGMutablePath()
+        for handleRect in CropSelectionGeometry.handleRects(in: rect, tolerance: cropHandleTolerance) {
+            handlePath.addRect(handleRect)
+        }
+        cropHandleLayer.path = handlePath
     }
 
     private func clearCropSelection() {
-        cropDragStart = nil
-        cropDragCurrent = nil
+        finishCropDrag()
+        manualCropDocumentRect = nil
         cropSelectionLayer.isHidden = true
         cropSelectionLayer.path = nil
+        cropHandleLayer.isHidden = true
+        cropHandleLayer.path = nil
+        window?.invalidateCursorRects(for: self)
     }
 }
 

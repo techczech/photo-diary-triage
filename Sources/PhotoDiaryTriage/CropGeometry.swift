@@ -48,4 +48,15 @@ struct CropGeometryMapper {
         )
         return rect.intersection(CGRect(origin: .zero, size: documentSize))
     }
+
+    static func documentRect(normalizedRect: CropNormalizedRect, documentSize: CGSize) -> CGRect? {
+        guard documentSize.width > 0, documentSize.height > 0 else { return nil }
+
+        return CGRect(
+            x: normalizedRect.x * documentSize.width,
+            y: (1 - normalizedRect.y - normalizedRect.height) * documentSize.height,
+            width: normalizedRect.width * documentSize.width,
+            height: normalizedRect.height * documentSize.height
+        ).intersection(CGRect(origin: .zero, size: documentSize))
+    }
 }
