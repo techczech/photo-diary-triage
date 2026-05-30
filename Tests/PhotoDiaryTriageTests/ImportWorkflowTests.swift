@@ -77,6 +77,64 @@ import Testing
     #expect(result.walkManifest.summary.importedFiles == 2)
 }
 
+@Test func importCoordinatorChecksumModeRejectsSameSizeCorruptDestination() async throws {
+    let root = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let sourceRoot = root.appendingPathComponent("source", isDirectory: true)
+    let archiveRoot = root.appendingPathComponent("archive", isDirectory: true)
+    try writeTestFile(sourceRoot.appendingPathComponent("IMG_0010.jpg"), contents: "source-data")
+
+    let item = makeTestMediaItem(
+        sourceRoot: sourceRoot,
+        fileName: "IMG_0010.jpg",
+        capturedAt: Date(timeIntervalSince1970: 12_500),
+        selectionState: .included,
+        lifecycleState: .selectedForImport
+    )
+    let session = makeTestSession(sourceRoot: sourceRoot, archiveRoot: archiveRoot, items: [item], title: "Checksum Walk")
+    let coordinator = ImportCoordinator(fileManager: CorruptingCopyFileManager(corruptContents: "wrong-data!"))
+
+    do {
+        _ = try await coordinator.commit(session: session, verificationMode: .checksum)
+        Issue.record("Checksum verification should reject same-size corrupt destination.")
+    } catch {
+        #expect(error.localizedDescription.contains("checksums differ"))
+        #expect(error.localizedDescription.contains("IMG_0010.jpg"))
+    }
+}
+
+@Test func importCoordinatorChecksumModeRecordsChecksumForPrimaryAndCompanion() async throws {
+    let root = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let sourceRoot = root.appendingPathComponent("source", isDirectory: true)
+    let archiveRoot = root.appendingPathComponent("archive", isDirectory: true)
+    try writeTestFile(sourceRoot.appendingPathComponent("IMG_0011.jpg"), contents: "jpeg-checksum")
+    try writeTestFile(sourceRoot.appendingPathComponent("IMG_0011.cr3"), contents: "raw-checksum")
+
+    let companion = makeTestCompanionFile(sourceRoot: sourceRoot, fileName: "IMG_0011.cr3")
+    let item = makeTestMediaItem(
+        sourceRoot: sourceRoot,
+        fileName: "IMG_0011.jpg",
+        capturedAt: Date(timeIntervalSince1970: 12_600),
+        selectionState: .included,
+        importRawCompanions: true,
+        companionFiles: [companion],
+        lifecycleState: .selectedForImport
+    )
+    let session = makeTestSession(sourceRoot: sourceRoot, archiveRoot: archiveRoot, items: [item], title: "Checksum RAW Walk")
+
+    let result = try await ImportCoordinator().commit(session: session, verificationMode: .checksum)
+    let fileVerified = try #require(result.events.first { $0.event == "file_verified" })
+    let companionVerified = try #require(result.events.first { $0.event == "companion_verified" })
+
+    #expect(fileVerified.details["verification_mode"] == ImportVerificationMode.checksum.rawValue)
+    #expect(fileVerified.details["sha256"]?.count == 64)
+    #expect(companionVerified.details["verification_mode"] == ImportVerificationMode.checksum.rawValue)
+    #expect(companionVerified.details["sha256"]?.count == 64)
+}
+
 @Test func importCoordinatorCommitMarksCleanupPendingWhenBackupAlreadyConfirmed() async throws {
     let root = try makeTemporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -312,6 +370,7 @@ private final class StubImportCoordinator: ImportCoordinating {
 
     func commit(
         session: ImportSession,
+        verificationMode: ImportVerificationMode,
         progress: (@Sendable (ImportProgress) async -> Void)?
     ) async throws -> ImportResult {
         for step in progressSteps {
@@ -329,6 +388,20 @@ private final class StubImportCoordinator: ImportCoordinating {
 
     func cleanupImportedSources(in session: ImportSession) async throws -> ImportSession {
         session
+    }
+}
+
+private final class CorruptingCopyFileManager: FileManager {
+    let corruptContents: String
+
+    init(corruptContents: String) {
+        self.corruptContents = corruptContents
+        super.init()
+    }
+
+    override func copyItem(at srcURL: URL, to dstURL: URL) throws {
+        try super.copyItem(at: srcURL, to: dstURL)
+        try corruptContents.data(using: .utf8)?.write(to: dstURL)
     }
 }
 

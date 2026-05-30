@@ -21,6 +21,7 @@ protocol SettingsPersisting: AnyObject {
 protocol ImportCoordinating {
     func commit(
         session: ImportSession,
+        verificationMode: ImportVerificationMode,
         progress: (@Sendable (ImportProgress) async -> Void)?
     ) async throws -> ImportResult
     func cleanupImportedSources(in session: ImportSession) async throws -> ImportSession
@@ -468,6 +469,7 @@ final class ImportWorkflow: ObservableObject {
 
     func commit(
         session: ImportSession,
+        verificationMode: ImportVerificationMode = .sizeOnly,
         progressHandler: (@MainActor (ImportProgress?) -> Void)? = nil
     ) async throws -> ImportResult {
         importProgress = ImportProgress(current: 0, total: ImportProgress.expectedTotalEntries(for: session))
@@ -478,7 +480,7 @@ final class ImportWorkflow: ObservableObject {
         }
 
         do {
-            let result = try await coordinator.commit(session: session) { progress in
+            let result = try await coordinator.commit(session: session, verificationMode: verificationMode) { progress in
                 await MainActor.run {
                     self.importProgress = progress
                     progressHandler?(progress)

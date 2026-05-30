@@ -117,6 +117,23 @@ struct SettingsView: View {
             }
 
             Form {
+                Section("Import Verification") {
+                    Picker("Copy check", selection: Binding(
+                        get: { appState.settings.verificationMode },
+                        set: { appState.setImportVerificationMode($0) }
+                    )) {
+                        ForEach(ImportVerificationMode.allCases, id: \.self) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 280)
+
+                    Text(appState.settings.verificationMode.detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 Section("Backup") {
                     Text("Export and restore saved settings and session memory.")
                         .foregroundStyle(.secondary)
