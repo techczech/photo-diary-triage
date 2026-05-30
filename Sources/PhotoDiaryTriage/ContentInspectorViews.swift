@@ -260,6 +260,7 @@ struct DetailsInspectorView: View {
                         appState: appState,
                         item: item,
                         thumbnailFailed: false,
+                        thumbnailCloudOnly: appState.isThumbnailCloudOnly(for: item),
                         retryThumbnail: {
                             appState.requestThumbnail(for: item)
                         },
@@ -272,6 +273,7 @@ struct DetailsInspectorView: View {
                     inspectorRow("File", item.fileName)
                     inspectorRow("Relative Path", item.relativePath)
                     inspectorRow("Size", ByteCountFormatter.string(fromByteCount: item.fileSizeBytes, countStyle: .file))
+                    inspectorRow("Locality", appState.isFileOnlineOnly(for: item) ? FileLocality.onlineOnly.displayLabel : item.resolvedFileLocality.displayLabel)
                     inspectorRow("State", item.selectionState.statusLabel)
                     inspectorRow("Lifecycle", item.lifecycleState.rawValue)
 

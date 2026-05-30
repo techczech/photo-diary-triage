@@ -702,6 +702,7 @@ struct MediaItem: Identifiable, Codable, Hashable, Sendable {
     var verifiedAt: Date?
     var sourceCleanedAt: Date?
     var cropRelationship: CropRelationship?
+    var fileLocality: FileLocality?
 
     init(
         id: UUID = UUID(),
@@ -725,7 +726,8 @@ struct MediaItem: Identifiable, Codable, Hashable, Sendable {
         importedAt: Date? = nil,
         verifiedAt: Date? = nil,
         sourceCleanedAt: Date? = nil,
-        cropRelationship: CropRelationship? = nil
+        cropRelationship: CropRelationship? = nil,
+        fileLocality: FileLocality? = nil
     ) {
         self.id = id
         self.sourceURL = sourceURL
@@ -749,10 +751,19 @@ struct MediaItem: Identifiable, Codable, Hashable, Sendable {
         self.verifiedAt = verifiedAt
         self.sourceCleanedAt = sourceCleanedAt
         self.cropRelationship = cropRelationship
+        self.fileLocality = fileLocality
     }
 }
 
 extension MediaItem {
+    var resolvedFileLocality: FileLocality {
+        fileLocality ?? .unknown
+    }
+
+    var isSourceOnlineOnly: Bool {
+        resolvedFileLocality.isOnlineOnly
+    }
+
     var displayAspectRatio: Double {
         if let pixelWidth = metadata.pixelWidth,
            let pixelHeight = metadata.pixelHeight,

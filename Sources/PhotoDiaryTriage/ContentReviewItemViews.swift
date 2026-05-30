@@ -6,6 +6,7 @@ struct ThumbnailImageSurface: View {
     let appState: AppState
     let item: MediaItem
     let thumbnailFailed: Bool
+    let thumbnailCloudOnly: Bool
     let retryThumbnail: () -> Void
     let contentMode: ContentMode
     let compactRetry: Bool
@@ -16,6 +17,7 @@ struct ThumbnailImageSurface: View {
         appState: AppState,
         item: MediaItem,
         thumbnailFailed: Bool,
+        thumbnailCloudOnly: Bool = false,
         retryThumbnail: @escaping () -> Void,
         contentMode: ContentMode = .fill,
         compactRetry: Bool = false
@@ -23,6 +25,7 @@ struct ThumbnailImageSurface: View {
         self.appState = appState
         self.item = item
         self.thumbnailFailed = thumbnailFailed
+        self.thumbnailCloudOnly = thumbnailCloudOnly
         self.retryThumbnail = retryThumbnail
         self.contentMode = contentMode
         self.compactRetry = compactRetry
@@ -51,6 +54,23 @@ struct ThumbnailImageSurface: View {
                     }
                 }
                 .onAppear {
+                    _ = appState.thumbnailImage(for: item)
+                }
+        } else if thumbnailCloudOnly {
+            Rectangle()
+                .fill(.quaternary)
+                .overlay {
+                    VStack(spacing: compactRetry ? 4 : 8) {
+                        Image(systemName: "icloud.and.arrow.down")
+                            .font(compactRetry ? .caption : .title3)
+                        Text(compactRetry ? "Cloud" : "Online-only")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                .onAppear {
+                    appState.requestThumbnail(for: item)
                     _ = appState.thumbnailImage(for: item)
                 }
         } else {
@@ -135,6 +155,7 @@ struct ReviewGridCard: View {
                 appState: appState,
                 item: item,
                 thumbnailFailed: snapshot.thumbnailFailed,
+                thumbnailCloudOnly: snapshot.thumbnailCloudOnly,
                 retryThumbnail: retryThumbnail
             )
             .frame(height: CGFloat(ReviewGridMetrics.thumbnailHeight(for: cardWidth)))
@@ -291,6 +312,7 @@ struct MediaItemRow: View {
                     appState: appState,
                     item: item,
                     thumbnailFailed: snapshot.thumbnailFailed,
+                    thumbnailCloudOnly: snapshot.thumbnailCloudOnly,
                     retryThumbnail: retryThumbnail,
                     compactRetry: true
                 )

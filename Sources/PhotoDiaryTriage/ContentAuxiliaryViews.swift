@@ -1070,7 +1070,8 @@ struct FullPhotoPreviewCanvas: View {
             manualCropRect: $manualCropRect,
             onManualCropSelectionChanged: onManualCropSelectionChanged,
             onManualCropRejected: onManualCropRejected,
-            placeholderImage: thumbnailSlot.image
+            placeholderImage: thumbnailSlot.image,
+            isOnlineOnly: appState.isFileOnlineOnly(for: item)
         )
         .task(id: item.id) {
             appState.requestThumbnail(for: item)
@@ -1630,11 +1631,14 @@ struct ZoomableImageCanvas: View {
     let onManualCropSelectionChanged: (CropNormalizedRect?) -> Void
     let onManualCropRejected: () -> Void
     var placeholderImage: NSImage?
+    var isOnlineOnly = false
     @StateObject private var imageModel = DecodedImageModel()
 
     var body: some View {
         Group {
-            if let image = imageModel.image {
+            if isOnlineOnly {
+                CloudOnlyImagePlaceholder(image: placeholderImage)
+            } else if let image = imageModel.image {
                 LockedCompareImageCanvas(
                     itemID: itemID,
                     image: image,
@@ -1668,6 +1672,7 @@ struct ZoomableImageCanvas: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task(id: imageURL) {
+            guard !isOnlineOnly else { return }
             imageModel.load(.interactiveDisplay(imageURL))
         }
     }
@@ -1732,12 +1737,13 @@ struct LoadedLockedCompareImageCanvas: View {
                     onManualCropRejected: onManualCropRejected
                 )
             } else {
-                CompareImagePlaceholder(image: thumbnailSlot.image)
+                CompareImagePlaceholder(image: thumbnailSlot.image, isOnlineOnly: appState.isFileOnlineOnly(for: item))
             }
         }
         .task(id: item.id) {
             appState.requestThumbnail(for: item)
             _ = appState.thumbnailImage(for: item)
+            guard !appState.isFileOnlineOnly(for: item) else { return }
             imageModel.load(.interactiveDisplay(item.sourceURL))
         }
     }
@@ -1745,21 +1751,26 @@ struct LoadedLockedCompareImageCanvas: View {
 
 struct CompareImagePlaceholder: View {
     let image: NSImage?
+    var isOnlineOnly = false
 
     var body: some View {
-        Group {
-            if let image {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(.quaternary)
-            } else {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(.quaternary)
+        if isOnlineOnly {
+            CloudOnlyImagePlaceholder(image: image)
+        } else {
+            Group {
+                if let image {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(.quaternary)
+                } else {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(.quaternary)
+                }
             }
+            .overlay(ProgressView())
         }
-        .overlay(ProgressView())
     }
 }
 
@@ -1897,6 +1908,36 @@ struct LockedCompareImageCanvas: NSViewRepresentable {
             DispatchQueue.main.async {
                 self.parent.synchronizedViewport = viewport
             }
+        }
+    }
+}
+
+private struct CloudOnlyImagePlaceholder: View {
+    let image: NSImage?
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(.quaternary)
+            } else {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(.quaternary)
+            }
+        }
+        .overlay {
+            VStack(spacing: 8) {
+                Image(systemName: "icloud.and.arrow.down")
+                    .font(.title2)
+                Text("Online-only")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(12)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
         }
     }
 }

@@ -19,7 +19,7 @@ struct FileScanner {
         settings: AppSettings,
         metadataMode: FileScannerMetadataMode = .full
     ) throws -> [MediaItem] {
-        let resourceKeys: Set<URLResourceKey> = [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]
+        let resourceKeys = FileLocalityDetector.resourceKeys.union([.contentModificationDateKey])
         let enumerator = fileManager.enumerator(at: folder, includingPropertiesForKeys: Array(resourceKeys))!
         let baseFolder = folder.resolvingSymlinksInPath().standardizedFileURL
         var candidates: [ScanCandidate] = []
@@ -48,6 +48,7 @@ struct FileScanner {
             let baseName = fileURL.deletingPathExtension().lastPathComponent
             let relativeDirectory = URL(fileURLWithPath: relativePath).deletingLastPathComponent().path
             let mediaKind = mediaKind(for: ext)
+            let fileLocality = FileLocalityDetector.locality(for: values)
 
             candidates.append(
                 ScanCandidate(
@@ -60,7 +61,8 @@ struct FileScanner {
                     fileSizeBytes: fileSize,
                     mediaKind: mediaKind,
                     contentModificationDate: values.contentModificationDate,
-                    cropRelationship: nil
+                    cropRelationship: nil,
+                    fileLocality: fileLocality
                 )
             )
         }
@@ -115,7 +117,8 @@ struct FileScanner {
                     companionFiles: companions,
                     destinationURL: archiveManifest == nil ? nil : primary.sourceURL,
                     archiveRelativePath: archiveManifest?.archiveRelativePath,
-                    cropRelationship: primary.cropRelationship
+                    cropRelationship: primary.cropRelationship,
+                    fileLocality: primary.fileLocality
                 )
             )
         }
@@ -321,4 +324,5 @@ private struct ScanCandidate {
     var mediaKind: MediaKind
     var contentModificationDate: Date?
     var cropRelationship: CropRelationship?
+    var fileLocality: FileLocality
 }

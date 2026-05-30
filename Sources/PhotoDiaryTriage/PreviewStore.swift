@@ -33,6 +33,11 @@ final class PreviewStore: PreviewCaching {
             return true
         }
 
+        if FileLocalityDetector.locality(for: item.sourceURL).isOnlineOnly {
+            logger.info("Skipping thumbnail generation for online-only file \(item.sourceURL.path, privacy: .public)")
+            return false
+        }
+
         let scale = NSScreen.main?.backingScaleFactor ?? 2
         let maxPixelSize = max(1, Int(ceil(max(size.width, size.height) * scale)))
         if generateImageIOThumbnail(for: item, destinationURL: destinationURL, maxPixelSize: maxPixelSize) {
