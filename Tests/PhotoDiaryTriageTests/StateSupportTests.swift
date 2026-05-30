@@ -191,6 +191,103 @@ import Testing
     #expect(item.metadata.raw.isEmpty)
 }
 
+@Test func archiveMediaLoadReusesFileManifestIdentityAndThumbnailKey() throws {
+    let root = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let walk = root
+        .appendingPathComponent("2026", isDirectory: true)
+        .appendingPathComponent("05 - May", isDirectory: true)
+        .appendingPathComponent("Manifest Walk", isDirectory: true)
+    let imageURL = walk.appendingPathComponent("IMG_0002.jpg")
+    let sidecarURL = walk.appendingPathComponent("IMG_0002.md")
+    try writeTestFile(imageURL, contents: "not real image data")
+    try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1_000)], ofItemAtPath: imageURL.path)
+
+    let mediaItemID = UUID()
+    let capturedAt = Date(timeIntervalSince1970: 1_779_600_000)
+    let sidecar = """
+    ---
+    media_item_id: \(mediaItemID.uuidString)
+    archive_path: \(imageURL.path)
+    archive_relative_path: "2026/05 - May/Manifest Walk/IMG_0002.jpg"
+    thumbnail_cache_key: "source-thumbnail-cache-key"
+    source_file_name: IMG_0002.jpg
+    captured_at: \(DateFormatting.iso8601.string(from: capturedAt))
+    camera_model: "Canon Test"
+    lens_model: "RF Test"
+    pixel_width: 6000
+    pixel_height: 4000
+    latitude: 51.75
+    longitude: -1.25
+    walk_title: "Manifest Walk"
+    walk_location: "Oxford"
+    ---
+    """
+    try sidecar.write(to: sidecarURL, atomically: true, encoding: .utf8)
+
+    let node = BrowserNode(
+        id: "archive-walk-\(walk.path)",
+        title: "Manifest Walk",
+        subtitle: walk.path,
+        kind: .archiveWalkFolder,
+        parentID: nil,
+        mediaItemIDs: [],
+        children: nil,
+        folderURL: walk
+    )
+
+    let maybeResult = try BrowserViewModel(scanner: FileScanner()).loadArchiveMedia(for: node, settings: makeTestSettings(root: root))
+    let item = try #require(maybeResult?.items.first)
+
+    #expect(item.id == mediaItemID)
+    #expect(item.thumbnailCacheKey == "source-thumbnail-cache-key")
+    #expect(item.capturedAt == capturedAt)
+    #expect(item.metadata.cameraModel == "Canon Test")
+    #expect(item.metadata.lensModel == "RF Test")
+    #expect(item.metadata.pixelWidth == 6000)
+    #expect(item.metadata.pixelHeight == 4000)
+    #expect(item.metadata.latitude == 51.75)
+    #expect(item.metadata.longitude == -1.25)
+    #expect(item.destinationURL?.standardizedFileURL.path == imageURL.standardizedFileURL.path)
+    #expect(item.archiveRelativePath == "2026/05 - May/Manifest Walk/IMG_0002.jpg")
+}
+
+@Test func thumbnailCacheKeyResolverReusesKnownImportedDestinationKeys() {
+    let root = URL(fileURLWithPath: "/tmp/thumb-key-resolver", isDirectory: true)
+    let sourceRoot = root.appendingPathComponent("source", isDirectory: true)
+    let archiveRoot = root.appendingPathComponent("archive", isDirectory: true)
+    let archiveURL = archiveRoot
+        .appendingPathComponent("2026/05 - May/Walk", isDirectory: true)
+        .appendingPathComponent("Walk-001.jpg")
+    var importedItem = makeTestMediaItem(
+        sourceRoot: sourceRoot,
+        fileName: "IMG_0003.jpg",
+        capturedAt: Date(timeIntervalSince1970: 1_779_700_000)
+    )
+    importedItem.thumbnailCacheKey = "source-cache-key"
+    importedItem.destinationURL = archiveURL
+    importedItem.archiveRelativePath = "2026/05 - May/Walk/Walk-001.jpg"
+    let session = makeTestSession(sourceRoot: sourceRoot, archiveRoot: archiveRoot, items: [importedItem])
+    let archiveItem = MediaItem(
+        sourceURL: archiveURL,
+        relativePath: "Walk-001.jpg",
+        fileName: "Walk-001.jpg",
+        baseName: "Walk-001",
+        mediaKind: .jpeg,
+        fileSizeBytes: 1,
+        capturedAt: importedItem.capturedAt,
+        metadata: importedItem.metadata,
+        thumbnailCacheKey: "archive-path-cache-key",
+        destinationURL: archiveURL,
+        archiveRelativePath: importedItem.archiveRelativePath
+    )
+
+    let resolved = ThumbnailCacheKeyResolver().applyingKnownKeys(to: [archiveItem], knownSessions: [session])
+
+    #expect(resolved.first?.thumbnailCacheKey == "source-cache-key")
+}
+
 @Test func photoLogCreationResolverFindsCollisionsOnlyInSameWorkspace() throws {
     let root = try makeTemporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }

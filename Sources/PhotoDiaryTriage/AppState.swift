@@ -311,6 +311,7 @@ final class AppState: ObservableObject {
     private let photoLogCreationResolver = PhotoLogCreationResolver()
     private let workflowGuidanceResolver = WorkflowGuidanceResolver()
     private let archiveCopySurveyor = ArchiveCopySurveyor()
+    private let thumbnailCacheKeyResolver = ThumbnailCacheKeyResolver()
     private let fileManager: FileManager
     private let sourceWorkspaceFolderResolver: SourceWorkspaceFolderResolver
     private let supportRoot: URL
@@ -4698,7 +4699,7 @@ final class AppState: ObservableObject {
 
     private func baseVisibleMediaItems(for node: BrowserNode) -> [MediaItem] {
         if let cachedArchiveItems = archiveMediaCache[node.id] {
-            return cachedArchiveItems
+            return applyingKnownThumbnailCacheKeys(to: cachedArchiveItems)
         }
 
         if let cachedSessionItems = sessionVisibleMediaCacheByNodeID[node.id] {
@@ -5036,6 +5037,18 @@ final class AppState: ObservableObject {
         ].joined(separator: "|")
     }
 
+    private func applyingKnownThumbnailCacheKeys(to items: [MediaItem]) -> [MediaItem] {
+        var knownSessions: [ImportSession] = []
+        var seen: Set<UUID> = []
+        if let currentSession, seen.insert(currentSession.id).inserted {
+            knownSessions.append(currentSession)
+        }
+        for record in persistedSessions where seen.insert(record.0.id).inserted {
+            knownSessions.append(record.0)
+        }
+        return thumbnailCacheKeyResolver.applyingKnownKeys(to: items, knownSessions: knownSessions)
+    }
+
     private func resetThumbnailLoadingProgressIfNeeded(scopeKey: String) -> Bool {
         guard thumbnailLoadingScopeKey != scopeKey else { return false }
         resetThumbnailLoadingProgress(scopeKey: scopeKey)
@@ -5208,7 +5221,7 @@ final class AppState: ObservableObject {
                 switch result {
                 case .success(let loadResult):
                     guard let loadResult else { return }
-                    let sortedItems = MediaItemSort.sorted(loadResult.items)
+                    let sortedItems = self.applyingKnownThumbnailCacheKeys(to: MediaItemSort.sorted(loadResult.items))
                     self.archiveMediaCache[loadResult.nodeID] = sortedItems
                     self.requestVisibleThumbnails(prefetching: sortedItems)
                     self.preheatDisplayImages(for: sortedItems.map(\.id), limit: 6)

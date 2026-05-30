@@ -262,6 +262,7 @@ struct ImportCoordinator: ImportCoordinating {
                     mediaItemID: item.id,
                     archivePath: destinationURL.path,
                     archiveRelativePath: item.archiveRelativePath,
+                    thumbnailCacheKey: item.thumbnailCacheKey,
                     sourceFileName: item.fileName,
                     companionArchivePaths: item.companionFiles.compactMap(\.destinationURL?.path),
                     companionArchiveRelativePaths: item.companionFiles.compactMap(\.archiveRelativePath),

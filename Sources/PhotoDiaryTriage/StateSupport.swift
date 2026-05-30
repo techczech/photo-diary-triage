@@ -46,6 +46,44 @@ struct ImportProgress: Equatable, Sendable {
     }
 }
 
+struct ThumbnailCacheKeyResolver {
+    func applyingKnownKeys(to items: [MediaItem], knownSessions: [ImportSession]) -> [MediaItem] {
+        let lookup = knownKeysByArchiveIdentity(from: knownSessions)
+        guard !lookup.byDestinationPath.isEmpty || !lookup.byArchiveRelativePath.isEmpty else {
+            return items
+        }
+
+        return items.map { item in
+            var updated = item
+            if let key = lookup.byDestinationPath[item.sourceURL.standardizedFileURL.path]
+                ?? item.archiveRelativePath.flatMap({ lookup.byArchiveRelativePath[$0] }) {
+                updated.thumbnailCacheKey = key
+            }
+            return updated
+        }
+    }
+
+    private func knownKeysByArchiveIdentity(
+        from sessions: [ImportSession]
+    ) -> (byDestinationPath: [String: String], byArchiveRelativePath: [String: String]) {
+        var byDestinationPath: [String: String] = [:]
+        var byArchiveRelativePath: [String: String] = [:]
+
+        for session in sessions {
+            for item in session.mediaItems {
+                if let destinationURL = item.destinationURL {
+                    byDestinationPath[destinationURL.standardizedFileURL.path] = item.thumbnailCacheKey
+                }
+                if let archiveRelativePath = item.archiveRelativePath {
+                    byArchiveRelativePath[archiveRelativePath] = item.thumbnailCacheKey
+                }
+            }
+        }
+
+        return (byDestinationPath, byArchiveRelativePath)
+    }
+}
+
 struct AppStartupAlert: Identifiable, Equatable {
     enum RecoveryAction: Equatable {
         case resetSupportData

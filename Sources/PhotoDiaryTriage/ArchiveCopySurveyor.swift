@@ -117,7 +117,7 @@ private struct ArchiveCopyManifest {
 
     init?(url: URL) {
         guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
-        let frontMatter = Self.frontMatterLines(from: text)
+        let frontMatter = FrontMatterParser.values(from: text)
         guard let archivePath = frontMatter["archive_path"]?.nonEmpty else { return nil }
         guard let sourceFileName = frontMatter["source_file_name"]?.nonEmpty else { return nil }
 
@@ -129,29 +129,5 @@ private struct ArchiveCopyManifest {
         } else {
             self.capturedAt = nil
         }
-    }
-
-    private static func frontMatterLines(from text: String) -> [String: String] {
-        var lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        guard lines.first == "---" else { return [:] }
-        lines.removeFirst()
-
-        var values: [String: String] = [:]
-        for line in lines {
-            guard line != "---" else { break }
-            guard let separator = line.firstIndex(of: ":") else { continue }
-            let key = String(line[..<separator]).trimmingCharacters(in: .whitespacesAndNewlines)
-            let rawValue = String(line[line.index(after: separator)...]).trimmingCharacters(in: .whitespacesAndNewlines)
-            values[key] = unquote(rawValue)
-        }
-        return values
-    }
-
-    private static func unquote(_ value: String) -> String {
-        guard value.count >= 2, value.first == "\"", value.last == "\"" else {
-            return value
-        }
-        let inner = value.dropFirst().dropLast()
-        return inner.replacingOccurrences(of: "\\\"", with: "\"")
     }
 }
