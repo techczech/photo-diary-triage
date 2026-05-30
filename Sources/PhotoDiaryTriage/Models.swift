@@ -346,6 +346,29 @@ enum SourceWorkspaceState: Equatable, Sendable {
     }
 }
 
+enum ImportVerificationMode: String, Codable, CaseIterable, Hashable, Sendable {
+    case sizeOnly
+    case checksum
+
+    var title: String {
+        switch self {
+        case .sizeOnly:
+            return "Size Only"
+        case .checksum:
+            return "SHA-256 Checksum"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .sizeOnly:
+            return "Fast copy checks compare source and destination file sizes."
+        case .checksum:
+            return "Stronger checks compare SHA-256 hashes after copy."
+        }
+    }
+}
+
 struct AppSettings: Codable, Hashable, Sendable {
     var defaultSourceRoot: URL
     var archiveRoot: URL
@@ -356,6 +379,7 @@ struct AppSettings: Codable, Hashable, Sendable {
     var burstThresholdSeconds: TimeInterval
     var proximityThresholdSeconds: TimeInterval
     var cleanupRequiresBackupConfirmation: Bool
+    var verificationMode: ImportVerificationMode
     var reviewPresentationMode: ReviewPresentationMode
     var reviewGridColumnCount: Int
 
@@ -377,6 +401,7 @@ struct AppSettings: Codable, Hashable, Sendable {
             burstThresholdSeconds: 2,
             proximityThresholdSeconds: 600,
             cleanupRequiresBackupConfirmation: true,
+            verificationMode: .sizeOnly,
             reviewPresentationMode: .grid,
             reviewGridColumnCount: ReviewGridMetrics.defaultRequestedColumnCount()
         )
@@ -404,6 +429,7 @@ struct AppSettings: Codable, Hashable, Sendable {
         burstThresholdSeconds: TimeInterval,
         proximityThresholdSeconds: TimeInterval,
         cleanupRequiresBackupConfirmation: Bool,
+        verificationMode: ImportVerificationMode = .sizeOnly,
         reviewPresentationMode: ReviewPresentationMode,
         reviewGridColumnCount: Int
     ) {
@@ -416,6 +442,7 @@ struct AppSettings: Codable, Hashable, Sendable {
         self.burstThresholdSeconds = burstThresholdSeconds
         self.proximityThresholdSeconds = proximityThresholdSeconds
         self.cleanupRequiresBackupConfirmation = cleanupRequiresBackupConfirmation
+        self.verificationMode = verificationMode
         self.reviewPresentationMode = reviewPresentationMode
         self.reviewGridColumnCount = reviewGridColumnCount
     }
@@ -433,6 +460,7 @@ struct AppSettings: Codable, Hashable, Sendable {
         burstThresholdSeconds = try container.decodeIfPresent(TimeInterval.self, forKey: .burstThresholdSeconds) ?? defaults.burstThresholdSeconds
         proximityThresholdSeconds = try container.decodeIfPresent(TimeInterval.self, forKey: .proximityThresholdSeconds) ?? defaults.proximityThresholdSeconds
         cleanupRequiresBackupConfirmation = try container.decodeIfPresent(Bool.self, forKey: .cleanupRequiresBackupConfirmation) ?? defaults.cleanupRequiresBackupConfirmation
+        verificationMode = try container.decodeIfPresent(ImportVerificationMode.self, forKey: .verificationMode) ?? defaults.verificationMode
         reviewPresentationMode = try container.decodeIfPresent(ReviewPresentationMode.self, forKey: .reviewPresentationMode) ?? defaults.reviewPresentationMode
         if let storedColumns = try container.decodeIfPresent(Int.self, forKey: .reviewGridColumnCount) {
             reviewGridColumnCount = min(max(storedColumns, 1), ReviewGridMetrics.maxSuggestedColumns)
@@ -454,6 +482,7 @@ struct AppSettings: Codable, Hashable, Sendable {
         try container.encode(burstThresholdSeconds, forKey: .burstThresholdSeconds)
         try container.encode(proximityThresholdSeconds, forKey: .proximityThresholdSeconds)
         try container.encode(cleanupRequiresBackupConfirmation, forKey: .cleanupRequiresBackupConfirmation)
+        try container.encode(verificationMode, forKey: .verificationMode)
         try container.encode(reviewPresentationMode, forKey: .reviewPresentationMode)
         try container.encode(reviewGridColumnCount, forKey: .reviewGridColumnCount)
     }
@@ -468,6 +497,7 @@ struct AppSettings: Codable, Hashable, Sendable {
         case burstThresholdSeconds
         case proximityThresholdSeconds
         case cleanupRequiresBackupConfirmation
+        case verificationMode
         case reviewPresentationMode
         case reviewGridColumnCount
     }

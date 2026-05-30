@@ -2,9 +2,9 @@
 
 ## Status
 
-- Current status: `draft`
+- Current status: `awaiting_user_review`
 - Priority: P3
-- Target release version: TBD
+- Target release version: `0.2.33`
 - Target feature slug: `import-checksum-verification`
 
 ## User Request

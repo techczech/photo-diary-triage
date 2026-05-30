@@ -425,8 +425,8 @@ private func writeTestGridPNGImage(_ url: URL, width: Int, height: Int) throws {
     for y in 0..<height {
         for x in 0..<width {
             let offset = ((y * width) + x) * 4
-            pixels[offset] = UInt8(x * 10)
-            pixels[offset + 1] = UInt8(y * 20)
+            pixels[offset] = UInt8(min(x * 10, 255))
+            pixels[offset + 1] = UInt8(min(y * 20, 255))
             pixels[offset + 2] = 180
             pixels[offset + 3] = 255
         }

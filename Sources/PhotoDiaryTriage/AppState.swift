@@ -1765,7 +1765,7 @@ final class AppState: ObservableObject {
                     destinationPath: destinationPath
                 )
                 statusMessage = "Copying marked files into archive..."
-                let result = try await importWorkflow.commit(session: preparedSession) { [weak self] progress in
+                let result = try await importWorkflow.commit(session: preparedSession, verificationMode: settings.verificationMode) { [weak self] progress in
                     guard let self else { return }
                     self.importProgress = progress
                     if let progress {
@@ -1950,6 +1950,13 @@ final class AppState: ObservableObject {
         settings.reviewPresentationMode = mode
         updateReviewGridMetrics(availableWidth: nil)
         persistSettings()
+    }
+
+    func setImportVerificationMode(_ mode: ImportVerificationMode) {
+        guard settings.verificationMode != mode else { return }
+        settings.verificationMode = mode
+        persistSettings()
+        statusMessage = "Import verification set to \(mode.title)."
     }
 
     func setReviewFilter(_ filter: ReviewFilter) {
@@ -4901,8 +4908,8 @@ final class AppState: ObservableObject {
     }
 
     private func siblingRelativePath(for url: URL, original: MediaItem) -> String {
-        let relativeDirectory = URL(fileURLWithPath: original.relativePath).deletingLastPathComponent().path
-        if relativeDirectory == "." || relativeDirectory == "/" {
+        let relativeDirectory = (original.relativePath as NSString).deletingLastPathComponent
+        if relativeDirectory.isEmpty || relativeDirectory == "." || relativeDirectory == "/" {
             return url.lastPathComponent
         }
         return "\(relativeDirectory)/\(url.lastPathComponent)"
