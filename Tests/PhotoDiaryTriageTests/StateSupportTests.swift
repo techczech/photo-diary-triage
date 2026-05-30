@@ -157,6 +157,75 @@ import Testing
     #expect(archiveWalkCount(in: refreshedRoots) == 2)
 }
 
+@Test func sessionBrowserDateNodesUseReadableMonthAndWeekdayLabels() throws {
+    let root = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let archiveRoot = root.appendingPathComponent("archive", isDirectory: true)
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? calendar.timeZone
+    let capturedAt = try #require(calendar.date(from: DateComponents(
+        calendar: calendar,
+        timeZone: calendar.timeZone,
+        year: 2024,
+        month: 5,
+        day: 8,
+        hour: 12
+    )))
+    let item = makeTestMediaItem(
+        sourceRoot: root,
+        fileName: "IMG_0001.jpg",
+        capturedAt: capturedAt
+    )
+    let session = makeTestSession(sourceRoot: root, archiveRoot: archiveRoot, items: [item])
+
+    let roots = BrowserViewModel(scanner: FileScanner()).browserRoots(
+        currentSession: session,
+        bursts: [],
+        clusters: [],
+        archiveRoot: archiveRoot,
+        sourceWorkspaceState: .loaded(itemCount: 1, sourcePath: root.path),
+        workspaceMode: .cameraTriage
+    )
+
+    let section = try #require(roots.first)
+    let sessionRoot = try #require(section.children?.first)
+    let yearNode = try #require(sessionRoot.children?.first)
+    let monthNode = try #require(yearNode.children?.first)
+    let dayNode = try #require(monthNode.children?.first)
+
+    #expect(yearNode.title == "2024")
+    #expect(monthNode.title == "05 - May")
+    #expect(dayNode.title == "08 - Wed")
+}
+
+@Test func archiveBrowserMonthFolderEnrichesNumericMonthTitle() throws {
+    let root = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let month = root
+        .appendingPathComponent("2026", isDirectory: true)
+        .appendingPathComponent("05", isDirectory: true)
+    try AppDirectories.ensureExists(month.appendingPathComponent("Walk A", isDirectory: true))
+
+    let roots = BrowserViewModel(scanner: FileScanner()).browserRoots(
+        currentSession: nil,
+        bursts: [],
+        clusters: [],
+        archiveRoot: root,
+        sourceWorkspaceState: .idle,
+        workspaceMode: .archiveView
+    )
+
+    let section = try #require(roots.first)
+    let archiveRoot = try #require(section.children?.first)
+    let yearNode = try #require(archiveRoot.children?.first)
+    let monthNode = try #require(yearNode.children?.first)
+
+    #expect(monthNode.title == "05 - May")
+    #expect(monthNode.folderURL?.lastPathComponent == "05")
+}
+
 @Test func archiveMediaLoadUsesFastFileAttributeScan() throws {
     let root = try makeTemporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }

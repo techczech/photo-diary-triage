@@ -214,7 +214,7 @@ final class BrowserViewModel {
 
         return BrowserNode(
             id: "month-\(year)-\(month)",
-            title: String(format: "%02d", month),
+            title: DateFormatting.navigationMonthTitle(month: month),
             subtitle: "\(dayNodes.count) day(s)",
             kind: .month,
             parentID: "year-\(year)",
@@ -302,7 +302,7 @@ final class BrowserViewModel {
 
         return BrowserNode(
             id: dayID,
-            title: String(format: "%02d", day),
+            title: DateFormatting.navigationDayTitle(year: year, month: month, day: day),
             subtitle: "\(items.count) item(s)",
             kind: .day,
             parentID: "month-\(year)-\(month)",
@@ -379,7 +379,7 @@ final class BrowserViewModel {
                 let walks = buildArchiveWalkNodes(monthURL: monthURL)
                 return BrowserNode(
                     id: "archive-month-\(yearURL.lastPathComponent)-\(monthURL.lastPathComponent)",
-                    title: monthURL.lastPathComponent,
+                    title: DateFormatting.navigationMonthTitle(fromFolderName: monthURL.lastPathComponent),
                     subtitle: "\(walks.count) walk folder(s)",
                     kind: .month,
                     parentID: "archive-year-\(yearURL.lastPathComponent)",
