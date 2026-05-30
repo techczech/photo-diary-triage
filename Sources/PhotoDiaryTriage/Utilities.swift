@@ -95,6 +95,39 @@ enum DateFormatting {
         "\(archiveFormatter("dd-EEEE").string(from: date))-\(Slugifier.makeDisplaySlug(from: title))"
     }
 
+    static func navigationMonthTitle(month: Int) -> String {
+        guard let date = gregorianDate(year: 2024, month: month, day: 1) else {
+            return String(format: "%02d", month)
+        }
+        return archiveFormatter("MM - MMMM").string(from: date)
+    }
+
+    static func navigationMonthTitle(fromFolderName folderName: String) -> String {
+        let digits = folderName.prefix { $0.isNumber }
+        guard let month = Int(digits), (1...12).contains(month) else {
+            return folderName
+        }
+        return navigationMonthTitle(month: month)
+    }
+
+    static func navigationDayTitle(year: Int, month: Int, day: Int) -> String {
+        guard let date = gregorianDate(year: year, month: month, day: day) else {
+            return String(format: "%02d", day)
+        }
+        return archiveFormatter("dd - EEE").string(from: date)
+    }
+
+    private static func gregorianDate(year: Int, month: Int, day: Int) -> Date? {
+        let calendar = Calendar(identifier: .gregorian)
+        var components = DateComponents()
+        components.calendar = calendar
+        components.year = year
+        components.month = month
+        components.day = day
+        components.hour = 12
+        return calendar.date(from: components)
+    }
+
     static let iso8601: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]

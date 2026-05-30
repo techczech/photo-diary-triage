@@ -184,3 +184,4 @@
 {"ts":"2026-05-30T22:32:27Z","item_id":"PDT-2026-05-30-098","event":"report_created","status":"implemented","title":"progressive thumbnail loading and speed indicator","file":"changelog/changelog/PDT-2026-05-30-098-progressive-thumbnail-loading-report.md"}
 {"ts":"2026-05-30T22:50:17Z","item_id":"PDT-2026-05-30-099","event":"report_created","status":"implemented","title":"global media loading speed","file":"changelog/changelog/PDT-2026-05-30-099-global-media-loading-speed-report.md"}
 {"ts":"2026-05-30T23:15:32Z","item_id":"PDT-2026-05-30-100","event":"report_created","status":"implemented","title":"measured global media speed","file":"changelog/changelog/PDT-2026-05-30-100-measured-global-media-speed-report.md"}
+{"ts":"2026-05-30T23:44:58Z","item_id":"PDT-2026-05-31-101","event":"report_created","status":"implemented","title":"date label navigation","file":"changelog/changelog/PDT-2026-05-31-101-date-label-navigation-report.md"}
