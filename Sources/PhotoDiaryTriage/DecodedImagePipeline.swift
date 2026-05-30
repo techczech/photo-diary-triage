@@ -133,6 +133,10 @@ actor DecodedImagePipeline {
     }
 
     private static func decodeImage(at url: URL, maxPixelSize: Int?) -> NSImage? {
+        if FileLocalityDetector.locality(for: url).isOnlineOnly {
+            return nil
+        }
+
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
             return nil
         }

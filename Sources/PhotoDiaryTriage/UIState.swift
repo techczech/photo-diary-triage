@@ -205,6 +205,7 @@ struct ThumbnailLoadingSnapshot: Equatable, Sendable {
     let requestedCount: Int
     let completedCount: Int
     let failedCount: Int
+    let skippedCount: Int
     let inFlightCount: Int
     let queuedCount: Int
     let elapsedSeconds: Double
@@ -214,6 +215,7 @@ struct ThumbnailLoadingSnapshot: Equatable, Sendable {
         requestedCount: 0,
         completedCount: 0,
         failedCount: 0,
+        skippedCount: 0,
         inFlightCount: 0,
         queuedCount: 0,
         elapsedSeconds: 0,
@@ -221,11 +223,11 @@ struct ThumbnailLoadingSnapshot: Equatable, Sendable {
     )
 
     var isActive: Bool {
-        requestedCount > 0 && completedCount + failedCount < requestedCount
+        requestedCount > 0 && completedCount + failedCount + skippedCount < requestedCount
     }
 
     var finishedCount: Int {
-        completedCount + failedCount
+        completedCount + failedCount + skippedCount
     }
 
     var fractionCompleted: Double {
@@ -249,6 +251,7 @@ struct ReviewItemSnapshot: Identifiable, Equatable, Sendable {
     let isSelected: Bool
     let isFocused: Bool
     let thumbnailFailed: Bool
+    let thumbnailCloudOnly: Bool
 
     var id: UUID { item.id }
 

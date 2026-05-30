@@ -2177,7 +2177,8 @@ private actor SourceScanGate {
         sourceArchiveCopy: nil,
         isSelected: false,
         isFocused: false,
-        thumbnailFailed: false
+        thumbnailFailed: false,
+        thumbnailCloudOnly: false
     )
     let populated = ReviewItemSnapshotIndex([item.id: snapshot])
     let empty = ReviewItemSnapshotIndex([:])

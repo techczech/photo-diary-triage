@@ -251,6 +251,12 @@ final class AppState: ObservableObject {
             refreshCompareState()
         }
     }
+    @Published var thumbnailCloudOnly: Set<UUID> = [] {
+        didSet {
+            refreshReviewState()
+            refreshCompareState()
+        }
+    }
     @Published var archiveMediaCache: [String: [MediaItem]] = [:] {
         didSet {
             invalidateReviewContentCaches()
@@ -336,6 +342,7 @@ final class AppState: ObservableObject {
     private var thumbnailLoadingRequestedIDs: Set<UUID> = []
     private var thumbnailLoadingCompletedIDs: Set<UUID> = []
     private var thumbnailLoadingFailedIDs: Set<UUID> = []
+    private var thumbnailLoadingSkippedIDs: Set<UUID> = []
     private var thumbnailLoadingInFlightIDs: Set<UUID> = []
     private var thumbnailLoadingStartedAt: Date?
     private var thumbnailLoadingCompletionDates: [Date] = []
@@ -432,6 +439,10 @@ final class AppState: ObservableObject {
         primePersistedSessionCache()
         startVolumeMonitoring()
         refreshAllUIState()
+    }
+
+    func replacePreviewStoreForTesting(_ previewStore: PreviewCaching) {
+        self.previewStore = previewStore
     }
 
     deinit {
@@ -1873,6 +1884,7 @@ final class AppState: ObservableObject {
         let imageURL = thumbnailURL(for: item)
         let url = imageURL as NSURL
         if let image = thumbnailImageCache.object(forKey: url) {
+            clearThumbnailCloudOnly(itemID: item.id)
             thumbnailRegistry.update(itemID: item.id, image: image, isMissing: false)
             return image
         }
@@ -1883,6 +1895,11 @@ final class AppState: ObservableObject {
         }
 
         guard fileManager.fileExists(atPath: imageURL.path) else {
+            if isFileOnlineOnly(for: item) {
+                markThumbnailCloudOnly(itemID: item.id)
+                thumbnailRegistry.update(itemID: item.id, image: nil, isMissing: true)
+                return nil
+            }
             missingThumbnailPaths.insert(imageURL.path)
             thumbnailRegistry.update(itemID: item.id, image: nil, isMissing: true)
             return nil
@@ -1895,6 +1912,7 @@ final class AppState: ObservableObject {
     func requestThumbnail(for item: MediaItem) {
         let imageURL = thumbnailURL(for: item)
         if thumbnailImageCache.object(forKey: imageURL as NSURL) != nil {
+            clearThumbnailCloudOnly(itemID: item.id)
             return
         }
         recordThumbnailRequested([item])
@@ -1910,10 +1928,29 @@ final class AppState: ObservableObject {
             return
         }
         if fileManager.fileExists(atPath: imageURL.path) {
+            clearThumbnailCloudOnly(itemID: item.id)
             decodeThumbnailIfNeeded(from: imageURL, itemID: item.id)
             return
         }
+        if isFileOnlineOnly(for: item) {
+            recordThumbnailSkipped(itemID: item.id)
+            markThumbnailCloudOnly(itemID: item.id)
+            thumbnailRegistry.update(itemID: item.id, image: nil, isMissing: true)
+            return
+        }
         enqueueThumbnailRequests([item], priority: .visible)
+    }
+
+    func isFileOnlineOnly(for item: MediaItem) -> Bool {
+        let currentLocality = FileLocalityDetector.locality(for: item.sourceURL)
+        if currentLocality == .onlineOnly {
+            return true
+        }
+        return currentLocality == .unknown && item.isSourceOnlineOnly
+    }
+
+    func isThumbnailCloudOnly(for item: MediaItem) -> Bool {
+        thumbnailCloudOnly.contains(item.id) || item.isSourceOnlineOnly
     }
 
     func setArchiveRoot(_ archiveRoot: URL) {
@@ -3750,6 +3787,17 @@ final class AppState: ObservableObject {
 
     private func startThumbnailTasks(for items: [MediaItem]) {
         for item in items where thumbnailTasks[item.id] == nil {
+            if isFileOnlineOnly(for: item) {
+                recordThumbnailSkipped(itemID: item.id)
+                markThumbnailCloudOnly(itemID: item.id)
+                thumbnailRegistry.update(itemID: item.id, image: nil, isMissing: true)
+                Task { [weak self] in
+                    guard let self else { return }
+                    let scheduled = await self.thumbnailScheduler.complete(item.id)
+                    self.startThumbnailTasks(for: scheduled)
+                }
+                continue
+            }
             recordThumbnailStarted(itemID: item.id)
             thumbnailTasks[item.id] = Task { [weak self] in
                 guard let self else { return }
@@ -3765,7 +3813,8 @@ final class AppState: ObservableObject {
             if thumbnailFailures.contains(itemID) {
                 thumbnailFailures.remove(itemID)
             }
-            if let item = sessionMediaByID[itemID] {
+            clearThumbnailCloudOnly(itemID: itemID)
+            if let item = mediaItem(for: itemID) {
                 missingThumbnailPaths.remove(thumbnailURL(for: item).path)
                 thumbnailImageCache.removeObject(forKey: thumbnailURL(for: item) as NSURL)
                 await DecodedImagePipeline.shared.removeCachedImage(for: Self.thumbnailDecodeCacheKey(for: thumbnailURL(for: item)))
@@ -3774,6 +3823,7 @@ final class AppState: ObservableObject {
                 recordThumbnailFinished(itemID: itemID, success: true)
             }
         } else {
+            clearThumbnailCloudOnly(itemID: itemID)
             thumbnailFailures.insert(itemID)
             thumbnailRegistry.update(itemID: itemID, image: nil, isMissing: true)
             recordThumbnailFinished(itemID: itemID, success: false)
@@ -3812,6 +3862,7 @@ final class AppState: ObservableObject {
                 thumbnailDecodeTasks.values.forEach { $0.cancel() }
                 thumbnailDecodeTasks.removeAll()
                 missingThumbnailPaths.removeAll()
+                thumbnailCloudOnly.removeAll()
                 thumbnailImageCache.removeAllObjects()
                 thumbnailRegistry.reset()
                 resetThumbnailLoadingProgress(scopeKey: nil)
@@ -3841,6 +3892,7 @@ final class AppState: ObservableObject {
             thumbnailDecodeTasks.values.forEach { $0.cancel() }
             thumbnailDecodeTasks.removeAll()
             missingThumbnailPaths.removeAll()
+            thumbnailCloudOnly.removeAll()
             thumbnailImageCache.removeAllObjects()
             thumbnailRegistry.reset()
             resetThumbnailLoadingProgress(scopeKey: nil)
@@ -4331,7 +4383,8 @@ final class AppState: ObservableObject {
             sourceArchiveCopy: sourceArchiveCopy,
             isSelected: selectedMediaItemIDs.contains(item.id),
             isFocused: focusedReviewItemID == item.id,
-            thumbnailFailed: thumbnailFailures.contains(item.id)
+            thumbnailFailed: thumbnailFailures.contains(item.id),
+            thumbnailCloudOnly: isThumbnailCloudOnly(for: item)
         )
     }
 
@@ -5062,10 +5115,21 @@ final class AppState: ObservableObject {
         thumbnailLoadingRequestedIDs.removeAll()
         thumbnailLoadingCompletedIDs.removeAll()
         thumbnailLoadingFailedIDs.removeAll()
+        thumbnailLoadingSkippedIDs.removeAll()
         thumbnailLoadingInFlightIDs.removeAll()
         thumbnailLoadingStartedAt = nil
         thumbnailLoadingCompletionDates.removeAll()
         thumbnailLoadingState.update(.idle)
+    }
+
+    private func markThumbnailCloudOnly(itemID: UUID) {
+        guard thumbnailCloudOnly.contains(itemID) == false else { return }
+        thumbnailCloudOnly.insert(itemID)
+    }
+
+    private func clearThumbnailCloudOnly(itemID: UUID) {
+        guard thumbnailCloudOnly.contains(itemID) else { return }
+        thumbnailCloudOnly.remove(itemID)
     }
 
     private func recordThumbnailRequested(_ items: [MediaItem]) {
@@ -5086,6 +5150,7 @@ final class AppState: ObservableObject {
         }
         thumbnailLoadingRequestedIDs.insert(itemID)
         thumbnailLoadingFailedIDs.remove(itemID)
+        thumbnailLoadingSkippedIDs.remove(itemID)
         thumbnailLoadingInFlightIDs.insert(itemID)
         updateThumbnailLoadingSnapshot()
     }
@@ -5098,12 +5163,28 @@ final class AppState: ObservableObject {
         thumbnailLoadingInFlightIDs.remove(itemID)
         if success {
             thumbnailLoadingFailedIDs.remove(itemID)
+            thumbnailLoadingSkippedIDs.remove(itemID)
             thumbnailLoadingCompletedIDs.insert(itemID)
         } else {
             thumbnailLoadingCompletedIDs.remove(itemID)
+            thumbnailLoadingSkippedIDs.remove(itemID)
             thumbnailLoadingFailedIDs.insert(itemID)
         }
         thumbnailLoadingCompletionDates.append(Date())
+        updateThumbnailLoadingSnapshot()
+    }
+
+    private func recordThumbnailSkipped(itemID: UUID) {
+        if thumbnailLoadingStartedAt == nil {
+            thumbnailLoadingStartedAt = Date()
+        }
+        thumbnailLoadingRequestedIDs.insert(itemID)
+        thumbnailLoadingInFlightIDs.remove(itemID)
+        thumbnailLoadingFailedIDs.remove(itemID)
+        thumbnailLoadingCompletedIDs.remove(itemID)
+        if thumbnailLoadingSkippedIDs.insert(itemID).inserted {
+            thumbnailLoadingCompletionDates.append(Date())
+        }
         updateThumbnailLoadingSnapshot()
     }
 
@@ -5115,7 +5196,9 @@ final class AppState: ObservableObject {
         thumbnailLoadingCompletionDates.removeAll { now.timeIntervalSince($0) > recentWindow }
         let rateWindow = min(max(elapsed, 1), recentWindow)
         let recentRate = Double(thumbnailLoadingCompletionDates.count) / rateWindow
-        let finishedIDs = thumbnailLoadingCompletedIDs.union(thumbnailLoadingFailedIDs)
+        let finishedIDs = thumbnailLoadingCompletedIDs
+            .union(thumbnailLoadingFailedIDs)
+            .union(thumbnailLoadingSkippedIDs)
         let queuedCount = max(0, thumbnailLoadingRequestedIDs.subtracting(finishedIDs).subtracting(thumbnailLoadingInFlightIDs).count)
 
         thumbnailLoadingState.update(
@@ -5123,6 +5206,7 @@ final class AppState: ObservableObject {
                 requestedCount: thumbnailLoadingRequestedIDs.count,
                 completedCount: thumbnailLoadingCompletedIDs.count,
                 failedCount: thumbnailLoadingFailedIDs.count,
+                skippedCount: thumbnailLoadingSkippedIDs.count,
                 inFlightCount: thumbnailLoadingInFlightIDs.count,
                 queuedCount: queuedCount,
                 elapsedSeconds: elapsed,
@@ -5158,6 +5242,7 @@ final class AppState: ObservableObject {
             .prefix(max(limit, 0))
             .compactMap { mediaItem(for: $0) }
             .filter { fileManager.fileExists(atPath: $0.sourceURL.path) }
+            .filter { !isFileOnlineOnly(for: $0) }
             .map { DecodedImageRequest.interactiveDisplay($0.sourceURL, priority: .userInitiated) }
 
         guard !requests.isEmpty else { return }

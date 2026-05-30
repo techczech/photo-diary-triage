@@ -463,7 +463,7 @@ struct ReviewPaneView: View {
 
                 Text(thumbnailLoadingLabel(snapshot))
                     .font(.caption2.monospacedDigit())
-                    .foregroundStyle(snapshot.failedCount > 0 ? .orange : .secondary)
+                    .foregroundStyle(snapshot.failedCount + snapshot.skippedCount > 0 ? .orange : .secondary)
                     .lineLimit(1)
             }
             .padding(.horizontal, 7)
@@ -483,11 +483,14 @@ struct ReviewPaneView: View {
         if snapshot.failedCount > 0 {
             return "\(base) \(speed) \(snapshot.failedCount) retry"
         }
+        if snapshot.skippedCount > 0 {
+            return "\(base) \(speed) \(snapshot.skippedCount) cloud"
+        }
         return "\(base) \(speed)"
     }
 
     private func thumbnailLoadingHelp(_ snapshot: ThumbnailLoadingSnapshot) -> String {
-        "\(snapshot.completedCount) loaded, \(snapshot.failedCount) failed, \(snapshot.inFlightCount) active, \(snapshot.queuedCount) queued"
+        "\(snapshot.completedCount) loaded, \(snapshot.failedCount) failed, \(snapshot.skippedCount) cloud-only, \(snapshot.inFlightCount) active, \(snapshot.queuedCount) queued"
     }
 
     private var detailDisplayMenu: some View {
