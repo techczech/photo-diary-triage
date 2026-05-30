@@ -1,7 +1,9 @@
 import AppKit
 import Foundation
+import ImageIO
 import OSLog
 import QuickLookThumbnailing
+import UniformTypeIdentifiers
 
 final class PreviewStore: PreviewCaching {
     private let cacheRoot: URL
@@ -31,20 +33,69 @@ final class PreviewStore: PreviewCaching {
             return true
         }
 
-        let request = QLThumbnailGenerator.Request(fileAt: item.sourceURL, size: size, scale: NSScreen.main?.backingScaleFactor ?? 2, representationTypes: .thumbnail)
+        let scale = NSScreen.main?.backingScaleFactor ?? 2
+        let maxPixelSize = max(1, Int(ceil(max(size.width, size.height) * scale)))
+        if generateImageIOThumbnail(for: item, destinationURL: destinationURL, maxPixelSize: maxPixelSize) {
+            return true
+        }
+
+        let request = QLThumbnailGenerator.Request(fileAt: item.sourceURL, size: size, scale: scale, representationTypes: .thumbnail)
 
         do {
             let representation = try await QLThumbnailGenerator.shared.generateBestRepresentation(for: request)
-            guard let pngData = representation.nsImage.tiffRepresentation,
-                  let bitmap = NSBitmapImageRep(data: pngData),
-                  let data = bitmap.representation(using: .png, properties: [:]) else {
+            guard writeThumbnail(representation.cgImage, to: destinationURL) else {
                 logger.error("Failed to encode thumbnail PNG for \(item.sourceURL.path, privacy: .public)")
                 return false
             }
-            try data.write(to: destinationURL)
             return true
         } catch {
             logger.error("Failed to generate thumbnail for \(item.sourceURL.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            return false
+        }
+    }
+
+    private func generateImageIOThumbnail(for item: MediaItem, destinationURL: URL, maxPixelSize: Int) -> Bool {
+        guard let source = CGImageSourceCreateWithURL(item.sourceURL as CFURL, nil) else {
+            return false
+        }
+
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+            kCGImageSourceShouldCacheImmediately: true
+        ]
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return false
+        }
+        return writeThumbnail(cgImage, to: destinationURL)
+    }
+
+    private func writeThumbnail(_ cgImage: CGImage, to destinationURL: URL) -> Bool {
+        let tempURL = destinationURL
+            .deletingLastPathComponent()
+            .appendingPathComponent(".\(destinationURL.lastPathComponent).\(UUID().uuidString).tmp", isDirectory: false)
+        defer {
+            try? fileManager.removeItem(at: tempURL)
+        }
+
+        guard let destination = CGImageDestinationCreateWithURL(tempURL as CFURL, UTType.png.identifier as CFString, 1, nil) else {
+            return false
+        }
+        CGImageDestinationAddImage(destination, cgImage, nil)
+        guard CGImageDestinationFinalize(destination) else {
+            return false
+        }
+
+        do {
+            if fileManager.fileExists(atPath: destinationURL.path) {
+                try fileManager.removeItem(at: tempURL)
+                return true
+            }
+            try fileManager.moveItem(at: tempURL, to: destinationURL)
+            return true
+        } catch {
+            logger.error("Failed to write thumbnail cache file \(destinationURL.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
             return false
         }
     }

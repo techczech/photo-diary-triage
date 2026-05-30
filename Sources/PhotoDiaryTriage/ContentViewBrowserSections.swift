@@ -119,6 +119,7 @@ struct BrowserOrReviewPaneView: View {
     @ObservedObject var state: ReviewState
     @ObservedObject var navigationState: ReviewNavigationState
     @ObservedObject var sidebarState: SidebarState
+    @ObservedObject var thumbnailLoadingState: ThumbnailLoadingState
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -128,7 +129,12 @@ struct BrowserOrReviewPaneView: View {
                 if appState.workspaceMode == .photoLogs {
                     PhotoLogLibraryMainPane(appState: appState, state: sidebarState)
                 } else if state.snapshot.contextMediaItemCount > 0 {
-                    DayContextPaneView(appState: appState, state: state, navigationState: navigationState)
+                    DayContextPaneView(
+                        appState: appState,
+                        state: state,
+                        navigationState: navigationState,
+                        thumbnailLoadingState: thumbnailLoadingState
+                    )
                 } else if !state.snapshot.detailFolderNodes.isEmpty {
                     FolderBrowserPaneView(appState: appState, state: state)
                 } else {
@@ -174,9 +180,15 @@ struct DayContextPaneView: View {
     let appState: AppState
     @ObservedObject var state: ReviewState
     @ObservedObject var navigationState: ReviewNavigationState
+    @ObservedObject var thumbnailLoadingState: ThumbnailLoadingState
 
     var body: some View {
-        ReviewPaneView(appState: appState, state: state, navigationState: navigationState)
+        ReviewPaneView(
+            appState: appState,
+            state: state,
+            navigationState: navigationState,
+            thumbnailLoadingState: thumbnailLoadingState
+        )
     }
 }
 
@@ -261,6 +273,7 @@ struct ReviewPaneView: View {
     let appState: AppState
     @ObservedObject var state: ReviewState
     @ObservedObject var navigationState: ReviewNavigationState
+    @ObservedObject var thumbnailLoadingState: ThumbnailLoadingState
     @State private var showMap = false
 
     var body: some View {
@@ -400,6 +413,8 @@ struct ReviewPaneView: View {
                         .background(Color.accentColor.opacity(0.14), in: Capsule())
                 }
 
+                thumbnailLoadingIndicator
+
                 Spacer(minLength: 6)
 
                 detailDisplayMenu
@@ -435,6 +450,44 @@ struct ReviewPaneView: View {
             .controlSize(.small)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    @ViewBuilder
+    private var thumbnailLoadingIndicator: some View {
+        let snapshot = thumbnailLoadingState.snapshot
+        if snapshot.requestedCount > 0 {
+            HStack(spacing: 6) {
+                ProgressView(value: snapshot.fractionCompleted)
+                    .progressViewStyle(.linear)
+                    .frame(width: 72)
+
+                Text(thumbnailLoadingLabel(snapshot))
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(snapshot.failedCount > 0 ? .orange : .secondary)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(Color(nsColor: .controlBackgroundColor), in: Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
+            }
+            .help(thumbnailLoadingHelp(snapshot))
+        }
+    }
+
+    private func thumbnailLoadingLabel(_ snapshot: ThumbnailLoadingSnapshot) -> String {
+        let base = "Thumbs \(snapshot.finishedCount)/\(snapshot.requestedCount)"
+        let speed = String(format: "%.1f/s", snapshot.recentItemsPerSecond)
+        if snapshot.failedCount > 0 {
+            return "\(base) \(speed) \(snapshot.failedCount) retry"
+        }
+        return "\(base) \(speed)"
+    }
+
+    private func thumbnailLoadingHelp(_ snapshot: ThumbnailLoadingSnapshot) -> String {
+        "\(snapshot.completedCount) loaded, \(snapshot.failedCount) failed, \(snapshot.inFlightCount) active, \(snapshot.queuedCount) queued"
     }
 
     private var detailDisplayMenu: some View {
