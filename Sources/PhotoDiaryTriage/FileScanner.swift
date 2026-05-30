@@ -24,6 +24,7 @@ struct FileScanner {
         let baseFolder = folder.resolvingSymlinksInPath().standardizedFileURL
         var candidates: [ScanCandidate] = []
         var cropManifestURLs: [URL] = []
+        var fileManifestURLs: [URL] = []
 
         for case let fileURL as URL in enumerator {
             try Task.checkCancellation()
@@ -34,6 +35,10 @@ struct FileScanner {
             let ext = fileURL.pathExtension.lowercased()
             if fileURL.lastPathComponent.hasSuffix(".crops.json") {
                 cropManifestURLs.append(fileURL)
+                continue
+            }
+            if ext == "md" {
+                fileManifestURLs.append(fileURL)
                 continue
             }
             guard settings.supportedExtensions.contains(ext) else { continue }
@@ -65,6 +70,10 @@ struct FileScanner {
             manifestURLs: cropManifestURLs,
             baseFolder: baseFolder
         )
+        let archiveFileManifests = archiveFileManifests(
+            for: fileManifestURLs,
+            baseFolder: baseFolder
+        )
         for index in candidates.indices {
             candidates[index].cropRelationship = cropRelationships[canonicalPath(candidates[index].sourceURL)]
         }
@@ -76,7 +85,8 @@ struct FileScanner {
             try Task.checkCancellation()
 
             let primary = primaryCandidate(in: group)
-            let metadata = metadata(for: primary, mode: metadataMode)
+            let archiveManifest = archiveFileManifests[canonicalPath(primary.sourceURL)]
+            let metadata = metadata(for: primary, mode: metadataMode, archiveManifest: archiveManifest)
             let companions = group
                 .filter { $0.sourceURL != primary.sourceURL && $0.mediaKind == .raw }
                 .map {
@@ -92,6 +102,7 @@ struct FileScanner {
 
             items.append(
                 MediaItem(
+                    id: archiveManifest?.mediaItemID ?? UUID(),
                     sourceURL: primary.sourceURL,
                     relativePath: primary.relativePath,
                     fileName: primary.fileName,
@@ -100,8 +111,10 @@ struct FileScanner {
                     fileSizeBytes: primary.fileSizeBytes,
                     capturedAt: metadata.capturedAt,
                     metadata: metadata,
-                    thumbnailCacheKey: CacheKeyBuilder.key(for: primary.sourceURL),
+                    thumbnailCacheKey: archiveManifest?.thumbnailCacheKey ?? CacheKeyBuilder.key(for: primary.sourceURL),
                     companionFiles: companions,
+                    destinationURL: archiveManifest == nil ? nil : primary.sourceURL,
+                    archiveRelativePath: archiveManifest?.archiveRelativePath,
                     cropRelationship: primary.cropRelationship
                 )
             )
@@ -149,19 +162,23 @@ struct FileScanner {
         return resolvedFileURL.lastPathComponent
     }
 
-    private func metadata(for candidate: ScanCandidate, mode: FileScannerMetadataMode) -> MediaMetadata {
+    private func metadata(
+        for candidate: ScanCandidate,
+        mode: FileScannerMetadataMode,
+        archiveManifest: ArchiveFileManifest?
+    ) -> MediaMetadata {
         switch mode {
         case .full:
             return metadataExtractor.extract(from: candidate.sourceURL)
         case .fileAttributesOnly:
             return MediaMetadata(
-                capturedAt: candidate.contentModificationDate,
-                pixelWidth: nil,
-                pixelHeight: nil,
-                cameraModel: nil,
-                lensModel: nil,
-                latitude: nil,
-                longitude: nil,
+                capturedAt: archiveManifest?.capturedAt ?? candidate.contentModificationDate,
+                pixelWidth: archiveManifest?.pixelWidth,
+                pixelHeight: archiveManifest?.pixelHeight,
+                cameraModel: archiveManifest?.cameraModel,
+                lensModel: archiveManifest?.lensModel,
+                latitude: archiveManifest?.latitude,
+                longitude: archiveManifest?.longitude,
                 raw: [:]
             )
         }
@@ -228,10 +245,69 @@ struct FileScanner {
         return relationships
     }
 
+    private func archiveFileManifests(
+        for manifestURLs: [URL],
+        baseFolder: URL
+    ) -> [String: ArchiveFileManifest] {
+        var manifests: [String: ArchiveFileManifest] = [:]
+
+        for manifestURL in manifestURLs {
+            guard let manifest = ArchiveFileManifest(url: manifestURL) else { continue }
+            let siblingMediaURL = manifestURL.deletingPathExtension()
+            manifests[canonicalPath(siblingMediaURL)] = manifest
+
+            if let archivePath = manifest.archivePath {
+                manifests[canonicalPath(URL(fileURLWithPath: archivePath))] = manifest
+            }
+
+            if let archiveRelativePath = manifest.archiveRelativePath {
+                manifests[canonicalPath(baseFolder.appendingPathComponent(archiveRelativePath))] = manifest
+            }
+        }
+
+        return manifests
+    }
+
     private func canonicalPath(_ url: URL) -> String {
         url.resolvingSymlinksInPath().standardizedFileURL.path
     }
 
+}
+
+private struct ArchiveFileManifest {
+    let mediaItemID: UUID?
+    let archivePath: String?
+    let archiveRelativePath: String?
+    let thumbnailCacheKey: String?
+    let capturedAt: Date?
+    let cameraModel: String?
+    let lensModel: String?
+    let pixelWidth: Int?
+    let pixelHeight: Int?
+    let latitude: Double?
+    let longitude: Double?
+
+    init?(url: URL) {
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        let frontMatter = FrontMatterParser.values(from: text)
+        guard frontMatter["archive_path"] != nil || frontMatter["media_item_id"] != nil else { return nil }
+
+        if let mediaItemID = frontMatter["media_item_id"].flatMap(UUID.init(uuidString:)) {
+            self.mediaItemID = mediaItemID
+        } else {
+            self.mediaItemID = nil
+        }
+        archivePath = frontMatter["archive_path"]?.nonEmpty
+        archiveRelativePath = frontMatter["archive_relative_path"]?.nonEmpty
+        thumbnailCacheKey = frontMatter["thumbnail_cache_key"]?.nonEmpty
+        capturedAt = frontMatter["captured_at"].flatMap(DateFormatting.iso8601.date(from:))
+        cameraModel = frontMatter["camera_model"]?.nonEmpty
+        lensModel = frontMatter["lens_model"]?.nonEmpty
+        pixelWidth = frontMatter["pixel_width"].flatMap(Int.init)
+        pixelHeight = frontMatter["pixel_height"].flatMap(Int.init)
+        latitude = frontMatter["latitude"].flatMap(Double.init)
+        longitude = frontMatter["longitude"].flatMap(Double.init)
+    }
 }
 
 private struct ScanCandidate {

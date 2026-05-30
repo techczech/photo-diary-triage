@@ -945,6 +945,7 @@ struct FileManifest: Codable, Hashable, Sendable {
     var mediaItemID: UUID
     var archivePath: String
     var archiveRelativePath: String?
+    var thumbnailCacheKey: String?
     var sourceFileName: String
     var companionArchivePaths: [String]
     var companionArchiveRelativePaths: [String]
@@ -963,6 +964,7 @@ struct FileManifest: Codable, Hashable, Sendable {
         mediaItemID: UUID,
         archivePath: String,
         archiveRelativePath: String? = nil,
+        thumbnailCacheKey: String? = nil,
         sourceFileName: String,
         companionArchivePaths: [String],
         companionArchiveRelativePaths: [String] = [],
@@ -980,6 +982,7 @@ struct FileManifest: Codable, Hashable, Sendable {
         self.mediaItemID = mediaItemID
         self.archivePath = archivePath
         self.archiveRelativePath = archiveRelativePath
+        self.thumbnailCacheKey = thumbnailCacheKey
         self.sourceFileName = sourceFileName
         self.companionArchivePaths = companionArchivePaths
         self.companionArchiveRelativePaths = companionArchiveRelativePaths

@@ -68,6 +68,9 @@ struct ManifestRenderer {
         if let archiveRelativePath = manifest.archiveRelativePath {
             lines.append("archive_relative_path: \(escapeYAML(archiveRelativePath))")
         }
+        if let thumbnailCacheKey = manifest.thumbnailCacheKey {
+            lines.append("thumbnail_cache_key: \(escapeYAML(thumbnailCacheKey))")
+        }
         lines.append("source_file_name: \(manifest.sourceFileName)")
         if !manifest.companionArchivePaths.isEmpty {
             lines.append("companion_archive_paths:")
