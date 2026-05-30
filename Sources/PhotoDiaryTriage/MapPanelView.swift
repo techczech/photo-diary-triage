@@ -104,6 +104,7 @@ struct MapPanelView: View {
                     systemImage: "mappin.slash",
                     description: Text("These photos have no embedded location, and this view is read-only.")
                 )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color(nsColor: .controlBackgroundColor).opacity(0.4))
             } else {
                 MapReader { proxy in
@@ -125,9 +126,11 @@ struct MapPanelView: View {
                     .onMapCameraChange(frequency: .continuous) { context in
                         mapCenter = context.region.center
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: State sync + persistence
