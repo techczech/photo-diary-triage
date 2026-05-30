@@ -201,6 +201,39 @@ struct ImportOperationSnapshot: Equatable, Sendable {
     }
 }
 
+struct ThumbnailLoadingSnapshot: Equatable, Sendable {
+    let requestedCount: Int
+    let completedCount: Int
+    let failedCount: Int
+    let inFlightCount: Int
+    let queuedCount: Int
+    let elapsedSeconds: Double
+    let recentItemsPerSecond: Double
+
+    static let idle = ThumbnailLoadingSnapshot(
+        requestedCount: 0,
+        completedCount: 0,
+        failedCount: 0,
+        inFlightCount: 0,
+        queuedCount: 0,
+        elapsedSeconds: 0,
+        recentItemsPerSecond: 0
+    )
+
+    var isActive: Bool {
+        requestedCount > 0 && completedCount + failedCount < requestedCount
+    }
+
+    var finishedCount: Int {
+        completedCount + failedCount
+    }
+
+    var fractionCompleted: Double {
+        guard requestedCount > 0 else { return 0 }
+        return min(1, max(0, Double(finishedCount) / Double(requestedCount)))
+    }
+}
+
 struct SidebarTreeSnapshot: Equatable, Sendable {
     let browserRoots: [BrowserNode]
     let selectedSidebarNodeID: String?
@@ -591,6 +624,19 @@ final class ReviewNavigationState: ObservableObject {
     private(set) var generation: Int = 0
 
     func update(_ snapshot: ReviewNavigationSnapshot) {
+        guard self.snapshot != snapshot else { return }
+        generation &+= 1
+        objectWillChange.send()
+        self.snapshot = snapshot
+    }
+}
+
+@MainActor
+final class ThumbnailLoadingState: ObservableObject {
+    private(set) var snapshot: ThumbnailLoadingSnapshot = .idle
+    private(set) var generation: Int = 0
+
+    func update(_ snapshot: ThumbnailLoadingSnapshot) {
         guard self.snapshot != snapshot else { return }
         generation &+= 1
         objectWillChange.send()

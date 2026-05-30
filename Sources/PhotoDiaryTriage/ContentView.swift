@@ -75,7 +75,8 @@ struct ContentView: View {
             appState: appState,
             state: reviewState,
             navigationState: reviewNavigationState,
-            sidebarState: sidebarState
+            sidebarState: sidebarState,
+            thumbnailLoadingState: appState.thumbnailLoadingState
         )
         .frame(minWidth: 560, maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)

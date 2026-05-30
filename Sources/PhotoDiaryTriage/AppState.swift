@@ -291,6 +291,7 @@ final class AppState: ObservableObject {
     let inspectorState = InspectorState()
     let compareState = CompareState()
     let presentationState = PresentationState()
+    let thumbnailLoadingState = ThumbnailLoadingState()
 
     private let scanner: FileScanner
     private let groupingService: GroupingService
@@ -330,6 +331,13 @@ final class AppState: ObservableObject {
     private var sourceArchiveCopiesByRelativePath: [String: SourceArchiveCopySnapshot] = [:]
     private var missingThumbnailPaths: Set<String> = []
     private var thumbnailTasks: [UUID: Task<Void, Never>] = [:]
+    private var thumbnailLoadingScopeKey: String?
+    private var thumbnailLoadingRequestedIDs: Set<UUID> = []
+    private var thumbnailLoadingCompletedIDs: Set<UUID> = []
+    private var thumbnailLoadingFailedIDs: Set<UUID> = []
+    private var thumbnailLoadingInFlightIDs: Set<UUID> = []
+    private var thumbnailLoadingStartedAt: Date?
+    private var thumbnailLoadingCompletionDates: [Date] = []
     private var volumeMountObserver: NSObjectProtocol?
     private var hasAttemptedInitialAutoLoad = false
     private let startupSelectionPolicy: StartupSelectionPolicy = .sourceInboxFirst
@@ -1886,6 +1894,18 @@ final class AppState: ObservableObject {
     func requestThumbnail(for item: MediaItem) {
         let imageURL = thumbnailURL(for: item)
         if thumbnailImageCache.object(forKey: imageURL as NSURL) != nil {
+            return
+        }
+        recordThumbnailRequested([item])
+        if thumbnailFailures.contains(item.id) {
+            thumbnailFailures.remove(item.id)
+            missingThumbnailPaths.remove(imageURL.path)
+            thumbnailImageCache.removeObject(forKey: imageURL as NSURL)
+            try? fileManager.removeItem(at: imageURL)
+            Task {
+                await DecodedImagePipeline.shared.removeCachedImage(for: Self.thumbnailDecodeCacheKey(for: imageURL))
+            }
+            enqueueThumbnailRequests([item], priority: .visible)
             return
         }
         if fileManager.fileExists(atPath: imageURL.path) {
@@ -3683,21 +3703,27 @@ final class AppState: ObservableObject {
     }
 
     private func requestThumbnails(for items: [MediaItem]) {
+        recordThumbnailRequested(items)
         enqueueThumbnailRequests(items, priority: .background)
     }
 
     private func requestVisibleThumbnails(prefetching items: [MediaItem] = []) {
-        let visible = visibleMediaItems
-        let visibleIDs = Set(visible.map(\.id))
-
-        if !visible.isEmpty {
-            enqueueThumbnailRequests(visible, priority: .visible)
+        let reviewItems = visibleMediaItems
+        guard !reviewItems.isEmpty else {
+            resetThumbnailLoadingProgress(scopeKey: nil)
+            return
         }
 
-        let backgroundItems = thumbnailPrefetchCandidates(from: items, excluding: visibleIDs)
-        if !backgroundItems.isEmpty {
-            enqueueThumbnailRequests(backgroundItems, priority: .background)
-        }
+        let scopeKey = thumbnailLoadingScopeKey(for: reviewItems)
+        let resetScheduler = resetThumbnailLoadingProgressIfNeeded(scopeKey: scopeKey)
+        let priorityItems = thumbnailPriorityItems(from: reviewItems)
+        let priorityIDs = Set(priorityItems.map(\.id))
+        let prefetchSource = items.isEmpty ? reviewItems : items
+
+        let backgroundItems = thumbnailPrefetchCandidates(from: prefetchSource, excluding: priorityIDs)
+        let requestedItems = deduplicatedThumbnailItems(priorityItems + backgroundItems)
+        recordThumbnailRequested(requestedItems)
+        enqueueThumbnailBatches(visible: priorityItems, background: backgroundItems, resetScheduler: resetScheduler)
     }
 
     private func enqueueThumbnailRequests(_ items: [MediaItem], priority: ThumbnailPriority) {
@@ -3708,11 +3734,26 @@ final class AppState: ObservableObject {
         }
     }
 
+    private func enqueueThumbnailBatches(visible: [MediaItem], background: [MediaItem], resetScheduler: Bool) {
+        Task { [weak self] in
+            guard let self else { return }
+            if resetScheduler {
+                await self.thumbnailScheduler.reset()
+            }
+            let scheduledVisible = await self.thumbnailScheduler.enqueue(visible, priority: .visible)
+            self.startThumbnailTasks(for: scheduledVisible)
+            let scheduledBackground = await self.thumbnailScheduler.enqueue(background, priority: .background)
+            self.startThumbnailTasks(for: scheduledBackground)
+        }
+    }
+
     private func startThumbnailTasks(for items: [MediaItem]) {
         for item in items where thumbnailTasks[item.id] == nil {
+            recordThumbnailStarted(itemID: item.id)
             thumbnailTasks[item.id] = Task { [weak self] in
                 guard let self else { return }
                 let success = await self.previewStore.generateThumbnail(for: item)
+                guard !Task.isCancelled else { return }
                 await self.finishThumbnail(itemID: item.id, success: success)
             }
         }
@@ -3720,17 +3761,23 @@ final class AppState: ObservableObject {
 
     private func finishThumbnail(itemID: UUID, success: Bool) async {
         if success {
-            thumbnailFailures.remove(itemID)
+            if thumbnailFailures.contains(itemID) {
+                thumbnailFailures.remove(itemID)
+            }
             if let item = sessionMediaByID[itemID] {
                 missingThumbnailPaths.remove(thumbnailURL(for: item).path)
                 thumbnailImageCache.removeObject(forKey: thumbnailURL(for: item) as NSURL)
                 await DecodedImagePipeline.shared.removeCachedImage(for: Self.thumbnailDecodeCacheKey(for: thumbnailURL(for: item)))
                 decodeThumbnailIfNeeded(from: thumbnailURL(for: item), itemID: item.id)
+            } else {
+                recordThumbnailFinished(itemID: itemID, success: true)
             }
         } else {
             thumbnailFailures.insert(itemID)
             thumbnailRegistry.update(itemID: itemID, image: nil, isMissing: true)
-            if previewStore.isPersistentCacheAvailable == false {
+            recordThumbnailFinished(itemID: itemID, success: false)
+            if previewStore.isPersistentCacheAvailable == false,
+               importOperation.phase == .idle {
                 statusMessage = "Preview cache unavailable; thumbnails are temporarily disabled."
             }
         }
@@ -3759,11 +3806,17 @@ final class AppState: ObservableObject {
             sessionMediaByID = [:]
             archivePreviewByMediaItemID = [:]
             if clearThumbnailCache {
+                thumbnailTasks.values.forEach { $0.cancel() }
+                thumbnailTasks.removeAll()
                 thumbnailDecodeTasks.values.forEach { $0.cancel() }
                 thumbnailDecodeTasks.removeAll()
                 missingThumbnailPaths.removeAll()
                 thumbnailImageCache.removeAllObjects()
                 thumbnailRegistry.reset()
+                resetThumbnailLoadingProgress(scopeKey: nil)
+                Task {
+                    await thumbnailScheduler.reset()
+                }
             }
             return
         }
@@ -3782,11 +3835,17 @@ final class AppState: ObservableObject {
         }
         archivePreviewByMediaItemID = previews.mapValues { $0.joined(separator: "\n") }
         if clearThumbnailCache {
+            thumbnailTasks.values.forEach { $0.cancel() }
+            thumbnailTasks.removeAll()
             thumbnailDecodeTasks.values.forEach { $0.cancel() }
             thumbnailDecodeTasks.removeAll()
             missingThumbnailPaths.removeAll()
             thumbnailImageCache.removeAllObjects()
             thumbnailRegistry.reset()
+            resetThumbnailLoadingProgress(scopeKey: nil)
+            Task {
+                await thumbnailScheduler.reset()
+            }
         }
     }
 
@@ -4554,7 +4613,7 @@ final class AppState: ObservableObject {
     }
 
     private func focusSidebarFirstResponder() {
-        guard let window = NSApp.keyWindow else { return }
+        guard let app = NSApp, let window = app.keyWindow else { return }
         guard let contentView = window.contentViewController?.view
             ?? (window.value(forKey: "contentView") as? NSView) else { return }
 
@@ -4936,8 +4995,127 @@ final class AppState: ObservableObject {
 
     private func thumbnailPrefetchCandidates(from items: [MediaItem], excluding visibleIDs: Set<UUID>) -> [MediaItem] {
         guard !items.isEmpty else { return [] }
-        let limit = max(96, visibleIDs.count * 4)
+        let limit = max(24, estimatedVisibleReviewPageCapacity() * 2)
         return Array(items.lazy.filter { !visibleIDs.contains($0.id) }.prefix(limit))
+    }
+
+    private func thumbnailPriorityItems(from items: [MediaItem]) -> [MediaItem] {
+        guard !items.isEmpty else { return [] }
+        let pageCapacity = max(estimatedVisibleReviewPageCapacity(), 1)
+        let limit = min(items.count, max(12, pageCapacity * 2))
+
+        if let estimatedVisibleReviewIndexRange {
+            let lowerBound = max(items.startIndex, estimatedVisibleReviewIndexRange.lowerBound - pageCapacity)
+            let upperBound = min(items.index(before: items.endIndex), estimatedVisibleReviewIndexRange.upperBound + pageCapacity)
+            guard lowerBound <= upperBound else { return Array(items.prefix(limit)) }
+            return Array(items[lowerBound...upperBound].prefix(limit))
+        }
+
+        if let focusedReviewItemID,
+           let focusedIndex = items.firstIndex(where: { $0.id == focusedReviewItemID }) {
+            let lowerBound = max(items.startIndex, focusedIndex - (limit / 2))
+            let upperBound = min(items.index(before: items.endIndex), lowerBound + limit - 1)
+            return Array(items[lowerBound...upperBound])
+        }
+
+        return Array(items.prefix(limit))
+    }
+
+    private func deduplicatedThumbnailItems(_ items: [MediaItem]) -> [MediaItem] {
+        var seen: Set<UUID> = []
+        return items.filter { seen.insert($0.id).inserted }
+    }
+
+    private func thumbnailLoadingScopeKey(for items: [MediaItem]) -> String {
+        [
+            selectedSidebarNodeID ?? "none",
+            reviewFilter.rawValue,
+            "\(items.count)",
+            items.first?.thumbnailCacheKey ?? "none",
+            items.last?.thumbnailCacheKey ?? "none"
+        ].joined(separator: "|")
+    }
+
+    private func resetThumbnailLoadingProgressIfNeeded(scopeKey: String) -> Bool {
+        guard thumbnailLoadingScopeKey != scopeKey else { return false }
+        resetThumbnailLoadingProgress(scopeKey: scopeKey)
+        thumbnailTasks.values.forEach { $0.cancel() }
+        thumbnailTasks.removeAll()
+        return true
+    }
+
+    private func resetThumbnailLoadingProgress(scopeKey: String?) {
+        thumbnailLoadingScopeKey = scopeKey
+        thumbnailLoadingRequestedIDs.removeAll()
+        thumbnailLoadingCompletedIDs.removeAll()
+        thumbnailLoadingFailedIDs.removeAll()
+        thumbnailLoadingInFlightIDs.removeAll()
+        thumbnailLoadingStartedAt = nil
+        thumbnailLoadingCompletionDates.removeAll()
+        thumbnailLoadingState.update(.idle)
+    }
+
+    private func recordThumbnailRequested(_ items: [MediaItem]) {
+        let ids = items.map(\.id)
+        guard ids.isEmpty == false else { return }
+        if thumbnailLoadingStartedAt == nil {
+            thumbnailLoadingStartedAt = Date()
+        }
+        for id in ids where thumbnailLoadingCompletedIDs.contains(id) == false {
+            thumbnailLoadingRequestedIDs.insert(id)
+        }
+        updateThumbnailLoadingSnapshot()
+    }
+
+    private func recordThumbnailStarted(itemID: UUID) {
+        if thumbnailLoadingStartedAt == nil {
+            thumbnailLoadingStartedAt = Date()
+        }
+        thumbnailLoadingRequestedIDs.insert(itemID)
+        thumbnailLoadingFailedIDs.remove(itemID)
+        thumbnailLoadingInFlightIDs.insert(itemID)
+        updateThumbnailLoadingSnapshot()
+    }
+
+    private func recordThumbnailFinished(itemID: UUID, success: Bool) {
+        if thumbnailLoadingStartedAt == nil {
+            thumbnailLoadingStartedAt = Date()
+        }
+        thumbnailLoadingRequestedIDs.insert(itemID)
+        thumbnailLoadingInFlightIDs.remove(itemID)
+        if success {
+            thumbnailLoadingFailedIDs.remove(itemID)
+            thumbnailLoadingCompletedIDs.insert(itemID)
+        } else {
+            thumbnailLoadingCompletedIDs.remove(itemID)
+            thumbnailLoadingFailedIDs.insert(itemID)
+        }
+        thumbnailLoadingCompletionDates.append(Date())
+        updateThumbnailLoadingSnapshot()
+    }
+
+    private func updateThumbnailLoadingSnapshot() {
+        let now = Date()
+        let startedAt = thumbnailLoadingStartedAt ?? now
+        let elapsed = max(0, now.timeIntervalSince(startedAt))
+        let recentWindow: TimeInterval = 5
+        thumbnailLoadingCompletionDates.removeAll { now.timeIntervalSince($0) > recentWindow }
+        let rateWindow = min(max(elapsed, 1), recentWindow)
+        let recentRate = Double(thumbnailLoadingCompletionDates.count) / rateWindow
+        let finishedIDs = thumbnailLoadingCompletedIDs.union(thumbnailLoadingFailedIDs)
+        let queuedCount = max(0, thumbnailLoadingRequestedIDs.subtracting(finishedIDs).subtracting(thumbnailLoadingInFlightIDs).count)
+
+        thumbnailLoadingState.update(
+            ThumbnailLoadingSnapshot(
+                requestedCount: thumbnailLoadingRequestedIDs.count,
+                completedCount: thumbnailLoadingCompletedIDs.count,
+                failedCount: thumbnailLoadingFailedIDs.count,
+                inFlightCount: thumbnailLoadingInFlightIDs.count,
+                queuedCount: queuedCount,
+                elapsedSeconds: elapsed,
+                recentItemsPerSecond: recentRate
+            )
+        )
     }
 
     private func preheatDisplayImages(around itemID: UUID, in items: [MediaItem], radius: Int) {
@@ -5081,6 +5259,7 @@ final class AppState: ObservableObject {
         let path = imageURL.path
         guard thumbnailDecodeTasks[path] == nil else { return }
 
+        recordThumbnailStarted(itemID: itemID)
         thumbnailDecodeTasks[path] = Task { [weak self] in
             guard let self else { return }
             let decoded = await DecodedImagePipeline.shared.image(
@@ -5099,9 +5278,15 @@ final class AppState: ObservableObject {
             missingThumbnailPaths.remove(imageURL.path)
             thumbnailImageCache.setObject(image, forKey: imageURL as NSURL, cost: Self.thumbnailCacheCost(for: image))
             thumbnailRegistry.update(itemID: itemID, image: image, isMissing: false)
+            recordThumbnailFinished(itemID: itemID, success: true)
         } else {
             missingThumbnailPaths.insert(imageURL.path)
+            try? fileManager.removeItem(at: imageURL)
+            if thumbnailFailures.contains(itemID) == false {
+                thumbnailFailures.insert(itemID)
+            }
             thumbnailRegistry.update(itemID: itemID, image: nil, isMissing: true)
+            recordThumbnailFinished(itemID: itemID, success: false)
         }
     }
 

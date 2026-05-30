@@ -51,7 +51,6 @@ struct ThumbnailImageSurface: View {
                     }
                 }
                 .onAppear {
-                    appState.requestThumbnail(for: item)
                     _ = appState.thumbnailImage(for: item)
                 }
         } else {
