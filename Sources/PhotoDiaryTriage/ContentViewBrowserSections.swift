@@ -271,8 +271,8 @@ struct ReviewPaneView: View {
             compactReviewTopBar
 
             if showMap {
-                MapPanelView(items: snapshot.visibleItems)
-                    .frame(height: 280)
+                MapPanelView(appState: appState, items: snapshot.visibleItems)
+                    .frame(height: 320)
             }
 
             GeometryReader { proxy in

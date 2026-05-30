@@ -1653,6 +1653,32 @@ final class AppState: ObservableObject {
         save(sessionMutationCoordinator.sessionByUpdatingWalkMetadata(currentSession, title: title, location: location, notes: notes))
     }
 
+    var currentWalkLocationName: String {
+        currentSession?.walkMetadata.location ?? ""
+    }
+
+    var currentWalkCoordinate: (latitude: Double, longitude: Double)? {
+        guard let latitude = currentSession?.walkMetadata.latitude,
+              let longitude = currentSession?.walkMetadata.longitude else { return nil }
+        return (latitude, longitude)
+    }
+
+    var canAssignWalkLocation: Bool {
+        currentSession != nil && canMutateImportSelection
+    }
+
+    func setCurrentWalkLocation(name: String, latitude: Double?, longitude: Double?) {
+        guard let currentSession else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        save(sessionMutationCoordinator.sessionBySettingWalkLocation(
+            currentSession,
+            location: trimmed,
+            latitude: latitude,
+            longitude: longitude
+        ))
+        statusMessage = trimmed.isEmpty ? "Cleared walk location." : "Saved walk location: \(trimmed)."
+    }
+
     func updateWalkDetailsExpansion(for session: ImportSession?) {
         isWalkDetailsExpanded = sessionMutationCoordinator.walkDetailsShouldExpand(for: session)
     }
