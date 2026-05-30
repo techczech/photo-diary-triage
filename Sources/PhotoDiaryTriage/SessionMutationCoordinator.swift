@@ -31,6 +31,19 @@ final class SessionMutationCoordinator {
         return updatedSession
     }
 
+    func sessionBySettingWalkLocation(
+        _ session: ImportSession,
+        location: String,
+        latitude: Double?,
+        longitude: Double?
+    ) -> ImportSession {
+        var updatedSession = session
+        updatedSession.walkMetadata.location = location
+        updatedSession.walkMetadata.latitude = latitude
+        updatedSession.walkMetadata.longitude = longitude
+        return updatedSession
+    }
+
     func sessionBySettingImportRawCompanions(
         _ session: ImportSession,
         for itemID: UUID,

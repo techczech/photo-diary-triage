@@ -164,6 +164,8 @@ struct WalkMetadata: Codable, Hashable, Sendable {
     var location: String
     var notes: String
     var backupConfirmedAt: Date?
+    var latitude: Double?
+    var longitude: Double?
 
     static let empty = WalkMetadata(title: "", location: "", notes: "", backupConfirmedAt: nil)
 }
