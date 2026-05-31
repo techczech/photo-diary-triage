@@ -5,77 +5,57 @@ struct HeaderPaneView: View {
     @ObservedObject var appState: AppState
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ViewThatFits(in: .horizontal) {
-                fullHeaderControls
-                compactHeaderControls
-            }
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(appState.breadcrumbTitles.joined(separator: " / "))
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-
-                Text(appState.workspaceModeNextAction)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+        ViewThatFits(in: .horizontal) {
+            fullContextRow
+            compactContextRow
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.65), in: RoundedRectangle(cornerRadius: 8))
+        .controlSize(.small)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
+        .help(appState.workspaceModeNextAction)
     }
 
-    private var modePicker: some View {
-        Picker("Mode", selection: Binding(
-            get: { appState.workspaceMode },
-            set: { appState.setWorkspaceMode($0) }
-        )) {
-            ForEach(WorkspaceMode.displayOrder, id: \.self) { mode in
-                Label(mode.title, systemImage: mode.systemImage)
-                    .tag(mode)
-            }
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-    }
+    private var fullContextRow: some View {
+        HStack(alignment: .center, spacing: 8) {
+            Label(appState.workspaceContextTitle, systemImage: appState.workspaceContextSystemImage)
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
 
-    private var fullHeaderControls: some View {
-        HStack(alignment: .center, spacing: 12) {
-            modePicker
-                .frame(width: 560)
+            Text(appState.breadcrumbTitles.joined(separator: " / "))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .layoutPriority(1)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Label(appState.workspaceContextTitle, systemImage: appState.workspaceContextSystemImage)
-                    .font(.caption.weight(.semibold))
-                Text(appState.workspaceModeDetail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
+            Text(appState.workspaceModeDetail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
 
-            Spacer()
+            Spacer(minLength: 8)
 
             openInFinderButton(labelStyle: .titleAndIcon)
-            inspectorButton
-            keyboardHelpButton
         }
-        .fixedSize(horizontal: true, vertical: false)
     }
 
-    private var compactHeaderControls: some View {
+    private var compactContextRow: some View {
         HStack(alignment: .center, spacing: 8) {
-            modePicker
-                .frame(minWidth: 320, idealWidth: 380, maxWidth: 440)
+            Label(appState.workspaceContextTitle, systemImage: appState.workspaceContextSystemImage)
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+
+            Text(appState.breadcrumbTitles.joined(separator: " / "))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
 
             Spacer(minLength: 8)
 
             openInFinderButton(labelStyle: .iconOnly)
-            inspectorButton
-            keyboardHelpButton
         }
     }
 
@@ -90,28 +70,6 @@ struct HeaderPaneView: View {
         .buttonStyle(.bordered)
         .help("Open the selected browser folder in Finder")
     }
-
-    private var inspectorButton: some View {
-        Button {
-            appState.toggleDetailsInspector()
-        } label: {
-            Label(appState.isDetailsInspectorVisible ? "Hide Inspector" : "Show Inspector", systemImage: "sidebar.right")
-        }
-        .labelStyle(.iconOnly)
-        .buttonStyle(.bordered)
-        .shortcutHint("Cmd-Option-I", help: "\(appState.isDetailsInspectorVisible ? "Hide" : "Show") inspector (Cmd-Option-I)")
-    }
-
-    private var keyboardHelpButton: some View {
-        Button {
-            appState.showKeyboardHelp = true
-        } label: {
-            Label("Keyboard Shortcuts", systemImage: "keyboard")
-        }
-        .labelStyle(.iconOnly)
-        .buttonStyle(.bordered)
-        .shortcutHint("Cmd-Shift-/", help: "Show keyboard shortcuts (Cmd-Shift-/)")
-    }
 }
 
 struct BrowserOrReviewPaneView: View {
@@ -122,7 +80,7 @@ struct BrowserOrReviewPaneView: View {
     @ObservedObject var thumbnailLoadingState: ThumbnailLoadingState
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
             HeaderPaneView(appState: appState)
 
             Group {

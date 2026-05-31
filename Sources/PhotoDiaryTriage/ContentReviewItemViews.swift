@@ -115,25 +115,23 @@ struct ReviewGridCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            selectionSurface
-        }
+        selectionSurface
         .frame(width: cardWidth, alignment: .topLeading)
-        .padding(10)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 16))
+        .padding(6)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.72), in: RoundedRectangle(cornerRadius: 10))
         .overlay {
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.secondary.opacity(0.16), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.secondary.opacity(0.14), lineWidth: 1)
         }
         .overlay {
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: 10)
                 .stroke(selectionStrokeColor, lineWidth: selectionStrokeWidth)
         }
         .overlay {
             if snapshot.isFocused {
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: 8)
                     .stroke(Color.accentColor.opacity(0.3), style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
-                    .padding(6)
+                    .padding(4)
             }
         }
     }
@@ -146,11 +144,20 @@ struct ReviewGridCard: View {
     }
 
     private var selectionStrokeWidth: CGFloat {
-        snapshot.isSelected ? 4 : (snapshot.isFocused ? 3 : 0)
+        snapshot.isSelected ? 3 : (snapshot.isFocused ? 2 : 0)
     }
 
     private var selectionSurface: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 5) {
+            photoSurface
+            captionLine
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 8))
+        .shortcutHint("Shift-click / Cmd-click / Double-click", help: "Click to select. Shift-click extends the selection, Command-click toggles selection, and double-click opens preview.")
+    }
+
+    private var photoSurface: some View {
+        ZStack(alignment: .topLeading) {
             ThumbnailImageSurface(
                 appState: appState,
                 item: item,
@@ -158,123 +165,247 @@ struct ReviewGridCard: View {
                 thumbnailCloudOnly: snapshot.thumbnailCloudOnly,
                 retryThumbnail: retryThumbnail
             )
-            .frame(height: CGFloat(ReviewGridMetrics.thumbnailHeight(for: cardWidth)))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .overlay {
-                if snapshot.thumbnailFailed == false {
-                    ReviewGridClickTarget(onClick: onClick)
-                }
-            }
 
-            HStack(alignment: .center, spacing: 6) {
-                Text(metadataSummary)
-                    .font(.caption.weight(.semibold))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-
-                Spacer(minLength: 0)
-
-                Text(snapshot.displayStatusLabel)
-                    .font(.caption2)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(statusBadgeColor(for: snapshot.displayStatusKind))
-                    .clipShape(Capsule())
-            }
-            .contentShape(Rectangle())
-            .overlay {
+            if snapshot.thumbnailFailed == false {
                 ReviewGridClickTarget(onClick: onClick)
             }
 
-            if let ownership = snapshot.sourceLogOwnership {
-                SourceLogOwnershipBadge(ownership: ownership)
-            } else if let archiveCopy = snapshot.sourceArchiveCopy {
-                SourceArchiveCopyBadge(archiveCopy: archiveCopy)
-            } else if let copyStatus = snapshot.directCopyStatus {
-                ReviewCopyStatusBadge(copyStatus: copyStatus)
-            }
+            VStack(spacing: 0) {
+                HStack(alignment: .top, spacing: 6) {
+                    triageActionOverlay
 
-            if let cropRelationship = item.cropRelationship {
-                CropRelationshipBadge(relationship: cropRelationship) {
-                    appState.openCropLinkedPreview(for: item.id)
+                    Spacer(minLength: 0)
+
+                    statusBadge
+                }
+
+                Spacer(minLength: 0)
+
+                HStack(alignment: .bottom, spacing: 6) {
+                    secondaryStatusOverlay
+                    Spacer(minLength: 0)
                 }
             }
-
-            if let visibleLockNotice = snapshot.visibleLockNotice {
-                ReviewDecisionLockNotice(text: visibleLockNotice)
-            }
-
-            if canMutateImportSelection && !snapshot.isTriageActionLocked {
-                actionRow
-            }
+            .padding(6)
         }
-        .contentShape(RoundedRectangle(cornerRadius: 12))
-        .shortcutHint("Shift-click / Cmd-click / Double-click", help: "Click to select. Shift-click extends the selection, Command-click toggles selection, and double-click opens preview.")
+        .frame(height: CGFloat(ReviewGridMetrics.thumbnailHeight(for: cardWidth)))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var captionLine: some View {
+        HStack(spacing: 6) {
+            Text(metadataSummary)
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            Spacer(minLength: 0)
+        }
+        .frame(height: 18, alignment: .center)
+        .contentShape(Rectangle())
+        .overlay {
+            ReviewGridClickTarget(onClick: onClick)
+        }
     }
 
     @ViewBuilder
-    private var actionRow: some View {
-        HStack(spacing: 6) {
-            Button("S", action: includeForImport)
-                .buttonStyle(.bordered)
-                .controlSize(.mini)
-                .disabled(item.selectionState.isIncluded)
+    private var triageActionOverlay: some View {
+        if canMutateImportSelection && !snapshot.isTriageActionLocked {
+            HStack(spacing: 4) {
+                TriageChipButton(
+                    title: "S",
+                    isActive: item.selectionState.isIncluded,
+                    activeColor: .accentColor,
+                    action: includeForImport
+                )
                 .shortcutHint("S / Cmd-I", help: "Select this item for import (S / Cmd-I)")
 
-            Button("C", action: markAsCandidate)
-                .buttonStyle(.bordered)
-                .controlSize(.mini)
-                .disabled(item.selectionState.isCandidate)
+                TriageChipButton(
+                    title: "C",
+                    isActive: item.selectionState.isCandidate,
+                    activeColor: .orange,
+                    action: markAsCandidate
+                )
                 .shortcutHint("C", help: "Mark this item as a candidate (C)")
 
-            Button("X", action: excludeFromImport)
-                .buttonStyle(.bordered)
-                .controlSize(.mini)
-                .disabled(item.selectionState.isExcluded)
+                TriageChipButton(
+                    title: "X",
+                    isActive: item.selectionState.isExcluded,
+                    activeColor: .red,
+                    action: excludeFromImport
+                )
                 .shortcutHint("X / Cmd-Shift-X", help: "Exclude this item from import (X / Cmd-Shift-X)")
 
-            if !item.selectionState.isUndecided {
-                Button("D", action: clearTriageState)
-                    .buttonStyle(.bordered)
-                    .controlSize(.mini)
+                if !item.selectionState.isUndecided {
+                    TriageChipButton(
+                        title: "D",
+                        isActive: false,
+                        activeColor: .secondary,
+                        action: clearTriageState
+                    )
                     .shortcutHint("D / Cmd-Shift-I", help: "Clear this item back to undecided (D / Cmd-Shift-I)")
-            }
+                }
 
-            if !item.companionFiles.isEmpty {
-                if item.importRawCompanions {
-                    Button("R") {
-                        setIncludeRaw(false)
+                if !item.companionFiles.isEmpty {
+                    TriageChipButton(
+                        title: "R",
+                        isActive: item.importRawCompanions,
+                        activeColor: .teal
+                    ) {
+                        setIncludeRaw(!item.importRawCompanions)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.mini)
-                    .shortcutHint("R / Cmd-Option-R", help: "Toggle RAW companions for this item (R / Cmd-Option-R)")
-                } else {
-                    Button("R") {
-                        setIncludeRaw(true)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.mini)
                     .shortcutHint("R / Cmd-Option-R", help: "Toggle RAW companions for this item (R / Cmd-Option-R)")
                 }
             }
+            .padding(4)
+            .background(Color(nsColor: .windowBackgroundColor).opacity(0.72), in: RoundedRectangle(cornerRadius: 7))
+            .overlay {
+                RoundedRectangle(cornerRadius: 7)
+                    .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
+            }
+        }
+    }
 
-            Spacer(minLength: 0)
+    private var statusBadge: some View {
+        Text(snapshot.displayStatusLabel)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(statusTextColor(for: snapshot.displayStatusKind))
+            .lineLimit(1)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(statusBadgeColor(for: snapshot.displayStatusKind), in: Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(Color(nsColor: .windowBackgroundColor).opacity(0.55), lineWidth: 0.5)
+            }
+    }
+
+    @ViewBuilder
+    private var secondaryStatusOverlay: some View {
+        HStack(spacing: 4) {
+            if let ownership = snapshot.sourceLogOwnership {
+                PhotoOverlayBadge(
+                    systemImage: ownership.isCopied ? "checkmark.seal.fill" : "tray.full.fill",
+                    label: ownership.isCopied ? "Copied" : "Log",
+                    color: ownership.isCopied ? .green : .blue,
+                    helpText: ownership.helpText
+                )
+            } else if let archiveCopy = snapshot.sourceArchiveCopy {
+                PhotoOverlayBadge(
+                    systemImage: "externaldrive.fill",
+                    label: "Disk",
+                    color: .teal,
+                    helpText: archiveCopy.helpText
+                )
+            } else if let copyStatus = snapshot.directCopyStatus {
+                PhotoOverlayBadge(
+                    systemImage: "checkmark.seal.fill",
+                    label: copyStatus.label,
+                    color: .green,
+                    helpText: copyStatus.helpText
+                )
+            }
+
+            if let cropRelationship = item.cropRelationship {
+                Button {
+                    appState.openCropLinkedPreview(for: item.id)
+                } label: {
+                    Label(cropRelationship.role == .crop ? "Crop" : "Original", systemImage: cropRelationship.role == .crop ? "photo" : "crop")
+                }
+                .buttonStyle(.plain)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(cropRelationship.role == .crop ? Color.purple.opacity(0.95) : Color.teal.opacity(0.95))
+                .lineLimit(1)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(Color(nsColor: .windowBackgroundColor).opacity(0.78), in: Capsule())
+                .overlay {
+                    Capsule()
+                        .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
+                }
+                .help(cropRelationship.helpText)
+            }
+
+            if let visibleLockNotice = snapshot.visibleLockNotice {
+                PhotoOverlayBadge(
+                    systemImage: "lock.fill",
+                    label: "Locked",
+                    color: .secondary,
+                    helpText: visibleLockNotice
+                )
+            }
         }
     }
 
     private func statusBadgeColor(for statusKind: ReviewDisplayStatusKind) -> Color {
         switch statusKind {
         case .copied:
-            return Color.green.opacity(0.14)
+            return Color.green.opacity(0.78)
         case .selection(.included):
-            return Color.accentColor.opacity(0.15)
+            return Color.accentColor.opacity(0.82)
         case .selection(.candidate):
-            return Color.orange.opacity(0.18)
+            return Color.orange.opacity(0.82)
         case .selection(.excluded):
-            return Color.red.opacity(0.14)
+            return Color.red.opacity(0.78)
         case .selection(.undecided):
-            return Color.secondary.opacity(0.12)
+            return Color(nsColor: .windowBackgroundColor).opacity(0.78)
         }
+    }
+
+    private func statusTextColor(for statusKind: ReviewDisplayStatusKind) -> Color {
+        switch statusKind {
+        case .copied, .selection(.included), .selection(.candidate), .selection(.excluded):
+            return .white
+        case .selection(.undecided):
+            return .primary
+        }
+    }
+}
+
+private struct TriageChipButton: View {
+    let title: String
+    let isActive: Bool
+    let activeColor: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.caption2.weight(.bold))
+                .monospaced()
+                .frame(width: 18, height: 16)
+                .contentShape(RoundedRectangle(cornerRadius: 4))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(isActive ? Color.white : Color.primary)
+        .background(isActive ? activeColor : Color(nsColor: .controlBackgroundColor).opacity(0.86), in: RoundedRectangle(cornerRadius: 4))
+        .overlay {
+            RoundedRectangle(cornerRadius: 4)
+                .stroke(Color.secondary.opacity(isActive ? 0 : 0.18), lineWidth: 1)
+        }
+        .help(title)
+    }
+}
+
+private struct PhotoOverlayBadge: View {
+    let systemImage: String
+    let label: String
+    let color: Color
+    let helpText: String
+
+    var body: some View {
+        Label(label, systemImage: systemImage)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(color)
+            .lineLimit(1)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(Color(nsColor: .windowBackgroundColor).opacity(0.78), in: Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
+            }
+            .help(helpText)
     }
 }
 
@@ -399,7 +530,7 @@ struct MediaItemRow: View {
                 if !item.companionFiles.isEmpty {
                     Toggle("RAW", isOn: Binding(
                         get: { item.importRawCompanions },
-                        set: setIncludeRaw
+                        set: { enabled in setIncludeRaw(enabled) }
                     ))
                     .toggleStyle(.switch)
                     .controlSize(.small)
