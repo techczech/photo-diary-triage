@@ -163,7 +163,6 @@ struct ReviewGridCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .contentShape(RoundedRectangle(cornerRadius: 8))
-        .shortcutHint("Shift-click / Cmd-click / Double-click", help: "Click to select. Shift-click extends the selection, Command-click toggles selection, and double-click opens preview.")
     }
 
     private var photoSurface: some View {
@@ -227,45 +226,50 @@ struct ReviewGridCard: View {
                     title: "S",
                     isActive: item.selectionState.isIncluded,
                     activeColor: .accentColor,
+                    helpText: ReviewTooltipText.selectForImport,
                     action: includeForImport
                 )
-                .shortcutHint("S / Cmd-I", help: "Select this item for import (S / Cmd-I)")
+                .shortcutHint(ReviewTooltipText.selectShortcut, help: ReviewTooltipText.selectForImport)
 
                 TriageChipButton(
                     title: "C",
                     isActive: item.selectionState.isCandidate,
                     activeColor: .orange,
+                    helpText: ReviewTooltipText.markAsCandidate,
                     action: markAsCandidate
                 )
-                .shortcutHint("C", help: "Mark this item as a candidate (C)")
+                .shortcutHint(ReviewTooltipText.candidateShortcut, help: ReviewTooltipText.markAsCandidate)
 
                 TriageChipButton(
                     title: "X",
                     isActive: item.selectionState.isExcluded,
                     activeColor: .red,
+                    helpText: ReviewTooltipText.excludeFromImport,
                     action: excludeFromImport
                 )
-                .shortcutHint("X / Cmd-Shift-X", help: "Exclude this item from import (X / Cmd-Shift-X)")
+                .shortcutHint(ReviewTooltipText.excludeShortcut, help: ReviewTooltipText.excludeFromImport)
 
                 if !item.selectionState.isUndecided {
                     TriageChipButton(
                         title: "D",
                         isActive: false,
                         activeColor: .secondary,
+                        helpText: ReviewTooltipText.clearTriageState,
                         action: clearTriageState
                     )
-                    .shortcutHint("D / Cmd-Shift-I", help: "Clear this item back to undecided (D / Cmd-Shift-I)")
+                    .shortcutHint(ReviewTooltipText.clearShortcut, help: ReviewTooltipText.clearTriageState)
                 }
 
                 if !item.companionFiles.isEmpty {
                     TriageChipButton(
                         title: "R",
                         isActive: item.importRawCompanions,
-                        activeColor: .teal
+                        activeColor: .teal,
+                        helpText: ReviewTooltipText.toggleRawCompanions
                     ) {
                         setIncludeRaw(!item.importRawCompanions)
                     }
-                    .shortcutHint("R / Cmd-Option-R", help: "Toggle RAW companions for this item (R / Cmd-Option-R)")
+                    .shortcutHint(ReviewTooltipText.rawShortcut, help: ReviewTooltipText.toggleRawCompanions)
                 }
             }
             .padding(4)
@@ -404,6 +408,7 @@ private struct TriageChipButton: View {
     let title: String
     let isActive: Bool
     let activeColor: Color
+    let helpText: String
     let action: () -> Void
 
     var body: some View {
@@ -421,7 +426,7 @@ private struct TriageChipButton: View {
             RoundedRectangle(cornerRadius: 4)
                 .stroke(Color.secondary.opacity(isActive ? 0 : 0.18), lineWidth: 1)
         }
-        .help(title)
+        .help(helpText)
     }
 }
 
@@ -544,25 +549,25 @@ struct MediaItemRow: View {
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .disabled(item.selectionState.isIncluded)
-                    .shortcutHint("S / Cmd-I", help: "Select this item for import (S / Cmd-I)")
+                    .shortcutHint(ReviewTooltipText.selectShortcut, help: ReviewTooltipText.selectForImport)
 
                 Button("C", action: markAsCandidate)
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .disabled(item.selectionState.isCandidate)
-                    .shortcutHint("C", help: "Mark this item as a candidate (C)")
+                    .shortcutHint(ReviewTooltipText.candidateShortcut, help: ReviewTooltipText.markAsCandidate)
 
                 Button("X", action: excludeFromImport)
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .disabled(item.selectionState.isExcluded)
-                    .shortcutHint("X / Cmd-Shift-X", help: "Exclude this item from import (X / Cmd-Shift-X)")
+                    .shortcutHint(ReviewTooltipText.excludeShortcut, help: ReviewTooltipText.excludeFromImport)
 
                 if !item.selectionState.isUndecided {
                     Button("D", action: clearTriageState)
                         .buttonStyle(.bordered)
                         .controlSize(.small)
-                        .shortcutHint("D / Cmd-Shift-I", help: "Clear this item back to undecided (D / Cmd-Shift-I)")
+                        .shortcutHint(ReviewTooltipText.clearShortcut, help: ReviewTooltipText.clearTriageState)
                 }
 
                 if !item.companionFiles.isEmpty {
@@ -572,7 +577,7 @@ struct MediaItemRow: View {
                     ))
                     .toggleStyle(.switch)
                     .controlSize(.small)
-                    .shortcutHint("R / Cmd-Option-R", help: "Include RAW companions for this item (R / Cmd-Option-R)")
+                    .shortcutHint(ReviewTooltipText.rawShortcut, help: ReviewTooltipText.includeRawCompanions)
                 }
 
                 Spacer(minLength: 0)

@@ -2,17 +2,20 @@ import AppKit
 import SwiftUI
 
 private struct ShortcutHintBubble: View {
-    let shortcut: String
+    let text: String
 
     var body: some View {
-        Text(shortcut)
-            .font(.caption.weight(.semibold))
+        Text(text)
+            .font(.caption2.weight(.medium))
             .foregroundStyle(.primary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(.ultraThickMaterial, in: Capsule())
+            .lineLimit(3)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: 260, alignment: .leading)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(.ultraThickMaterial, in: RoundedRectangle(cornerRadius: 6))
             .overlay {
-                Capsule()
+                RoundedRectangle(cornerRadius: 6)
                     .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
             }
             .shadow(color: .black.opacity(0.12), radius: 8, y: 4)
@@ -34,8 +37,7 @@ private struct ShortcutHintModifier: ViewModifier {
             }
             .overlay(alignment: alignment) {
                 if isHovering {
-                    ShortcutHintBubble(shortcut: shortcut)
-                        .scaleEffect(0.82)
+                    ShortcutHintBubble(text: helpText)
                         .padding(6)
                 }
             }
@@ -946,7 +948,7 @@ struct FullPhotoSheet: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .disabled(!canEdit || item.selectionState.isIncluded)
-                .shortcutHint("S", help: "Select this photo for import")
+                .shortcutHint(ReviewTooltipText.selectShortcut, help: ReviewTooltipText.selectForImport)
 
                 Button("C") {
                     appState.markPreviewItemAsCandidate(item.id)
@@ -954,7 +956,7 @@ struct FullPhotoSheet: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .disabled(!canEdit || item.selectionState.isCandidate)
-                .shortcutHint("C", help: "Mark this photo as candidate")
+                .shortcutHint(ReviewTooltipText.candidateShortcut, help: ReviewTooltipText.markAsCandidate)
 
                 Button("X") {
                     appState.excludePreviewItemFromImport(item.id)
@@ -962,7 +964,7 @@ struct FullPhotoSheet: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .disabled(!canEdit || item.selectionState.isExcluded)
-                .shortcutHint("X", help: "Exclude this photo from import")
+                .shortcutHint(ReviewTooltipText.excludeShortcut, help: ReviewTooltipText.excludeFromImport)
 
                 if !item.selectionState.isUndecided {
                     Button("D") {
@@ -971,7 +973,7 @@ struct FullPhotoSheet: View {
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .disabled(!canEdit)
-                    .shortcutHint("D", help: "Clear this photo back to undecided")
+                    .shortcutHint(ReviewTooltipText.clearShortcut, help: ReviewTooltipText.clearTriageState)
                 }
 
                 if !item.companionFiles.isEmpty {
@@ -982,7 +984,7 @@ struct FullPhotoSheet: View {
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
                         .disabled(!canEdit)
-                        .shortcutHint("R", help: "Toggle RAW companion import for this photo")
+                        .shortcutHint(ReviewTooltipText.rawShortcut, help: ReviewTooltipText.toggleRawCompanions)
                     } else {
                         Button("R") {
                             appState.toggleRawForPreviewItem(item.id)
@@ -990,7 +992,7 @@ struct FullPhotoSheet: View {
                         .buttonStyle(.bordered)
                         .controlSize(.small)
                         .disabled(!canEdit)
-                        .shortcutHint("R", help: "Toggle RAW companion import for this photo")
+                        .shortcutHint(ReviewTooltipText.rawShortcut, help: ReviewTooltipText.toggleRawCompanions)
                     }
                 }
             }
@@ -1465,7 +1467,7 @@ struct CompareItemCard: View {
                     .buttonStyle(.bordered)
                     .controlSize(.mini)
                     .disabled(item.selectionState.isIncluded)
-                    .shortcutHint("S / Cmd-I", help: "Select this item for import")
+                    .shortcutHint(ReviewTooltipText.selectShortcut, help: ReviewTooltipText.selectForImport)
 
                     Button("C") {
                         appState.markComparisonItemAsCandidate(item.id)
@@ -1473,7 +1475,7 @@ struct CompareItemCard: View {
                     .buttonStyle(.bordered)
                     .controlSize(.mini)
                     .disabled(item.selectionState.isCandidate)
-                    .shortcutHint("C", help: "Mark this item as candidate")
+                    .shortcutHint(ReviewTooltipText.candidateShortcut, help: ReviewTooltipText.markAsCandidate)
 
                     Button("X") {
                         appState.excludeComparisonItemFromImport(item.id)
@@ -1481,7 +1483,7 @@ struct CompareItemCard: View {
                     .buttonStyle(.bordered)
                     .controlSize(.mini)
                     .disabled(item.selectionState.isExcluded)
-                    .shortcutHint("X / Cmd-Shift-X", help: "Exclude this item from import")
+                    .shortcutHint(ReviewTooltipText.excludeShortcut, help: ReviewTooltipText.excludeFromImport)
 
                     if !item.selectionState.isUndecided {
                         Button("D") {
@@ -1489,7 +1491,7 @@ struct CompareItemCard: View {
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.mini)
-                        .shortcutHint("D / Cmd-Shift-I", help: "Clear this item back to undecided")
+                        .shortcutHint(ReviewTooltipText.clearShortcut, help: ReviewTooltipText.clearTriageState)
                     }
 
                     if !item.companionFiles.isEmpty {
@@ -1499,14 +1501,14 @@ struct CompareItemCard: View {
                             }
                             .buttonStyle(.borderedProminent)
                             .controlSize(.mini)
-                            .shortcutHint("R / Cmd-Option-R", help: "Toggle RAW companions for this compare item")
+                            .shortcutHint(ReviewTooltipText.rawShortcut, help: ReviewTooltipText.toggleRawCompanions)
                         } else {
                             Button("R") {
                                 appState.setImportRawCompanions(for: item, enabled: true)
                             }
                             .buttonStyle(.bordered)
                             .controlSize(.mini)
-                            .shortcutHint("R / Cmd-Option-R", help: "Toggle RAW companions for this compare item")
+                            .shortcutHint(ReviewTooltipText.rawShortcut, help: ReviewTooltipText.toggleRawCompanions)
                         }
                     }
                 }
@@ -2488,16 +2490,29 @@ final class LockedCompareCanvasView: NSScrollView {
 }
 
 struct ReviewGridClickTarget: NSViewRepresentable {
+    let helpText: String
     let onClick: (ReviewGridClickContext) -> Void
+
+    init(helpText: String = ReviewTooltipText.gridSelection, onClick: @escaping (ReviewGridClickContext) -> Void) {
+        self.helpText = helpText
+        self.onClick = onClick
+    }
 
     func makeNSView(context: Context) -> ReviewGridClickView {
         let view = ReviewGridClickView()
-        view.onClick = onClick
+        configure(view)
         return view
     }
 
     func updateNSView(_ nsView: ReviewGridClickView, context: Context) {
-        nsView.onClick = onClick
+        configure(nsView)
+    }
+
+    private func configure(_ view: ReviewGridClickView) {
+        view.onClick = onClick
+        view.toolTip = helpText
+        view.setAccessibilityLabel(helpText)
+        view.setAccessibilityHelp(helpText)
     }
 }
 
