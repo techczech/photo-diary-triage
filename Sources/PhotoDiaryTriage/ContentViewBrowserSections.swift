@@ -68,7 +68,7 @@ struct HeaderPaneView: View {
         .labelStyle(labelStyle)
         .disabled(!appState.canOpenSelectedBrowserFolder)
         .buttonStyle(.bordered)
-        .help("Open the selected browser folder in Finder")
+        .shortcutHint("Open in Finder", help: "Open the selected browser folder in Finder")
     }
 }
 

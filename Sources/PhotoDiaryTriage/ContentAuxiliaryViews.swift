@@ -163,7 +163,7 @@ extension View {
     func toolbarHelp(_ text: String) -> some View {
         self
             .help(text)
-            .accessibilityHint(text)
+            .shortcutHint(text, help: text)
             .background {
                 ToolbarHelpAttacher(helpText: text)
                     .frame(width: 0, height: 0)
@@ -216,6 +216,11 @@ private final class ToolbarHelpView: NSView {
         setAccessibilityHelp(helpText)
         superview?.toolTip = helpText
         superview?.setAccessibilityHelp(helpText)
+        if let hoverHost = nearestToolbarHoverHost() {
+            hoverHost.toolTip = helpText
+            hoverHost.setAccessibilityHelp(helpText)
+            ToolbarHelpTracker.install(on: hoverHost, helpText: helpText)
+        }
 
         guard let toolbarItems = window?.toolbar?.items else { return }
         installKnownToolbarItemHelp(toolbarItems)
@@ -237,6 +242,20 @@ private final class ToolbarHelpView: NSView {
             return "Hide sidebar"
         case "Show Sidebar":
             return "Show sidebar"
+        case "Source":
+            return "Choose source folder"
+        case "Settings":
+            return "Open settings"
+        case "Open":
+            return "Open focused photo preview"
+        case "Compare":
+            return "Compare the current selection"
+        case "Inspector":
+            return "Toggle inspector"
+        case "Shortcuts":
+            return "Show keyboard shortcuts"
+        case "Actions", "More":
+            return "Selection and import actions"
         default:
             return nil
         }
@@ -246,6 +265,9 @@ private final class ToolbarHelpView: NSView {
         item.toolTip = help
         item.view?.toolTip = help
         item.view?.setAccessibilityHelp(help)
+        if let view = item.view {
+            ToolbarHelpTracker.install(on: view, helpText: help)
+        }
     }
 
     private func toolbarItemOwnsHost(_ item: NSToolbarItem) -> Bool {
@@ -258,6 +280,140 @@ private final class ToolbarHelpView: NSView {
             ancestor = current.superview
         }
         return false
+    }
+
+    private func nearestToolbarHoverHost() -> NSView? {
+        var ancestor = superview
+        var hops = 0
+        while let current = ancestor, hops < 8 {
+            let size = current.bounds.size
+            if size.width >= 12, size.height >= 12, size.width <= 140, size.height <= 90 {
+                return current
+            }
+            ancestor = current.superview
+            hops += 1
+        }
+        return nil
+    }
+}
+
+private var toolbarHelpTrackerKey: UInt8 = 0
+
+private final class ToolbarHelpTracker: NSObject {
+    private weak var view: NSView?
+    private var helpText: String
+    private var trackingArea: NSTrackingArea?
+    private var tooltipWindow: NSWindow?
+
+    static func install(on view: NSView, helpText: String) {
+        if let tracker = objc_getAssociatedObject(view, &toolbarHelpTrackerKey) as? ToolbarHelpTracker {
+            tracker.update(helpText: helpText, view: view)
+            return
+        }
+
+        let tracker = ToolbarHelpTracker(view: view, helpText: helpText)
+        objc_setAssociatedObject(view, &toolbarHelpTrackerKey, tracker, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        tracker.refreshTrackingArea()
+    }
+
+    init(view: NSView, helpText: String) {
+        self.view = view
+        self.helpText = helpText
+        super.init()
+    }
+
+    deinit {
+        hideTooltip()
+    }
+
+    private func update(helpText: String, view: NSView) {
+        self.helpText = helpText
+        self.view = view
+        refreshTrackingArea()
+    }
+
+    private func refreshTrackingArea() {
+        guard let view else { return }
+        if let trackingArea {
+            view.removeTrackingArea(trackingArea)
+        }
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        view.addTrackingArea(area)
+        trackingArea = area
+    }
+
+    func mouseEntered(with event: NSEvent) {
+        showTooltip()
+    }
+
+    func mouseExited(with event: NSEvent) {
+        hideTooltip()
+    }
+
+    private func showTooltip() {
+        guard !helpText.isEmpty, let view, let window = view.window else { return }
+
+        hideTooltip()
+
+        let hostingView = NSHostingView(rootView: ShortcutHintBubble(text: helpText, width: 260).padding(4))
+        let fittingSize = hostingView.fittingSize
+        let tooltipSize = NSSize(
+            width: max(280, fittingSize.width),
+            height: max(34, fittingSize.height)
+        )
+        let tooltip = NSPanel(
+            contentRect: NSRect(origin: .zero, size: tooltipSize),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        tooltip.isOpaque = false
+        tooltip.backgroundColor = .clear
+        tooltip.hasShadow = false
+        tooltip.ignoresMouseEvents = true
+        tooltip.level = .floating
+        tooltip.collectionBehavior = [.transient, .ignoresCycle]
+        tooltip.contentView = hostingView
+
+        let localFrame = view.convert(view.bounds, to: nil)
+        let screenFrame = window.convertToScreen(localFrame)
+        let visibleFrame = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? screenFrame
+        let tooltipOrigin = tooltipOrigin(for: tooltipSize, sourceFrame: screenFrame, visibleFrame: visibleFrame)
+        tooltip.setFrame(NSRect(origin: tooltipOrigin, size: tooltipSize), display: true)
+        tooltip.orderFront(nil)
+        tooltipWindow = tooltip
+    }
+
+    private func hideTooltip() {
+        tooltipWindow?.orderOut(nil)
+        tooltipWindow = nil
+    }
+
+    private func tooltipOrigin(for tooltipSize: NSSize, sourceFrame: NSRect, visibleFrame: NSRect) -> NSPoint {
+        let gap: CGFloat = 8
+        let margin: CGFloat = 8
+        let x = clamp(
+            sourceFrame.midX - tooltipSize.width / 2,
+            min: visibleFrame.minX + margin,
+            max: visibleFrame.maxX - tooltipSize.width - margin
+        )
+        let belowY = sourceFrame.minY - tooltipSize.height - gap
+        let y: CGFloat
+        if belowY >= visibleFrame.minY + margin {
+            y = belowY
+        } else {
+            y = min(sourceFrame.maxY + gap, visibleFrame.maxY - tooltipSize.height - margin)
+        }
+        return NSPoint(x: x, y: max(visibleFrame.minY + margin, y))
+    }
+
+    private func clamp(_ value: CGFloat, min: CGFloat, max: CGFloat) -> CGFloat {
+        Swift.min(Swift.max(value, min), max)
     }
 }
 

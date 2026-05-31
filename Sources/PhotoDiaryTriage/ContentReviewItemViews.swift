@@ -122,11 +122,11 @@ struct ReviewGridCard: View {
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.72), in: RoundedRectangle(cornerRadius: 10))
         .overlay {
             RoundedRectangle(cornerRadius: 10)
-                .stroke(Color.secondary.opacity(0.14), lineWidth: 1)
+                .strokeBorder(Color.secondary.opacity(0.14), lineWidth: 1)
         }
         .overlay {
             RoundedRectangle(cornerRadius: 10)
-                .stroke(selectionStrokeColor, lineWidth: selectionStrokeWidth)
+                .strokeBorder(selectionStrokeColor, lineWidth: selectionStrokeWidth)
         }
         .overlay {
             if snapshot.isFocused {
@@ -285,12 +285,18 @@ struct ReviewGridCard: View {
     private var photoStatusIndicator: some View {
         switch snapshot.displayStatusKind {
         case .copied:
-            compactStatusBadge("Copied", statusKind: snapshot.displayStatusKind)
+            if !hasDetailedCopyBadge {
+                compactStatusBadge("Copied", statusKind: snapshot.displayStatusKind)
+            }
         case .selection(let selectionState):
             if !canMutateImportSelection && selectionState != .undecided {
                 compactStatusBadge(compactDecisionLabel(for: selectionState), statusKind: snapshot.displayStatusKind)
             }
         }
+    }
+
+    private var hasDetailedCopyBadge: Bool {
+        snapshot.sourceLogOwnership != nil || snapshot.sourceArchiveCopy != nil || snapshot.directCopyStatus != nil
     }
 
     private func compactStatusBadge(_ label: String, statusKind: ReviewDisplayStatusKind) -> some View {
@@ -532,11 +538,11 @@ struct MediaItemRow: View {
         .padding(.horizontal, 8)
         .overlay {
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.secondary.opacity(0.14), lineWidth: 1)
+                .strokeBorder(Color.secondary.opacity(0.14), lineWidth: 1)
         }
         .overlay {
             RoundedRectangle(cornerRadius: 12)
-                .stroke(snapshot.isSelected || snapshot.isFocused ? Color.accentColor : Color.clear, lineWidth: snapshot.isSelected ? 3 : (snapshot.isFocused ? 2 : 0))
+                .strokeBorder(snapshot.isSelected || snapshot.isFocused ? Color.accentColor : Color.clear, lineWidth: snapshot.isSelected ? 3 : (snapshot.isFocused ? 2 : 0))
         }
     }
 

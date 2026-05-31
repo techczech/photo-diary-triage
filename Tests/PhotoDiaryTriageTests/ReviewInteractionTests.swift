@@ -58,6 +58,23 @@ import Testing
     #expect(contentWidth < compact.cardWidth)
 }
 
+@Test func reviewGridCardChromeKeepsSelectionAndCopiedBadgesContained() throws {
+    let repoRoot = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+    let reviewItemSource = try String(contentsOf: repoRoot.appending(path: "Sources/PhotoDiaryTriage/ContentReviewItemViews.swift"))
+    let statusStart = try #require(reviewItemSource.range(of: "private var photoStatusIndicator"))
+    let statusEnd = try #require(reviewItemSource.range(of: "private func compactStatusBadge"))
+    let statusSource = String(reviewItemSource[statusStart.lowerBound..<statusEnd.lowerBound])
+
+    #expect(reviewItemSource.contains(".strokeBorder(selectionStrokeColor, lineWidth: selectionStrokeWidth)"))
+    #expect(reviewItemSource.contains(".strokeBorder(snapshot.isSelected || snapshot.isFocused ? Color.accentColor : Color.clear"))
+    #expect(reviewItemSource.contains("private var hasDetailedCopyBadge"))
+    #expect(statusSource.contains("if !hasDetailedCopyBadge"))
+    #expect(!statusSource.contains("compactStatusBadge(\"Copied\", statusKind: snapshot.displayStatusKind)\n        case .selection"))
+}
+
 @Test func reviewTooltipTextStaysActionSpecific() {
     let actionTooltips = ReviewTooltipText.triageActionTooltips
 
@@ -80,6 +97,7 @@ import Testing
     let reviewItemSource = try String(contentsOf: repoRoot.appending(path: "Sources/PhotoDiaryTriage/ContentReviewItemViews.swift"))
     let auxiliarySource = try String(contentsOf: repoRoot.appending(path: "Sources/PhotoDiaryTriage/ContentAuxiliaryViews.swift"))
     let browserSource = try String(contentsOf: repoRoot.appending(path: "Sources/PhotoDiaryTriage/ContentViewBrowserSections.swift"))
+    let inspectorSource = try String(contentsOf: repoRoot.appending(path: "Sources/PhotoDiaryTriage/ContentInspectorViews.swift"))
     let contentViewSource = try String(contentsOf: repoRoot.appending(path: "Sources/PhotoDiaryTriage/ContentView.swift"))
     let chipStart = try #require(reviewItemSource.range(of: "private struct TriageChipButton"))
     let chipEnd = try #require(reviewItemSource.range(of: "private struct PhotoOverlayBadge"))
@@ -96,14 +114,22 @@ import Testing
     #expect(auxiliarySource.contains("private let bubbleWidth: CGFloat = 260"))
     #expect(auxiliarySource.contains(".frame(width: width, alignment: .leading)"))
     #expect(auxiliarySource.contains(".accessibilityHint(helpText)"))
+    #expect(auxiliarySource.contains(".shortcutHint(text, help: text)"))
     #expect(!auxiliarySource.contains(".help(helpText)"))
     #expect(auxiliarySource.contains("private struct ToolbarHelpAttacher: NSViewRepresentable"))
     #expect(auxiliarySource.contains("item.toolTip = help"))
     #expect(auxiliarySource.contains("item.view?.setAccessibilityHelp(help)"))
+    #expect(auxiliarySource.contains("nearestToolbarHoverHost()"))
+    #expect(auxiliarySource.contains("ToolbarHelpTracker.install(on: view, helpText: help)"))
+    #expect(auxiliarySource.contains("func mouseEntered(with event: NSEvent)"))
     #expect(auxiliarySource.contains("case \"Hide Sidebar\""))
+    #expect(auxiliarySource.contains("case \"Source\""))
     #expect(!auxiliarySource.contains(".help(\"Remove this item from compare\")"))
     #expect(!browserSource.contains(".help(\"Expand all groups\")"))
     #expect(!browserSource.contains(".help(\"Collapse all groups\")"))
+    #expect(browserSource.contains(".shortcutHint(\"Open in Finder\""))
+    #expect(inspectorSource.contains(".shortcutHint(\"Hide inspector\""))
+    #expect(inspectorSource.contains(".shortcutHint(\"Show Inspector\""))
     #expect(contentViewSource.contains("ShortcutTooltipLayer(controller: shortcutTooltipController)"))
     #expect(contentViewSource.contains(".coordinateSpace(name: ShortcutTooltipCoordinateSpace.name)"))
     #expect(auxiliarySource.contains("view.setAccessibilityHelp(helpText)"))
