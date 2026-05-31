@@ -191,3 +191,4 @@
 {"ts":"2026-05-31T12:36:48Z","item_id":"PDT-2026-05-31-106","event":"report_created","status":"implemented","title":"durable tooltip repair","file":"changelog/changelog/PDT-2026-05-31-106-durable-tooltip-repair-report.md"}
 {"ts":"2026-05-31T12:43:47Z","item_id":"PDT-2026-05-31-107","event":"report_created","status":"implemented","title":"remove duplicate sidebar toolbar button","file":"changelog/changelog/PDT-2026-05-31-107-remove-duplicate-sidebar-toolbar-button-report.md"}
 {"ts":"2026-05-31T13:05:33Z","item_id":"PDT-2026-05-31-108","event":"report_created","status":"implemented","title":"single large wrapped tooltips","file":"changelog/changelog/PDT-2026-05-31-108-single-large-wrapped-tooltips-report.md"}
+{"ts":"2026-05-31T16:55:23Z","item_id":"PDT-2026-05-31-109","event":"report_created","status":"implemented","title":"global tooltip layer and icon button help","file":"changelog/changelog/PDT-2026-05-31-109-global-tooltip-layer-icon-help-report.md"}

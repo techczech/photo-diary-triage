@@ -80,6 +80,7 @@ import Testing
     let reviewItemSource = try String(contentsOf: repoRoot.appending(path: "Sources/PhotoDiaryTriage/ContentReviewItemViews.swift"))
     let auxiliarySource = try String(contentsOf: repoRoot.appending(path: "Sources/PhotoDiaryTriage/ContentAuxiliaryViews.swift"))
     let browserSource = try String(contentsOf: repoRoot.appending(path: "Sources/PhotoDiaryTriage/ContentViewBrowserSections.swift"))
+    let contentViewSource = try String(contentsOf: repoRoot.appending(path: "Sources/PhotoDiaryTriage/ContentView.swift"))
     let chipStart = try #require(reviewItemSource.range(of: "private struct TriageChipButton"))
     let chipEnd = try #require(reviewItemSource.range(of: "private struct PhotoOverlayBadge"))
     let chipSource = String(reviewItemSource[chipStart.lowerBound..<chipEnd.lowerBound])
@@ -88,14 +89,23 @@ import Testing
     #expect(!chipSource.contains(".help(helpText)"))
     #expect(!reviewItemSource.contains(".shortcutHint(\"Shift-click / Cmd-click / Double-click\""))
     #expect(reviewItemSource.contains("helpText: ReviewTooltipText.markAsCandidate"))
-    #expect(auxiliarySource.contains("ShortcutHintBubble(text: helpText)"))
+    #expect(auxiliarySource.contains("ShortcutTooltipLayer"))
+    #expect(auxiliarySource.contains("ShortcutHintFramePreferenceKey"))
+    #expect(auxiliarySource.contains("tooltipController?.show"))
     #expect(auxiliarySource.contains(".font(.callout.weight(.semibold))"))
-    #expect(auxiliarySource.contains(".frame(width: 220, alignment: .leading)"))
+    #expect(auxiliarySource.contains("private let bubbleWidth: CGFloat = 260"))
+    #expect(auxiliarySource.contains(".frame(width: width, alignment: .leading)"))
     #expect(auxiliarySource.contains(".accessibilityHint(helpText)"))
     #expect(!auxiliarySource.contains(".help(helpText)"))
+    #expect(auxiliarySource.contains("private struct ToolbarHelpAttacher: NSViewRepresentable"))
+    #expect(auxiliarySource.contains("item.toolTip = help"))
+    #expect(auxiliarySource.contains("item.view?.setAccessibilityHelp(help)"))
+    #expect(auxiliarySource.contains("case \"Hide Sidebar\""))
     #expect(!auxiliarySource.contains(".help(\"Remove this item from compare\")"))
     #expect(!browserSource.contains(".help(\"Expand all groups\")"))
     #expect(!browserSource.contains(".help(\"Collapse all groups\")"))
+    #expect(contentViewSource.contains("ShortcutTooltipLayer(controller: shortcutTooltipController)"))
+    #expect(contentViewSource.contains(".coordinateSpace(name: ShortcutTooltipCoordinateSpace.name)"))
     #expect(auxiliarySource.contains("view.setAccessibilityHelp(helpText)"))
 }
 
@@ -399,6 +409,11 @@ import Testing
 
     #expect(!contentViewSource.contains("Label(\"Sidebar\""))
     #expect(contentViewSource.contains("Label(\"Inspector\""))
+    #expect(contentViewSource.contains(".toolbarHelp(\"Choose source folder\")"))
+    #expect(contentViewSource.contains(".toolbarHelp(\"Open settings\")"))
+    #expect(contentViewSource.contains(".toolbarHelp(\"Open focused photo preview\")"))
+    #expect(contentViewSource.contains(".toolbarHelp(\"Compare the current selection\")"))
+    #expect(contentViewSource.contains(".toolbarHelp(\"Show keyboard shortcuts\")"))
 }
 
 @Test func reviewGridClickContextTracksModifiersAndDoubleClick() {

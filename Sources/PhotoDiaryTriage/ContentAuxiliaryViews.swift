@@ -1,8 +1,86 @@
 import AppKit
 import SwiftUI
 
+enum ShortcutTooltipCoordinateSpace {
+    static let name = "PhotoDiaryTriageShortcutTooltipRoot"
+}
+
+struct ShortcutTooltip: Identifiable, Equatable {
+    let id: UUID
+    let text: String
+    let sourceFrame: CGRect
+}
+
+@MainActor
+final class ShortcutTooltipController: ObservableObject {
+    @Published private(set) var tooltip: ShortcutTooltip?
+
+    func show(id: UUID, text: String, sourceFrame: CGRect) {
+        guard sourceFrame.isEmpty == false else { return }
+        tooltip = ShortcutTooltip(id: id, text: text, sourceFrame: sourceFrame)
+    }
+
+    func hide(id: UUID) {
+        guard tooltip?.id == id else { return }
+        tooltip = nil
+    }
+}
+
+private struct ShortcutTooltipControllerKey: EnvironmentKey {
+    static let defaultValue: ShortcutTooltipController? = nil
+}
+
+extension EnvironmentValues {
+    var shortcutTooltipController: ShortcutTooltipController? {
+        get { self[ShortcutTooltipControllerKey.self] }
+        set { self[ShortcutTooltipControllerKey.self] = newValue }
+    }
+}
+
+struct ShortcutTooltipLayer: View {
+    @ObservedObject var controller: ShortcutTooltipController
+
+    private let bubbleWidth: CGFloat = 260
+    private let estimatedBubbleHeight: CGFloat = 96
+    private let gap: CGFloat = 8
+    private let margin: CGFloat = 8
+
+    var body: some View {
+        GeometryReader { proxy in
+            if let tooltip = controller.tooltip {
+                ShortcutHintBubble(text: tooltip.text, width: bubbleWidth)
+                    .offset(position(for: tooltip.sourceFrame, containerSize: proxy.size))
+                    .zIndex(10_000)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func position(for sourceFrame: CGRect, containerSize: CGSize) -> CGSize {
+        let x = clamp(
+            sourceFrame.midX - (bubbleWidth / 2),
+            min: margin,
+            max: max(margin, containerSize.width - bubbleWidth - margin)
+        )
+        let hasRoomBelow = sourceFrame.maxY + gap + estimatedBubbleHeight <= containerSize.height - margin
+        let hasRoomAbove = sourceFrame.minY - gap - estimatedBubbleHeight >= margin
+        let y: CGFloat
+        if hasRoomBelow || !hasRoomAbove {
+            y = sourceFrame.maxY + gap
+        } else {
+            y = sourceFrame.minY - gap - estimatedBubbleHeight
+        }
+        return CGSize(width: x, height: clamp(y, min: margin, max: max(margin, containerSize.height - estimatedBubbleHeight - margin)))
+    }
+
+    private func clamp(_ value: CGFloat, min: CGFloat, max: CGFloat) -> CGFloat {
+        Swift.min(Swift.max(value, min), max)
+    }
+}
+
 private struct ShortcutHintBubble: View {
     let text: String
+    let width: CGFloat
 
     var body: some View {
         Text(text)
@@ -11,7 +89,7 @@ private struct ShortcutHintBubble: View {
             .multilineTextAlignment(.leading)
             .lineLimit(4)
             .fixedSize(horizontal: false, vertical: true)
-            .frame(width: 220, alignment: .leading)
+            .frame(width: width, alignment: .leading)
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
             .background(.ultraThickMaterial, in: RoundedRectangle(cornerRadius: 6))
@@ -24,32 +102,162 @@ private struct ShortcutHintBubble: View {
     }
 }
 
+private struct ShortcutHintFramePreferenceKey: PreferenceKey {
+    static var defaultValue: CGRect = .zero
+
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        value = nextValue()
+    }
+}
+
 private struct ShortcutHintModifier: ViewModifier {
+    @Environment(\.shortcutTooltipController) private var tooltipController
     let helpText: String
-    let alignment: Alignment
+    @State private var tooltipID = UUID()
     @State private var isHovering = false
+    @State private var sourceFrame: CGRect = .zero
 
     func body(content: Content) -> some View {
         content
             .accessibilityHint(helpText)
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: ShortcutHintFramePreferenceKey.self,
+                        value: proxy.frame(in: .named(ShortcutTooltipCoordinateSpace.name))
+                    )
+                }
+            }
+            .onPreferenceChange(ShortcutHintFramePreferenceKey.self) { frame in
+                sourceFrame = frame
+                if isHovering {
+                    showTooltip()
+                }
+            }
             .onHover { hovering in
                 isHovering = hovering
-            }
-            .overlay(alignment: alignment) {
-                if isHovering {
-                    ShortcutHintBubble(text: helpText)
-                        .padding(6)
+                if hovering {
+                    showTooltip()
+                } else {
+                    tooltipController?.hide(id: tooltipID)
                 }
+            }
+            .onDisappear {
+                tooltipController?.hide(id: tooltipID)
             }
             .transaction { transaction in
                 transaction.animation = nil
             }
     }
+
+    private func showTooltip() {
+        tooltipController?.show(id: tooltipID, text: helpText, sourceFrame: sourceFrame)
+    }
 }
 
 extension View {
     func shortcutHint(_ shortcut: String, help: String? = nil, alignment: Alignment = .topTrailing) -> some View {
-        modifier(ShortcutHintModifier(helpText: help ?? shortcut, alignment: alignment))
+        modifier(ShortcutHintModifier(helpText: help ?? shortcut))
+    }
+
+    func toolbarHelp(_ text: String) -> some View {
+        self
+            .help(text)
+            .accessibilityHint(text)
+            .background {
+                ToolbarHelpAttacher(helpText: text)
+                    .frame(width: 0, height: 0)
+            }
+    }
+}
+
+private struct ToolbarHelpAttacher: NSViewRepresentable {
+    let helpText: String
+
+    func makeNSView(context: Context) -> ToolbarHelpView {
+        let view = ToolbarHelpView()
+        view.helpText = helpText
+        return view
+    }
+
+    func updateNSView(_ nsView: ToolbarHelpView, context: Context) {
+        nsView.helpText = helpText
+    }
+}
+
+private final class ToolbarHelpView: NSView {
+    var helpText: String = "" {
+        didSet {
+            installHelpWhenAttached()
+        }
+    }
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        installHelpWhenAttached()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        installHelpWhenAttached()
+    }
+
+    private func installHelpWhenAttached() {
+        toolTip = helpText
+        setAccessibilityHelp(helpText)
+        DispatchQueue.main.async { [weak self] in
+            self?.installHelpOnToolbarHost()
+        }
+    }
+
+    private func installHelpOnToolbarHost() {
+        guard !helpText.isEmpty else { return }
+        toolTip = helpText
+        setAccessibilityHelp(helpText)
+        superview?.toolTip = helpText
+        superview?.setAccessibilityHelp(helpText)
+
+        guard let toolbarItems = window?.toolbar?.items else { return }
+        installKnownToolbarItemHelp(toolbarItems)
+        for item in toolbarItems where toolbarItemOwnsHost(item) {
+            apply(helpText, to: item)
+        }
+    }
+
+    private func installKnownToolbarItemHelp(_ items: [NSToolbarItem]) {
+        for item in items {
+            guard let help = knownToolbarHelp(for: item) else { continue }
+            apply(help, to: item)
+        }
+    }
+
+    private func knownToolbarHelp(for item: NSToolbarItem) -> String? {
+        switch item.label {
+        case "Hide Sidebar":
+            return "Hide sidebar"
+        case "Show Sidebar":
+            return "Show sidebar"
+        default:
+            return nil
+        }
+    }
+
+    private func apply(_ help: String, to item: NSToolbarItem) {
+        item.toolTip = help
+        item.view?.toolTip = help
+        item.view?.setAccessibilityHelp(help)
+    }
+
+    private func toolbarItemOwnsHost(_ item: NSToolbarItem) -> Bool {
+        guard let itemView = item.view else { return false }
+        var ancestor: NSView? = self
+        while let current = ancestor {
+            if current == itemView {
+                return true
+            }
+            ancestor = current.superview
+        }
+        return false
     }
 }
 

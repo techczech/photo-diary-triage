@@ -10,6 +10,7 @@ struct ContentView: View {
     @ObservedObject private var compareState: CompareState
     @ObservedObject private var presentationState: PresentationState
 
+    @StateObject private var shortcutTooltipController = ShortcutTooltipController()
     @State private var walkTitle: String = ""
     @State private var walkLocation: String = ""
     @State private var walkNotes: String = ""
@@ -27,6 +28,16 @@ struct ContentView: View {
     }
 
     var body: some View {
+        ZStack(alignment: .topLeading) {
+            appChrome
+            ShortcutTooltipLayer(controller: shortcutTooltipController)
+                .zIndex(10_000)
+        }
+        .coordinateSpace(name: ShortcutTooltipCoordinateSpace.name)
+        .environment(\.shortcutTooltipController, shortcutTooltipController)
+    }
+
+    private var appChrome: some View {
         NavigationSplitView(columnVisibility: sidebarColumnVisibility) {
             SidebarPaneView(
                 appState: appState,
@@ -171,12 +182,12 @@ struct ContentView: View {
             } label: {
                 Label("Source", systemImage: "externaldrive.badge.plus")
             }
-            .help("Choose source folder")
+            .toolbarHelp("Choose source folder")
 
             SettingsLink {
                 Label("Settings", systemImage: "gearshape")
             }
-            .help("Open settings")
+            .toolbarHelp("Open settings")
         }
 
         ToolbarItem(placement: .principal) {
@@ -190,7 +201,7 @@ struct ContentView: View {
                 Label("Open", systemImage: "arrow.up.forward.square")
             }
             .disabled(reviewState.snapshot.focusedReviewItemID == nil)
-            .help("Open focused photo preview")
+            .toolbarHelp("Open focused photo preview")
 
             Button {
                 appState.openComparisonForCurrentSelection()
@@ -198,21 +209,21 @@ struct ContentView: View {
                 Label("Compare", systemImage: "rectangle.split.2x1")
             }
             .disabled(!reviewState.snapshot.canOpenComparison)
-            .help("Compare the current selection")
+            .toolbarHelp("Compare the current selection")
 
             Button {
                 appState.toggleDetailsInspector()
             } label: {
                 Label("Inspector", systemImage: inspectorState.snapshot.isVisible ? "sidebar.right" : "sidebar.right")
             }
-            .help("\(inspectorState.snapshot.isVisible ? "Hide" : "Show") inspector")
+            .toolbarHelp("\(inspectorState.snapshot.isVisible ? "Hide" : "Show") inspector")
 
             Button {
                 appState.showKeyboardHelp = true
             } label: {
                 Label("Shortcuts", systemImage: "keyboard")
             }
-            .help("Show keyboard shortcuts")
+            .toolbarHelp("Show keyboard shortcuts")
 
             reviewActionsMenu
         }
