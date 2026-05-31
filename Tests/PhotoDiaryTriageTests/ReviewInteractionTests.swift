@@ -58,6 +58,35 @@ import Testing
     #expect(contentWidth < compact.cardWidth)
 }
 
+@Test func reviewTooltipTextStaysActionSpecific() {
+    let actionTooltips = ReviewTooltipText.triageActionTooltips
+
+    #expect(actionTooltips.allSatisfy { !$0.isEmpty })
+    #expect(actionTooltips.allSatisfy { $0.count > 8 })
+    #expect(actionTooltips.allSatisfy { $0 != ReviewTooltipText.selectShortcut })
+    #expect(actionTooltips.allSatisfy { $0 != ReviewTooltipText.candidateShortcut })
+    #expect(actionTooltips.allSatisfy { $0 != ReviewTooltipText.excludeShortcut })
+    #expect(actionTooltips.allSatisfy { $0 != ReviewTooltipText.clearShortcut })
+    #expect(actionTooltips.allSatisfy { $0 != ReviewTooltipText.rawShortcut })
+    #expect(ReviewTooltipText.markAsCandidate.contains("candidate"))
+    #expect(ReviewTooltipText.gridSelection.contains("double-click opens preview"))
+}
+
+@Test func reviewGridTooltipSourceKeepsParentSelectionHelpOffCardControls() throws {
+    let repoRoot = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+    let reviewItemSource = try String(contentsOf: repoRoot.appending(path: "Sources/PhotoDiaryTriage/ContentReviewItemViews.swift"))
+    let auxiliarySource = try String(contentsOf: repoRoot.appending(path: "Sources/PhotoDiaryTriage/ContentAuxiliaryViews.swift"))
+
+    #expect(!reviewItemSource.contains(".help(title)"))
+    #expect(!reviewItemSource.contains(".shortcutHint(\"Shift-click / Cmd-click / Double-click\""))
+    #expect(reviewItemSource.contains("helpText: ReviewTooltipText.markAsCandidate"))
+    #expect(auxiliarySource.contains("ShortcutHintBubble(text: helpText)"))
+    #expect(auxiliarySource.contains("view.setAccessibilityHelp(helpText)"))
+}
+
 @Test func compareGridDefaultColumnCountMatchesCompareExpectations() {
     #expect(CompareGridMetrics.defaultColumnCount(for: 1) == 1)
     #expect(CompareGridMetrics.defaultColumnCount(for: 2) == 2)
