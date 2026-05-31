@@ -79,8 +79,8 @@ struct ContentView: View {
             thumbnailLoadingState: appState.thumbnailLoadingState
         )
         .frame(minWidth: 560, maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
         .sheet(isPresented: Binding(
             get: { presentationState.snapshot.showKeyboardHelp },
             set: { appState.showKeyboardHelp = $0 }
@@ -186,6 +186,10 @@ struct ContentView: View {
             .help("Open settings")
         }
 
+        ToolbarItem(placement: .principal) {
+            workspaceModePicker
+        }
+
         ToolbarItemGroup {
             Button {
                 appState.openFocusedReviewItem()
@@ -219,6 +223,22 @@ struct ContentView: View {
 
             reviewActionsMenu
         }
+    }
+
+    private var workspaceModePicker: some View {
+        Picker("Workspace", selection: Binding(
+            get: { appState.workspaceMode },
+            set: { appState.setWorkspaceMode($0) }
+        )) {
+            ForEach(WorkspaceMode.displayOrder, id: \.self) { mode in
+                Text(mode.title)
+                    .tag(mode)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .controlSize(.regular)
+        .frame(minWidth: 360, idealWidth: 500, maxWidth: 560)
     }
 
     @ViewBuilder
