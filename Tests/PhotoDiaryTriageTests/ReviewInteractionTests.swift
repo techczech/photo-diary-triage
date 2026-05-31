@@ -55,7 +55,7 @@ import Testing
     let reconstructedCardWidth = contentWidth + (ReviewGridMetrics.cardChromePadding * 2)
 
     #expect(abs(reconstructedCardWidth - compact.cardWidth) < 0.0001)
-    #expect(ReviewGridMetrics.statusBadgeTextMaxWidth(for: contentWidth) <= contentWidth)
+    #expect(contentWidth < compact.cardWidth)
 }
 
 @Test func compareGridDefaultColumnCountMatchesCompareExpectations() {

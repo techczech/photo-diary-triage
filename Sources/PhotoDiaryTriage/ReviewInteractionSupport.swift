@@ -73,10 +73,6 @@ struct ReviewGridMetrics: Equatable, Sendable {
         max(cardWidth - (cardChromePadding * 2), 1)
     }
 
-    static func statusBadgeTextMaxWidth(for contentWidth: Double) -> Double {
-        max(48, min(88, contentWidth * 0.34))
-    }
-
     static func estimatedCardHeight(for cardWidth: Double) -> Double {
         thumbnailHeight(for: cardWidth) + (cardChromePadding * 2) + 23
     }
