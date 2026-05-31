@@ -79,11 +79,23 @@ import Testing
         .deletingLastPathComponent()
     let reviewItemSource = try String(contentsOf: repoRoot.appending(path: "Sources/PhotoDiaryTriage/ContentReviewItemViews.swift"))
     let auxiliarySource = try String(contentsOf: repoRoot.appending(path: "Sources/PhotoDiaryTriage/ContentAuxiliaryViews.swift"))
+    let browserSource = try String(contentsOf: repoRoot.appending(path: "Sources/PhotoDiaryTriage/ContentViewBrowserSections.swift"))
+    let chipStart = try #require(reviewItemSource.range(of: "private struct TriageChipButton"))
+    let chipEnd = try #require(reviewItemSource.range(of: "private struct PhotoOverlayBadge"))
+    let chipSource = String(reviewItemSource[chipStart.lowerBound..<chipEnd.lowerBound])
 
     #expect(!reviewItemSource.contains(".help(title)"))
+    #expect(!chipSource.contains(".help(helpText)"))
     #expect(!reviewItemSource.contains(".shortcutHint(\"Shift-click / Cmd-click / Double-click\""))
     #expect(reviewItemSource.contains("helpText: ReviewTooltipText.markAsCandidate"))
     #expect(auxiliarySource.contains("ShortcutHintBubble(text: helpText)"))
+    #expect(auxiliarySource.contains(".font(.callout.weight(.semibold))"))
+    #expect(auxiliarySource.contains(".frame(width: 220, alignment: .leading)"))
+    #expect(auxiliarySource.contains(".accessibilityHint(helpText)"))
+    #expect(!auxiliarySource.contains(".help(helpText)"))
+    #expect(!auxiliarySource.contains(".help(\"Remove this item from compare\")"))
+    #expect(!browserSource.contains(".help(\"Expand all groups\")"))
+    #expect(!browserSource.contains(".help(\"Collapse all groups\")"))
     #expect(auxiliarySource.contains("view.setAccessibilityHelp(helpText)"))
 }
 
