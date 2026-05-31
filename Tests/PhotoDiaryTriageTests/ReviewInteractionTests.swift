@@ -49,6 +49,15 @@ import Testing
     #expect(singleColumn.cardWidth > ReviewGridMetrics.maxCardWidth)
 }
 
+@Test func reviewGridMetricsKeepCardChromeInsideColumnWidth() {
+    let compact = ReviewGridMetrics(availableWidth: 540, requestedColumnCount: 2)
+    let contentWidth = ReviewGridMetrics.cardContentWidth(for: compact.cardWidth)
+    let reconstructedCardWidth = contentWidth + (ReviewGridMetrics.cardChromePadding * 2)
+
+    #expect(abs(reconstructedCardWidth - compact.cardWidth) < 0.0001)
+    #expect(ReviewGridMetrics.statusBadgeTextMaxWidth(for: contentWidth) <= contentWidth)
+}
+
 @Test func compareGridDefaultColumnCountMatchesCompareExpectations() {
     #expect(CompareGridMetrics.defaultColumnCount(for: 1) == 1)
     #expect(CompareGridMetrics.defaultColumnCount(for: 2) == 2)

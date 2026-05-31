@@ -116,8 +116,9 @@ struct ReviewGridCard: View {
 
     var body: some View {
         selectionSurface
+        .frame(width: contentWidth, alignment: .topLeading)
+        .padding(chromePadding)
         .frame(width: cardWidth, alignment: .topLeading)
-        .padding(6)
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.72), in: RoundedRectangle(cornerRadius: 10))
         .overlay {
             RoundedRectangle(cornerRadius: 10)
@@ -147,11 +148,24 @@ struct ReviewGridCard: View {
         snapshot.isSelected ? 3 : (snapshot.isFocused ? 2 : 0)
     }
 
+    private var chromePadding: CGFloat {
+        CGFloat(ReviewGridMetrics.cardChromePadding)
+    }
+
+    private var contentWidth: CGFloat {
+        CGFloat(ReviewGridMetrics.cardContentWidth(for: Double(cardWidth)))
+    }
+
+    private var statusBadgeTextMaxWidth: CGFloat {
+        CGFloat(ReviewGridMetrics.statusBadgeTextMaxWidth(for: Double(contentWidth)))
+    }
+
     private var selectionSurface: some View {
         VStack(alignment: .leading, spacing: 5) {
             photoSurface
             captionLine
         }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .contentShape(RoundedRectangle(cornerRadius: 8))
         .shortcutHint("Shift-click / Cmd-click / Double-click", help: "Click to select. Shift-click extends the selection, Command-click toggles selection, and double-click opens preview.")
     }
@@ -189,6 +203,7 @@ struct ReviewGridCard: View {
             .padding(6)
         }
         .frame(height: CGFloat(ReviewGridMetrics.thumbnailHeight(for: cardWidth)))
+        .frame(maxWidth: .infinity)
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
@@ -271,6 +286,8 @@ struct ReviewGridCard: View {
             .font(.caption2.weight(.semibold))
             .foregroundStyle(statusTextColor(for: snapshot.displayStatusKind))
             .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(maxWidth: statusBadgeTextMaxWidth, alignment: .trailing)
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
             .background(statusBadgeColor(for: snapshot.displayStatusKind), in: Capsule())
@@ -278,6 +295,7 @@ struct ReviewGridCard: View {
                 Capsule()
                     .stroke(Color(nsColor: .windowBackgroundColor).opacity(0.55), lineWidth: 0.5)
             }
+            .layoutPriority(1)
     }
 
     @ViewBuilder
