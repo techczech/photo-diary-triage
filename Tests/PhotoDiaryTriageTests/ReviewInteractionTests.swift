@@ -378,6 +378,17 @@ import Testing
     #expect(AppChromeKeyboardShortcut(key: "i", modifiers: [.command, .option, .shift]) == nil)
 }
 
+@Test func mainToolbarDoesNotInstallDuplicateSidebarButton() throws {
+    let repoRoot = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+    let contentViewSource = try String(contentsOf: repoRoot.appending(path: "Sources/PhotoDiaryTriage/ContentView.swift"))
+
+    #expect(!contentViewSource.contains("Label(\"Sidebar\""))
+    #expect(contentViewSource.contains("Label(\"Inspector\""))
+}
+
 @Test func reviewGridClickContextTracksModifiersAndDoubleClick() {
     let shiftDoubleClick = ReviewGridClickContext(modifiers: [.shift], clickCount: 2)
     let commandClick = ReviewGridClickContext(modifiers: [.command], clickCount: 1)

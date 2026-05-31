@@ -167,13 +167,6 @@ struct ContentView: View {
     private var mainToolbar: some ToolbarContent {
         ToolbarItemGroup {
             Button {
-                appState.toggleSidebarVisibility()
-            } label: {
-                Label("Sidebar", systemImage: sidebarState.snapshot.isVisible ? "sidebar.leading" : "sidebar.left")
-            }
-            .help("\(sidebarState.snapshot.isVisible ? "Hide" : "Show") sidebar")
-
-            Button {
                 appState.pickSourceFolder()
             } label: {
                 Label("Source", systemImage: "externaldrive.badge.plus")
