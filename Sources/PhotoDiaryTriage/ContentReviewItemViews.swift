@@ -156,10 +156,6 @@ struct ReviewGridCard: View {
         CGFloat(ReviewGridMetrics.cardContentWidth(for: Double(cardWidth)))
     }
 
-    private var statusBadgeTextMaxWidth: CGFloat {
-        CGFloat(ReviewGridMetrics.statusBadgeTextMaxWidth(for: Double(contentWidth)))
-    }
-
     private var selectionSurface: some View {
         VStack(alignment: .leading, spacing: 5) {
             photoSurface
@@ -190,7 +186,7 @@ struct ReviewGridCard: View {
 
                     Spacer(minLength: 0)
 
-                    statusBadge
+                    photoStatusIndicator
                 }
 
                 Spacer(minLength: 0)
@@ -281,21 +277,45 @@ struct ReviewGridCard: View {
         }
     }
 
-    private var statusBadge: some View {
-        Text(snapshot.displayStatusLabel)
+    @ViewBuilder
+    private var photoStatusIndicator: some View {
+        switch snapshot.displayStatusKind {
+        case .copied:
+            compactStatusBadge("Copied", statusKind: snapshot.displayStatusKind)
+        case .selection(let selectionState):
+            if !canMutateImportSelection && selectionState != .undecided {
+                compactStatusBadge(compactDecisionLabel(for: selectionState), statusKind: snapshot.displayStatusKind)
+            }
+        }
+    }
+
+    private func compactStatusBadge(_ label: String, statusKind: ReviewDisplayStatusKind) -> some View {
+        Text(label)
             .font(.caption2.weight(.semibold))
-            .foregroundStyle(statusTextColor(for: snapshot.displayStatusKind))
+            .foregroundStyle(statusTextColor(for: statusKind))
             .lineLimit(1)
-            .truncationMode(.tail)
-            .frame(maxWidth: statusBadgeTextMaxWidth, alignment: .trailing)
+            .fixedSize(horizontal: true, vertical: false)
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
-            .background(statusBadgeColor(for: snapshot.displayStatusKind), in: Capsule())
+            .background(statusBadgeColor(for: statusKind), in: Capsule())
             .overlay {
                 Capsule()
                     .stroke(Color(nsColor: .windowBackgroundColor).opacity(0.55), lineWidth: 0.5)
             }
-            .layoutPriority(1)
+            .help(snapshot.displayStatusLabel)
+    }
+
+    private func compactDecisionLabel(for selectionState: SelectionState) -> String {
+        switch selectionState {
+        case .included:
+            return "S"
+        case .candidate:
+            return "C"
+        case .excluded:
+            return "X"
+        case .undecided:
+            return "U"
+        }
     }
 
     @ViewBuilder
