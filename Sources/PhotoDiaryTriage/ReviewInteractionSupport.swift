@@ -27,6 +27,7 @@ struct ReviewGridMetrics: Equatable, Sendable {
     static let maxCardWidth: Double = 420
     static let gridSpacing: Double = 10
     static let gridPadding: Double = 4
+    static let cardChromePadding: Double = 6
     static let defaultColumnCount: Int = 4
     static let maxSuggestedColumns: Int = 12
 
@@ -68,8 +69,16 @@ struct ReviewGridMetrics: Equatable, Sendable {
         max(160, cardWidth * 0.74)
     }
 
+    static func cardContentWidth(for cardWidth: Double) -> Double {
+        max(cardWidth - (cardChromePadding * 2), 1)
+    }
+
+    static func statusBadgeTextMaxWidth(for contentWidth: Double) -> Double {
+        max(48, min(88, contentWidth * 0.34))
+    }
+
     static func estimatedCardHeight(for cardWidth: Double) -> Double {
-        thumbnailHeight(for: cardWidth) + 34
+        thumbnailHeight(for: cardWidth) + (cardChromePadding * 2) + 23
     }
 }
 
