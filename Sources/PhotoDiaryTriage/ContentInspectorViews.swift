@@ -14,7 +14,7 @@ struct InspectorCollapsedRail: View {
                     .frame(width: 28, height: 28)
             }
             .buttonStyle(.bordered)
-            .help("Show Inspector")
+            .shortcutHint("Show Inspector", help: "Show Inspector")
 
             Text("Inspector")
                 .font(.caption2.weight(.semibold))
@@ -60,7 +60,7 @@ struct DetailsInspectorView: View {
                             }
                             .buttonStyle(.plain)
                             .foregroundStyle(.secondary)
-                            .help("Hide inspector")
+                            .shortcutHint("Hide inspector", help: "Hide inspector")
                         }
 
                         workflowSection
