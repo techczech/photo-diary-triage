@@ -601,7 +601,6 @@ struct ReviewPaneView: View {
             } label: {
                 Image(systemName: "arrow.down.right.and.arrow.up.left")
             }
-            .help("Expand all groups")
             .shortcutHint("Cmd-Option-]", help: "Expand all grouped sections (Cmd-Option-])")
 
             Button {
@@ -610,7 +609,6 @@ struct ReviewPaneView: View {
             } label: {
                 Image(systemName: "arrow.up.left.and.arrow.down.right")
             }
-            .help("Collapse all groups")
             .shortcutHint("Cmd-Option-[", help: "Collapse all grouped sections (Cmd-Option-[)")
         }
         .buttonStyle(.bordered)

@@ -426,7 +426,6 @@ private struct TriageChipButton: View {
             RoundedRectangle(cornerRadius: 4)
                 .stroke(Color.secondary.opacity(isActive ? 0 : 0.18), lineWidth: 1)
         }
-        .help(helpText)
     }
 }
 

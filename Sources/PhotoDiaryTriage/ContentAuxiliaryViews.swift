@@ -6,13 +6,14 @@ private struct ShortcutHintBubble: View {
 
     var body: some View {
         Text(text)
-            .font(.caption2.weight(.medium))
+            .font(.callout.weight(.semibold))
             .foregroundStyle(.primary)
-            .lineLimit(3)
+            .multilineTextAlignment(.leading)
+            .lineLimit(4)
             .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: 260, alignment: .leading)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
+            .frame(width: 220, alignment: .leading)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
             .background(.ultraThickMaterial, in: RoundedRectangle(cornerRadius: 6))
             .overlay {
                 RoundedRectangle(cornerRadius: 6)
@@ -24,14 +25,13 @@ private struct ShortcutHintBubble: View {
 }
 
 private struct ShortcutHintModifier: ViewModifier {
-    let shortcut: String
     let helpText: String
     let alignment: Alignment
     @State private var isHovering = false
 
     func body(content: Content) -> some View {
         content
-            .help(helpText)
+            .accessibilityHint(helpText)
             .onHover { hovering in
                 isHovering = hovering
             }
@@ -49,7 +49,7 @@ private struct ShortcutHintModifier: ViewModifier {
 
 extension View {
     func shortcutHint(_ shortcut: String, help: String? = nil, alignment: Alignment = .topTrailing) -> some View {
-        modifier(ShortcutHintModifier(shortcut: shortcut, helpText: help ?? shortcut, alignment: alignment))
+        modifier(ShortcutHintModifier(helpText: help ?? shortcut, alignment: alignment))
     }
 }
 
@@ -1535,7 +1535,6 @@ struct CompareItemCard: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
-                .help("Remove this item from compare")
                 .shortcutHint("Q", help: "Remove this item from compare (Q)", alignment: .topLeading)
             }
 
