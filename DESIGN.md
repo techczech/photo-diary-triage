@@ -1,8 +1,10 @@
-# Photo Diary Triage Design Governance
+# Walkfolio Design Governance
 
 ## Purpose
 
-This document is the non-negotiable UX and product-design contract for Photo Diary Triage. It exists to prevent ad hoc design drift and to ensure that future implementation work is reviewed against explicit design rules before code is changed.
+This document is the non-negotiable UX and product-design contract for Walkfolio (a photo walk diary & archive manager for Mac; working repo name: photo-diary-triage). It exists to prevent ad hoc design drift and to ensure that future implementation work is reviewed against explicit design rules before code is changed.
+
+Domain language (Walk, Trip, Triage, Archive Index, …) is defined in [CONTEXT.md](./CONTEXT.md) and is canonical in code and manifests; only UI display labels for Walk/Trip are user-configurable. Structural decisions are recorded in [docs/adr/](./docs/adr/).
 
 This document outranks incidental implementation choices. If the current app behavior conflicts with this document, the document is authoritative.
 
@@ -87,6 +89,15 @@ This document outranks incidental implementation choices. If the current app beh
 - Date/group/folder browsing may use list or outline structures.
 - Final photo browsing must default to a grid.
 - If list view exists for photos, it must be secondary and explicitly chosen.
+- The primary Archive browse surface is the Timeline of Trips (newest first: cover, title,
+  dates, location, counts) → Trip → Walks → photo grid. The raw folder drill-down is retired
+  as a UI (folders remain on disk).
+- Map mode (all located Walks as clustered pins) and Search (filename + AI description FTS)
+  are sanctioned alternative lenses over the same Archive Index. Both terminate in the photo
+  grid, preserving rule 1.
+- Archive browsing, search, and map must function from the Archive Index alone — they may
+  not require photo bytes, and in travel mode they must never trigger implicit downloads
+  (ADR 0002).
 
 ### Focus Model
 
@@ -104,8 +115,8 @@ This document outranks incidental implementation choices. If the current app beh
 
 ### Group Browsing
 
-- Year, month, day, and synthetic groups may behave like folders.
-- Opening a group/folder must result in a grid of photos at the terminal content level.
+- Years, Trips, Walks, and synthetic groups (bursts, time clusters) may behave like folders.
+- Opening a group must result in a grid of photos at the terminal content level.
 - Groups may be represented in navigation as folders, but they may not replace the grid as the primary review surface.
 
 ## Research Expectations
