@@ -1920,6 +1920,99 @@ final class AppState: ObservableObject {
         statusMessage = "Archive root set to \(archiveRoot.path); \(existingYears)."
     }
 
+    func migrateArchiveLayoutInteractively() {
+        let archiveRoot = settings.archiveRoot
+        let migrator = ArchiveLayoutMigrator()
+        statusMessage = "Scanning archive for layout v2 migration…"
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let plan = migrator.plan(archiveRoot: archiveRoot)
+            await MainActor.run {
+                self?.presentArchiveMigrationPlan(plan, migrator: migrator, archiveRoot: archiveRoot)
+            }
+        }
+    }
+
+    private func presentArchiveMigrationPlan(_ plan: ArchiveLayoutMigrator.Plan, migrator: ArchiveLayoutMigrator, archiveRoot: URL) {
+        var lines: [String] = ["Archive layout v2 migration dry run — \(DateFormatting.iso8601.string(from: Date()))", ""]
+        for walk in plan.walks {
+            lines.append("\(walk.yearName)/\(walk.oldMonthName)/\(walk.oldWalkName)")
+            lines.append("  -> \(walk.yearName)/\(walk.newMonthName)/\(walk.newWalkName)")
+            lines.append("  files: \(walk.oldStemBase)-NNN.* -> \(walk.newStemBase)-NNN.*")
+        }
+        if !plan.skipped.isEmpty {
+            lines.append("")
+            lines.append("Skipped (left untouched):")
+            for (url, reason) in plan.skipped {
+                lines.append("  \(url.path) — \(reason)")
+            }
+        }
+        let reportURL = archiveRoot.appendingPathComponent("_layout-migration-dry-run.txt")
+        try? lines.joined(separator: "\n").write(to: reportURL, atomically: true, encoding: .utf8)
+
+        guard !plan.walks.isEmpty else {
+            let alert = NSAlert()
+            alert.messageText = "Archive already in layout v2"
+            alert.informativeText = "No legacy walk folders found. \(plan.skipped.count) folder(s) were skipped as pre-app material (see \(reportURL.lastPathComponent))."
+            alert.runModal()
+            statusMessage = "Archive layout migration: nothing to migrate."
+            return
+        }
+
+        let alert = NSAlert()
+        alert.messageText = "Migrate archive to layout v2?"
+        alert.informativeText = "\(plan.walks.count) walk folder(s) will be renamed and moved, their files renamed to date-bearing names, and manifests rewritten. \(plan.skipped.count) unrecognised folder(s) stay untouched. The full plan was written to \(reportURL.lastPathComponent) in the archive root — review it first if unsure."
+        alert.addButton(withTitle: "Migrate")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else {
+            statusMessage = "Archive layout migration cancelled; dry run saved to \(reportURL.lastPathComponent)."
+            return
+        }
+
+        statusMessage = "Migrating archive layout…"
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let result = migrator.execute(plan)
+            let problems = migrator.verify(plan)
+            await MainActor.run {
+                self?.finishArchiveMigration(result: result, problems: problems, archiveRoot: archiveRoot)
+            }
+        }
+    }
+
+    private func finishArchiveMigration(result: ArchiveLayoutMigrator.ExecutionResult, problems: [String], archiveRoot: URL) {
+        var lines = [
+            "Archive layout v2 migration — \(DateFormatting.iso8601.string(from: Date()))",
+            "Migrated walks: \(result.migratedWalks)",
+            "Renamed files: \(result.renamedFiles)",
+            "Rewritten text files: \(result.rewrittenTextFiles)",
+            "Removed legacy month folders: \(result.removedLegacyMonthFolders)",
+        ]
+        if !result.failures.isEmpty {
+            lines.append("Failures:")
+            lines.append(contentsOf: result.failures.map { "  \($0)" })
+        }
+        if !problems.isEmpty {
+            lines.append("Verification problems:")
+            lines.append(contentsOf: problems.map { "  \($0)" })
+        }
+        let reportURL = archiveRoot.appendingPathComponent("_layout-migration-report.txt")
+        try? lines.joined(separator: "\n").write(to: reportURL, atomically: true, encoding: .utf8)
+
+        archiveMediaCache.removeAll()
+        browserViewModel.invalidateArchiveTreeCache()
+        rebuildBrowserCaches()
+
+        let alert = NSAlert()
+        if result.failures.isEmpty && problems.isEmpty {
+            alert.messageText = "Archive migrated to layout v2"
+            alert.informativeText = "\(result.migratedWalks) walk(s) migrated, \(result.renamedFiles) file(s) renamed, \(result.rewrittenTextFiles) manifest(s) rewritten. Report: \(reportURL.lastPathComponent)."
+        } else {
+            alert.messageText = "Archive migration finished with issues"
+            alert.informativeText = "\(result.failures.count) failure(s), \(problems.count) verification problem(s). See \(reportURL.lastPathComponent) in the archive root."
+        }
+        alert.runModal()
+        statusMessage = "Archive layout migration finished; report saved to \(reportURL.lastPathComponent)."
+    }
+
     func setOneDrivePicturesRoot(_ root: URL) {
         settings.oneDrivePicturesRoot = root
         if var session = currentSession {

@@ -61,12 +61,32 @@ enum DateFormatting {
         archiveFormatter("yyyy").string(from: date)
     }
 
-    static func archiveMonthFolderName(from date: Date) -> String {
-        archiveFormatter("MM - MMMM").string(from: date)
+    // Layout v2 (ADR 0001): YYYY / MM-MonthName[-Trip-Slug] / DD-Ddd-Walk-Slug / yyyy-MM-dd-slug-NNN.ext
+    static func archiveTripFolderName(from date: Date, tripTitle: String? = nil) -> String {
+        let month = archiveFormatter("MM-MMMM").string(from: date)
+        guard let tripTitle = tripTitle?.nonEmpty else { return month }
+        return "\(month)-\(Slugifier.makeDisplaySlug(from: tripTitle))"
     }
 
     static func archiveWalkFolderName(from date: Date, title: String) -> String {
-        "\(archiveFormatter("dd-EEEE").string(from: date))-\(Slugifier.makeDisplaySlug(from: title))"
+        "\(archiveFormatter("dd-\(weekdayFormat)").string(from: date))-\(Slugifier.makeDisplaySlug(from: title))"
+    }
+
+    static func archiveFileStem(from date: Date, title: String) -> String {
+        "\(archiveFormatter("yyyy-MM-dd").string(from: date))-\(Slugifier.makeSlug(from: title))"
+    }
+
+    // Weekday token in walk folder names; user-configurable style, fixed per archive.
+    // "EEE" = English abbreviation (Thu), the default per ADR 0001.
+    static var weekdayFormat: String = "EEE"
+
+    // Legacy (pre-v2) names, kept for the layout migrator to recognise and rewrite.
+    static func legacyArchiveMonthFolderName(from date: Date) -> String {
+        archiveFormatter("MM - MMMM").string(from: date)
+    }
+
+    static func legacyArchiveWalkFolderPrefix(from date: Date) -> String {
+        archiveFormatter("dd-EEEE").string(from: date)
     }
 
     static let iso8601: ISO8601DateFormatter = {
@@ -101,7 +121,7 @@ enum ArchiveLibraryInspector {
         return entries.compactMap { url in
             guard (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { return nil }
             let name = url.lastPathComponent
-            guard name.range(of: #"^202\d$"#, options: .regularExpression) != nil else { return nil }
+            guard name.range(of: #"^(19|20)\d\d$"#, options: .regularExpression) != nil else { return nil }
             return name
         }
         .sorted()

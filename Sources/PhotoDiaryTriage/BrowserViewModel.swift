@@ -353,7 +353,7 @@ final class BrowserViewModel {
         let years = (try? fileManager.contentsOfDirectory(at: rootURL, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])) ?? []
         return years
             .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
-            .filter { $0.lastPathComponent.range(of: #"^202\d$"#, options: .regularExpression) != nil }
+            .filter { $0.lastPathComponent.range(of: #"^(19|20)\d\d$"#, options: .regularExpression) != nil }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
             .map { yearURL in
                 let months = buildArchiveMonthNodes(yearURL: yearURL)

@@ -14,6 +14,10 @@ struct PhotoDiaryCommands: Commands {
                 appState.pickArchiveRoot()
             }
 
+            Button("Migrate Archive Layout…") {
+                appState.migrateArchiveLayoutInteractively()
+            }
+
             Button("Export Backup…") {
                 appState.exportBackup()
             }
