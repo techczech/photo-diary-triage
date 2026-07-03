@@ -103,6 +103,18 @@ and [docs/adr/0002](../../docs/adr/0002-archive-index-derived-jsonl-in-pinned-fo
 - Output: photos renamed into the standard file scheme, Walks/Trips created or appended,
   thumbnails + index updated, AI description backfill queueable.
 
+## User feedback from 0.3.0 test (2026-07-03) — folded into work packages
+
+- Map renders (closed -096) but "no way to give photos GPS" → confirms WP4 (Locations) as
+  specified: pin-drop / assignment at walk, cluster, and photo level.
+- Archive sidebar tree must be **keyboard navigable** → WP3 requirement (Timeline and any
+  tree navigation get full keyboard support per DESIGN.md parity rule).
+- Folder rows should show **images from subfolders, not folder icons**, with a Settings
+  toggle to disable subfolder previews for speed → WP3 (Timeline covers + WP2 thumbnails
+  deliver this; the speed toggle is a WP3 setting; travel mode uses index thumbnails only).
+- Header row duplicated toolbar controls; mode tabs and Open in Finder belong at the top →
+  fixed immediately in 0.3.1 (header cleanup; duplicate inspector/shortcut buttons removed).
+
 ## Explicitly OUT (decided, not deferred-by-default)
 
 - Straighten / rotation (user: "crop is enough"); contrast/adjustment and all editing.
