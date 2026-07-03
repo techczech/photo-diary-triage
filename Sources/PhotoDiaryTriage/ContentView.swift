@@ -164,6 +164,10 @@ struct ContentView: View {
 
     @ToolbarContentBuilder
     private var mainToolbar: some ToolbarContent {
+        ToolbarItem(placement: .principal) {
+            ToolbarModeControls(appState: appState)
+        }
+
         ToolbarItemGroup {
             Button {
                 appState.toggleSidebarVisibility()
