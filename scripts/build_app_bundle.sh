@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD_DIR="$ROOT_DIR/.build/arm64-apple-macosx/debug"
-APP_DIR="$ROOT_DIR/dist/PhotoDiaryTriage.app"
+APP_DIR="$ROOT_DIR/dist/Walkfolio.app"
 MACOS_DIR="$APP_DIR/Contents/MacOS"
 RESOURCES_DIR="$APP_DIR/Contents/Resources"
 PLIST_PATH="$APP_DIR/Contents/Info.plist"
@@ -38,7 +38,9 @@ cat > "$PLIST_PATH" <<EOF
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>PhotoDiaryTriage</string>
+    <string>Walkfolio</string>
+    <key>CFBundleDisplayName</key>
+    <string>Walkfolio</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>

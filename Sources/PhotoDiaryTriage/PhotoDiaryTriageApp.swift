@@ -6,7 +6,7 @@ struct PhotoDiaryTriageApp: App {
     @StateObject private var launchCoordinator = AppLaunchCoordinator.shared
 
     var body: some Scene {
-        WindowGroup("Photo Diary Triage") {
+        WindowGroup("Walkfolio") {
             ContentView(appState: appState)
                 .frame(minWidth: 1120, minHeight: 700)
                 .onAppear {
