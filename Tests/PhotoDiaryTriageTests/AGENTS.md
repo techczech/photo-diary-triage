@@ -13,7 +13,7 @@ Use this file for verification work under `Tests/PhotoDiaryTriageTests/`.
 ## Test Style
 
 - Prefer deterministic fixtures and temp directories.
-- Verify behavior against [DESIGN.md](/Volumes/BigData/gitrepos/14_apps-and-utilities/photo-diary-triage/DESIGN.md), not only against implementation details.
+- Verify behavior against [DESIGN.md](/Volumes/BigData/gitrepos/06_apps-utilities/01_desktop-apps/photo-diary-triage/DESIGN.md), not only against implementation details.
 - Add regression coverage before changing interaction semantics.
 - Keep tests centered on real review workflows, not only isolated helpers.
 
