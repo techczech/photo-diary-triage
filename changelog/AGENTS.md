@@ -13,13 +13,13 @@ Use this folder as the authoritative tracking system for requested work, active 
 
 ## Required Structure
 
-- [backlog.jsonl](/Volumes/BigData/gitrepos/14_apps-and-utilities/photo-diary-triage/changelog/backlog.jsonl)
+- [backlog.jsonl](/Volumes/BigData/gitrepos/06_apps-utilities/01_desktop-apps/photo-diary-triage/changelog/backlog.jsonl)
   Append-only event log for backlog/spec lifecycle.
-- [changelog.jsonl](/Volumes/BigData/gitrepos/14_apps-and-utilities/photo-diary-triage/changelog/changelog.jsonl)
+- [changelog.jsonl](/Volumes/BigData/gitrepos/06_apps-utilities/01_desktop-apps/photo-diary-triage/changelog/changelog.jsonl)
   Append-only event log for implementation/report lifecycle.
-- [backlog/](/Volumes/BigData/gitrepos/14_apps-and-utilities/photo-diary-triage/changelog/backlog/)
+- [backlog/](/Volumes/BigData/gitrepos/06_apps-utilities/01_desktop-apps/photo-diary-triage/changelog/backlog/)
   Markdown spec files for active or proposed work.
-- [changelog/](/Volumes/BigData/gitrepos/14_apps-and-utilities/photo-diary-triage/changelog/changelog/)
+- [changelog/](/Volumes/BigData/gitrepos/06_apps-utilities/01_desktop-apps/photo-diary-triage/changelog/changelog/)
   Markdown implementation reports for completed work.
 
 ## Required Workflow

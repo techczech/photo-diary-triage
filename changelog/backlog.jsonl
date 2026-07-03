@@ -455,3 +455,5 @@
 {"ts":"2026-05-30T08:31:00Z","item_id":"PDT-2026-05-30-096","event":"implemented_pending_review","status":"awaiting_user_review","title":"map view slice C.1","file":"changelog/backlog/PDT-2026-05-30-096-map-view-slice-c.md"}
 {"ts":"2026-05-30T09:05:00Z","item_id":"PDT-2026-05-30-096","event":"implemented_pending_review","status":"awaiting_user_review","title":"map view slice C.2 walk location","file":"changelog/backlog/PDT-2026-05-30-096-map-view-slice-c.md"}
 {"ts":"2026-05-30T09:40:00Z","item_id":"PDT-2026-05-30-096","event":"implemented_pending_review","status":"awaiting_user_review","title":"map render fix + UX walkthrough","file":"changelog/backlog/PDT-2026-05-30-096-map-view-slice-c.md"}
+{"ts":"2026-07-03T06:35:00Z","item_id":"PDT-2026-07-03-097","event":"spec_created","status":"draft","title":"Photo Diary 1.0 completion plan","file":"changelog/backlog/PDT-2026-07-03-097-photo-diary-completion-plan.md"}
+{"ts":"2026-07-03T06:55:00Z","item_id":"PDT-2026-07-03-097","event":"spec_approved","status":"approved_for_implementation","title":"Walkfolio 1.0 completion plan","file":"changelog/backlog/PDT-2026-07-03-097-photo-diary-completion-plan.md"}

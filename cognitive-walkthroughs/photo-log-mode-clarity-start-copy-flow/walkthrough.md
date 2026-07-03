@@ -3,7 +3,7 @@ task: "Move from source inbox decisions to a photo log and copy flow without rec
 task_source: prompt
 persona: "New user with no prior exposure to PhotoDiaryTriage"
 artefact: "PhotoDiaryTriage 0.2.25 local macOS app"
-artefact_path: "/Volumes/BigData/gitrepos/14_apps-and-utilities/photo-diary-triage/dist/PhotoDiaryTriage.app"
+artefact_path: "/Volumes/BigData/gitrepos/06_apps-utilities/01_desktop-apps/photo-diary-triage/dist/PhotoDiaryTriage.app"
 date: 2026-05-23
 steps_total: 6
 steps_failed: 0

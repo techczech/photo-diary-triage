@@ -1,6 +1,6 @@
 # Photo Diary Triage PRD
 
-This PRD is subordinate to [DESIGN.md](/Volumes/BigData/gitrepos/14_apps-and-utilities/photo-diary-triage/DESIGN.md) for UX, interaction, shortcut, layout, popup, persistence, and launch-model decisions. If implementation or future planning conflicts with the design-governance document, [DESIGN.md](/Volumes/BigData/gitrepos/14_apps-and-utilities/photo-diary-triage/DESIGN.md) is authoritative.
+This PRD is subordinate to [DESIGN.md](/Volumes/BigData/gitrepos/06_apps-utilities/01_desktop-apps/photo-diary-triage/DESIGN.md) for UX, interaction, shortcut, layout, popup, persistence, and launch-model decisions. If implementation or future planning conflicts with the design-governance document, [DESIGN.md](/Volumes/BigData/gitrepos/06_apps-utilities/01_desktop-apps/photo-diary-triage/DESIGN.md) is authoritative.
 
 ## Product Summary
 
