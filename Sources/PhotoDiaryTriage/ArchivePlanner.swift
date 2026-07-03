@@ -16,13 +16,14 @@ struct ArchivePlanner {
         let walkFolderName = DateFormatting.archiveWalkFolderName(from: walkDate, title: titleSource)
         let archiveFolder = session.archiveRoot
             .appendingPathComponent(DateFormatting.archiveYearFolderName(from: walkDate), isDirectory: true)
-            .appendingPathComponent(DateFormatting.archiveMonthFolderName(from: walkDate), isDirectory: true)
+            .appendingPathComponent(DateFormatting.archiveTripFolderName(from: walkDate), isDirectory: true)
             .appendingPathComponent(walkFolderName, isDirectory: true)
 
         var reservedDestinations: Set<String> = []
         var entries: [ArchiveEntry] = []
+        let fileStemBase = DateFormatting.archiveFileStem(from: walkDate, title: titleSource)
         for (offset, item) in sortedSelectedItems.enumerated() {
-            let archiveStem = "\(walkFolderName)-\(String(format: "%03d", offset + 1))"
+            let archiveStem = "\(fileStemBase)-\(String(format: "%03d", offset + 1))"
             let destination = makeUniqueDestination(stem: archiveStem, originalFileName: item.fileName, in: archiveFolder, reserved: &reservedDestinations)
             entries.append(
                 ArchiveEntry(

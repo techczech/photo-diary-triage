@@ -22,9 +22,12 @@ Layout: `YYYY / MM-MonthName[-Trip-Slug] / DD-Ddd-Walk-Slug / YYYY-MM-DD-slug-NN
 
 ## Consequences
 
-- The existing `YYYY/MM/YYYY-MM-DD-walk-slug` archive must be migrated (folder renames +
-  moves + manifest path rewrites); file names (`YYYY-MM-DD-slug-NNN.ext`) are unchanged and
-  carry the full date because folder names no longer do.
+- The existing app-written archive (legacy layout `YYYY / "MM - MMMM" / dd-Weekday-Slug /
+  <walkname>-NNN.ext`) must be migrated: folder renames + moves + manifest path rewrites,
+  AND file renames — legacy file stems embedded the walk folder name with no date, so
+  migration renames them to the v2 date-bearing stem `yyyy-MM-dd-slug-NNN.ext` (full date in
+  file names because folder names no longer carry it). Pre-app folders (e.g. `2020/03/28`)
+  are skipped by the migrator; they enter via historical processing instead.
 - The app must rewrite recorded relative paths in manifests whenever it moves a Walk.
 - Cross-month Trips are keyed by start month; their later Walks' day-first folder names
   missort within the Trip. Accepted as rare and humanly readable (weekday token makes it

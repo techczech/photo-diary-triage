@@ -76,12 +76,17 @@ struct ArchiveCopySurveyor: Sendable {
                 hasUndatedItems = true
                 continue
             }
-            let monthRoot = archiveRoot
+            let yearRoot = archiveRoot
                 .appendingPathComponent(DateFormatting.archiveYearFolderName(from: capturedAt), isDirectory: true)
-                .appendingPathComponent(DateFormatting.archiveMonthFolderName(from: capturedAt), isDirectory: true)
-                .standardizedFileURL
-            if fileManager.fileExists(atPath: monthRoot.path) {
-                monthRoots[monthRoot.path] = monthRoot
+            // v2 month Trips plus legacy "MM - MMMM" folders; named Trips share the month prefix.
+            let monthPrefix = DateFormatting.archiveTripFolderName(from: capturedAt)
+            let legacyName = DateFormatting.legacyArchiveMonthFolderName(from: capturedAt)
+            let candidates = (try? fileManager.contentsOfDirectory(at: yearRoot, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])) ?? []
+            for candidate in candidates {
+                let name = candidate.lastPathComponent
+                guard name == legacyName || name == monthPrefix || name.hasPrefix(monthPrefix + "-") else { continue }
+                let root = candidate.standardizedFileURL
+                monthRoots[root.path] = root
             }
         }
 
