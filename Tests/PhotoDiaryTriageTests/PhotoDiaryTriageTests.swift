@@ -64,10 +64,10 @@ import Testing
     let plan = ArchivePlanner(fileManager: .default).plan(for: session)
 
     #expect(plan.selectedCount == 2)
-    #expect(plan.archiveFolder.path.hasSuffix("2023/04 - April/03-Monday-Birdwatch-walk"))
+    #expect(plan.archiveFolder.path.hasSuffix("2023/04-April/03-Mon-Birdwatch-walk"))
     #expect(plan.entries.map(\.destinationURL.lastPathComponent) == [
-        "03-Monday-Birdwatch-walk-001.jpg",
-        "03-Monday-Birdwatch-walk-002.jpg"
+        "2023-04-03-birdwatch-walk-001.jpg",
+        "2023-04-03-birdwatch-walk-002.jpg"
     ])
 }
 

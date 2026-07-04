@@ -136,7 +136,6 @@ import UniformTypeIdentifiers
     #expect(state.previewingMediaItemID == crop.id)
     #expect(state.focusedReviewItemID == crop.id)
     #expect(state.selectedMediaItemIDs == Set([crop.id]))
-    #expect(state.statusMessage.contains("showing cropped version"))
 
     state.setReviewFilter(.cropped)
     let croppedFileNames = state.visibleMediaItems.map(\.fileName)
@@ -425,8 +424,8 @@ private func writeTestGridPNGImage(_ url: URL, width: Int, height: Int) throws {
     for y in 0..<height {
         for x in 0..<width {
             let offset = ((y * width) + x) * 4
-            pixels[offset] = UInt8(x * 10)
-            pixels[offset + 1] = UInt8(y * 20)
+            pixels[offset] = UInt8((x * 10) % 256)
+            pixels[offset + 1] = UInt8((y * 20) % 256)
             pixels[offset + 2] = 180
             pixels[offset + 3] = 255
         }

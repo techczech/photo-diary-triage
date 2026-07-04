@@ -4994,8 +4994,8 @@ final class AppState: ObservableObject {
     }
 
     private func siblingRelativePath(for url: URL, original: MediaItem) -> String {
-        let relativeDirectory = URL(fileURLWithPath: original.relativePath).deletingLastPathComponent().path
-        if relativeDirectory == "." || relativeDirectory == "/" {
+        let relativeDirectory = (original.relativePath as NSString).deletingLastPathComponent
+        if relativeDirectory.isEmpty || relativeDirectory == "." || relativeDirectory == "/" {
             return url.lastPathComponent
         }
         return "\(relativeDirectory)/\(url.lastPathComponent)"
