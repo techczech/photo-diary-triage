@@ -24,6 +24,7 @@ import Testing
     let result = try await ImportCoordinator().commit(session: session)
     let importedItem = try requireSingleMediaItem(in: result.session)
     let walkBasename = result.walkManifest.archiveFolder.lastPathComponent
+    let fileStem = DateFormatting.archiveFileStem(from: capturedAt, title: "Morning Walk")
     let walkManifestURL = result.walkManifest.archiveFolder.appendingPathComponent("\(walkBasename).md")
     let fileManifestURL = try #require(importedItem.destinationURL?.deletingPathExtension().appendingPathExtension("md"))
     let sessionLogURL = result.walkManifest.archiveFolder.appendingPathComponent("\(walkBasename)-session-log.jsonl")
@@ -35,7 +36,7 @@ import Testing
     #expect(result.session.status == "imported")
     #expect(result.fileManifests.count == 1)
     #expect(FileManager.default.fileExists(atPath: importedItem.destinationURL?.path ?? ""))
-    #expect(importedItem.destinationURL?.lastPathComponent == "\(walkBasename)-001.jpg")
+    #expect(importedItem.destinationURL?.lastPathComponent == "\(fileStem)-001.jpg")
     #expect(FileManager.default.fileExists(atPath: walkManifestURL.path))
     #expect(FileManager.default.fileExists(atPath: fileManifestURL.path))
     #expect(fileManifestURL.deletingPathExtension().lastPathComponent == importedItem.destinationURL?.deletingPathExtension().lastPathComponent)

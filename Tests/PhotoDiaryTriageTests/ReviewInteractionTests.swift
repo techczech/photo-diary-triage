@@ -26,14 +26,14 @@ import Testing
 
 @Test func cropNudgeClampsWithinImage() {
     // Slice A (#5): arrow-key nudge keeps the crop rect inside the unit square.
-    let rect = CropNormalizedRect(x: 0.8, y: 0.8, width: 0.3, height: 0.3)
+    let rect = CropNormalizedRect(x: 0.6, y: 0.6, width: 0.3, height: 0.3)
     let pushed = CropSelectionGeometry.nudgedNormalizedRect(rect, dx: 1, dy: 1, step: 0.5)
     #expect(abs(pushed.x - 0.7) < 0.0001)
     #expect(abs(pushed.y - 0.7) < 0.0001)
     #expect(abs(pushed.width - 0.3) < 0.0001)
     let pulled = CropSelectionGeometry.nudgedNormalizedRect(rect, dx: -1, dy: -1, step: 0.5)
-    #expect(abs(pulled.x - 0.3) < 0.0001)
-    #expect(abs(pulled.y - 0.3) < 0.0001)
+    #expect(abs(pulled.x - 0.1) < 0.0001)
+    #expect(abs(pulled.y - 0.1) < 0.0001)
 }
 
 @Test func reviewGridMetricsUseRequestedColumnsForCardWidth() {
