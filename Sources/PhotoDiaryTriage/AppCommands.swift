@@ -18,6 +18,18 @@ struct PhotoDiaryCommands: Commands {
                 appState.migrateArchiveLayoutInteractively()
             }
 
+            Button("Backfill Archive Index Thumbnails…") {
+                appState.backfillArchiveIndexThumbnailsInteractively()
+            }
+            .disabled(!appState.canWriteArchiveIndex)
+            .help(appState.canWriteArchiveIndex ? "Generate missing Archive Index thumbnails." : appState.archiveIndexWriteHelp)
+
+            Button("Rebuild Archive Index…") {
+                appState.rebuildArchiveIndexInteractively()
+            }
+            .disabled(!appState.canWriteArchiveIndex)
+            .help(appState.canWriteArchiveIndex ? "Rebuild the derived Archive Index from manifests." : appState.archiveIndexWriteHelp)
+
             Button("Export Backup…") {
                 appState.exportBackup()
             }
@@ -216,6 +228,12 @@ struct PhotoDiaryCommands: Commands {
             }
             .keyboardShortcut(.return, modifiers: [.command])
             .disabled(!appState.canOpenCurrentSelection)
+
+            Button("Download Selected Archive Photo to View") {
+                appState.downloadBlockedArchiveSelectionToView()
+            }
+            .keyboardShortcut("d", modifiers: [.command, .shift])
+            .disabled(!appState.canDownloadBlockedArchiveSelectionToView)
 
             Button("Go Up") {
                 appState.navigateToParent()

@@ -46,6 +46,11 @@ enum CacheKeyBuilder {
         let digest = Insecure.MD5.hash(data: Data(url.path.utf8))
         return digest.map { String(format: "%02hhx", $0) }.joined()
     }
+
+    static func key(for string: String) -> String {
+        let digest = Insecure.MD5.hash(data: Data(string.utf8))
+        return digest.map { String(format: "%02hhx", $0) }.joined()
+    }
 }
 
 enum DateFormatting {

@@ -1207,7 +1207,11 @@ struct FullPhotoPreviewCanvas: View {
             manualCropRect: $manualCropRect,
             onManualCropSelectionChanged: onManualCropSelectionChanged,
             onManualCropRejected: onManualCropRejected,
-            placeholderImage: thumbnailSlot.image
+            placeholderImage: thumbnailSlot.image,
+            isByteReadBlocked: appState.isArchiveByteReadBlocked(for: item),
+            downloadToView: {
+                appState.downloadArchiveItemForViewing(item)
+            }
         )
         .task(id: item.id) {
             appState.requestThumbnail(for: item)
@@ -1767,6 +1771,8 @@ struct ZoomableImageCanvas: View {
     let onManualCropSelectionChanged: (CropNormalizedRect?) -> Void
     let onManualCropRejected: () -> Void
     var placeholderImage: NSImage?
+    var isByteReadBlocked: Bool = false
+    var downloadToView: (() -> Void)?
     @StateObject private var imageModel = DecodedImageModel()
 
     var body: some View {
@@ -1785,6 +1791,8 @@ struct ZoomableImageCanvas: View {
                     onManualCropSelectionChanged: onManualCropSelectionChanged,
                     onManualCropRejected: onManualCropRejected
                 )
+            } else if isByteReadBlocked {
+                blockedArchivePlaceholder
             } else if let placeholderImage {
                 Image(nsImage: placeholderImage)
                     .resizable()
@@ -1805,7 +1813,34 @@ struct ZoomableImageCanvas: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task(id: imageURL) {
-            imageModel.load(.interactiveDisplay(imageURL))
+            if isByteReadBlocked == false {
+                imageModel.load(.interactiveDisplay(imageURL))
+            }
+        }
+    }
+
+    private var blockedArchivePlaceholder: some View {
+        ZStack(alignment: .bottom) {
+            if let placeholderImage {
+                Image(nsImage: placeholderImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                Rectangle()
+                    .fill(.quaternary)
+            }
+            VStack(spacing: 8) {
+                Text("Archive photo is online-only in travel mode.")
+                    .font(.callout.weight(.semibold))
+                Button("Download to view") {
+                    downloadToView?()
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            .padding(12)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+            .padding()
         }
     }
 }
@@ -1868,6 +1903,10 @@ struct LoadedLockedCompareImageCanvas: View {
                     onManualCropSelectionChanged: onManualCropSelectionChanged,
                     onManualCropRejected: onManualCropRejected
                 )
+            } else if appState.isArchiveByteReadBlocked(for: item) {
+                CompareImagePlaceholder(image: thumbnailSlot.image, downloadToView: {
+                    appState.downloadArchiveItemForViewing(item)
+                })
             } else {
                 CompareImagePlaceholder(image: thumbnailSlot.image)
             }
@@ -1875,13 +1914,16 @@ struct LoadedLockedCompareImageCanvas: View {
         .task(id: item.id) {
             appState.requestThumbnail(for: item)
             _ = appState.thumbnailImage(for: item)
-            imageModel.load(.interactiveDisplay(item.sourceURL))
+            if let request = appState.decodedImageRequest(for: item) {
+                imageModel.load(request)
+            }
         }
     }
 }
 
 struct CompareImagePlaceholder: View {
     let image: NSImage?
+    var downloadToView: (() -> Void)?
 
     var body: some View {
         Group {
@@ -1896,7 +1938,20 @@ struct CompareImagePlaceholder: View {
                     .fill(.quaternary)
             }
         }
-        .overlay(ProgressView())
+        .overlay {
+            if let downloadToView {
+                VStack(spacing: 8) {
+                    Text("Online-only")
+                        .font(.caption.weight(.semibold))
+                    Button("Download to view", action: downloadToView)
+                        .buttonStyle(.bordered)
+                }
+                .padding(10)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+            } else {
+                ProgressView()
+            }
+        }
     }
 }
 

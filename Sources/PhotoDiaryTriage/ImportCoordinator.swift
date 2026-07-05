@@ -156,7 +156,6 @@ struct ImportCoordinator: ImportCoordinating {
             )
         }
         updatedSession.proposedWalks = []
-
         guard let primaryWalkManifest = walkManifestResults.first else {
             let empty = buildWalkManifest(
                 for: updatedSession,

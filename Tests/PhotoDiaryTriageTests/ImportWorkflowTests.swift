@@ -44,6 +44,33 @@ import Testing
     #expect(!FileManager.default.fileExists(atPath: result.walkManifest.archiveFolder.appendingPathComponent("_session", isDirectory: true).path))
 }
 
+@Test func importCoordinatorCommitSurvivesUnwritableArchiveIndexPath() async throws {
+    let root = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let sourceRoot = root.appendingPathComponent("source", isDirectory: true)
+    let archiveRoot = root.appendingPathComponent("archive", isDirectory: true)
+    try writeTestFile(archiveRoot.appendingPathComponent("_index"), contents: "not a directory")
+    try writeTestFile(sourceRoot.appendingPathComponent("IMG_0099.jpg"), contents: "selected-image-data")
+
+    let item = makeTestMediaItem(
+        sourceRoot: sourceRoot,
+        fileName: "IMG_0099.jpg",
+        capturedAt: Date(timeIntervalSince1970: 11_500),
+        selectionState: .included,
+        lifecycleState: .selectedForImport
+    )
+    let session = makeTestSession(sourceRoot: sourceRoot, archiveRoot: archiveRoot, items: [item], title: "Index Failure Walk")
+
+    let result = try await ImportCoordinator().commit(session: session)
+    let importedItem = try requireSingleMediaItem(in: result.session)
+
+    #expect(importedItem.destinationURL != nil)
+    #expect(importedItem.lifecycleState == .verified)
+    #expect(result.fileManifests.count == 1)
+    #expect(FileManager.default.fileExists(atPath: result.walkManifest.archiveFolder.appendingPathComponent("\(result.walkManifest.archiveFolder.lastPathComponent).md").path))
+}
+
 @Test func importCoordinatorCommitImportsCompanionsWhenEnabled() async throws {
     let root = try makeTemporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }

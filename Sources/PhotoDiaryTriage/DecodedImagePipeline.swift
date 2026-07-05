@@ -133,6 +133,10 @@ actor DecodedImagePipeline {
     }
 
     private static func decodeImage(at url: URL, maxPixelSize: Int?) -> NSImage? {
+        guard ArchiveByteReadPolicyContext.shared.canReadBytes(at: url) else {
+            return nil
+        }
+
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
             return nil
         }

@@ -146,6 +146,10 @@ struct CropService {
         }
 
         let sourceURL = item.sourceURL
+        guard ArchiveByteReadPolicyContext.shared.canReadBytes(at: sourceURL) else {
+            throw CropServiceError.cannotReadSource("\(sourceURL.path) is online-only in travel mode. Use Download to view before cropping.")
+        }
+
         guard fileManager.fileExists(atPath: sourceURL.path),
               let source = CGImageSourceCreateWithURL(sourceURL as CFURL, nil) else {
             throw CropServiceError.cannotReadSource(sourceURL.path)

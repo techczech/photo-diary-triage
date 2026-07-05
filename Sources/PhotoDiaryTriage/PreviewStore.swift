@@ -18,7 +18,10 @@ final class PreviewStore: PreviewCaching {
     var isPersistentCacheAvailable: Bool { true }
 
     func cachedThumbnailURL(for item: MediaItem) -> URL {
-        cacheRoot.appendingPathComponent("\(item.thumbnailCacheKey).png")
+        if let archiveThumbnail = ArchiveByteReadPolicyContext.shared.indexThumbnailURLIfAvailable(for: item.sourceURL) {
+            return archiveThumbnail
+        }
+        return cacheRoot.appendingPathComponent("\(item.thumbnailCacheKey).png")
     }
 
     func generateThumbnail(for item: MediaItem) async -> Bool {
@@ -29,6 +32,11 @@ final class PreviewStore: PreviewCaching {
         let destinationURL = cachedThumbnailURL(for: item)
         if fileManager.fileExists(atPath: destinationURL.path) {
             return true
+        }
+
+        guard ArchiveByteReadPolicyContext.shared.canReadBytes(at: item.sourceURL) else {
+            logger.error("Blocked implicit archive byte read for \(item.sourceURL.path, privacy: .public)")
+            return false
         }
 
         let request = QLThumbnailGenerator.Request(fileAt: item.sourceURL, size: size, scale: NSScreen.main?.backingScaleFactor ?? 2, representationTypes: .thumbnail)
