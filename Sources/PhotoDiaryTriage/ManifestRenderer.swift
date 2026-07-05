@@ -6,10 +6,16 @@ struct ManifestRenderer {
         lines.append("# \(manifest.title.nonEmpty ?? "Photo Walk")")
         lines.append("")
         lines.append("- Session ID: `\(manifest.sessionID.uuidString)`")
+        if let walkID = manifest.walkID {
+            lines.append("- Walk ID: `\(walkID.uuidString)`")
+        }
         lines.append("- Source folder: `\(manifest.sourceFolder.path)`")
         lines.append("- Archive folder: `\(manifest.archiveFolder.path)`")
         if let relativePath = manifest.archiveFolderRelativePath {
             lines.append("- OneDrive Pictures relative folder: `\(relativePath)`")
+        }
+        if let tripFolderRelativePath = manifest.tripFolderRelativePath {
+            lines.append("- Trip folder: `\(tripFolderRelativePath)`")
         }
         if let walkDate = manifest.walkDate {
             lines.append("- Walk date: \(DateFormatting.iso8601.string(from: walkDate))")
@@ -58,6 +64,34 @@ struct ManifestRenderer {
             }
         }
 
+        return lines.joined(separator: "\n")
+    }
+
+    func renderTripManifest(_ manifest: TripManifest) -> String {
+        var lines: [String] = []
+        lines.append("# \(manifest.title.nonEmpty ?? "Trip")")
+        lines.append("")
+        lines.append("- Trip ID: `\(manifest.tripID.uuidString)`")
+        lines.append("- Folder: `\(manifest.folder.path)`")
+        if let relativePath = manifest.folderRelativePath {
+            lines.append("- OneDrive Pictures relative folder: `\(relativePath)`")
+        }
+        if let startDate = manifest.startDate {
+            lines.append("- Start date: \(DateFormatting.iso8601.string(from: startDate))")
+        }
+        if let endDate = manifest.endDate {
+            lines.append("- End date: \(DateFormatting.iso8601.string(from: endDate))")
+        }
+        lines.append("")
+        lines.append("## Member Walks")
+        lines.append("")
+        if manifest.memberWalkFolderPaths.isEmpty {
+            lines.append("_No member walks recorded._")
+        } else {
+            for path in manifest.memberWalkFolderPaths {
+                lines.append("- `\(path)`")
+            }
+        }
         return lines.joined(separator: "\n")
     }
 

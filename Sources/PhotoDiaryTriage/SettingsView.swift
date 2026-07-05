@@ -110,6 +110,29 @@ struct SettingsView: View {
                         }
                     }
                 }
+
+                Section("Archive Naming") {
+                    Picker("Weekday token", selection: Binding(
+                        get: { appState.settings.weekdayTokenStyle },
+                        set: { appState.setWeekdayTokenStyle($0) }
+                    )) {
+                        ForEach(WeekdayTokenStyle.allCases, id: \.self) { style in
+                            Text(style.title).tag(style)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 360)
+
+                    TextField("Walk label", text: Binding(
+                        get: { appState.settings.walkDisplayLabel },
+                        set: { appState.setWalkDisplayLabel($0) }
+                    ))
+
+                    TextField("Trip label", text: Binding(
+                        get: { appState.settings.tripDisplayLabel },
+                        set: { appState.setTripDisplayLabel($0) }
+                    ))
+                }
             }
             .formStyle(.grouped)
             .tabItem {

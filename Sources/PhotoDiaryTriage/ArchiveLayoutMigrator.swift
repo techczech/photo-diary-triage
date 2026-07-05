@@ -188,31 +188,22 @@ struct ArchiveLayoutMigrator {
         }
 
         // 3. Rewrite paths and stems inside all text sidecars.
-        var rewrittenTextFiles = 0
-        let textExtensions: Set<String> = ["md", "json", "jsonl"]
-        let updatedContents = try fileManager.contentsOfDirectory(at: walk.newWalkURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
-        for file in updatedContents where textExtensions.contains(file.pathExtension.lowercased()) {
-            guard var text = try? String(contentsOf: file, encoding: .utf8) else { continue }
-            let original = text
-            // Full old folder path → new (absolute references).
-            text = text.replacingOccurrences(of: walk.oldWalkURL.path, with: walk.newWalkURL.path)
-            // Old month path segment → new (relative and remaining absolute references).
-            text = text.replacingOccurrences(
-                of: "\(walk.yearName)/\(walk.oldMonthName)/\(walk.oldWalkName)",
-                with: "\(walk.yearName)/\(walk.newMonthName)/\(walk.newWalkName)"
+        let rewriter = ArchiveTextSidecarRewriter(fileManager: fileManager)
+        let rewrittenTextFiles = try rewriter.rewriteSidecars(
+            in: walk.newWalkURL,
+            spec: ArchiveTextRewriteSpec(
+                oldAbsoluteFolderPath: walk.oldWalkURL.path,
+                newAbsoluteFolderPath: walk.newWalkURL.path,
+                oldRelativeFolderPath: "\(walk.yearName)/\(walk.oldMonthName)/\(walk.oldWalkName)",
+                newRelativeFolderPath: "\(walk.yearName)/\(walk.newMonthName)/\(walk.newWalkName)",
+                oldTripRelativePath: "\(walk.yearName)/\(walk.oldMonthName)",
+                newTripRelativePath: "\(walk.yearName)/\(walk.newMonthName)",
+                oldStemBase: walk.oldStemBase,
+                newStemBase: walk.newStemBase,
+                oldWalkName: walk.oldWalkName,
+                newWalkName: walk.newWalkName
             )
-            // Media stems first (walkname-NNN…), then any remaining walk-name references.
-            text = text.replacingOccurrences(
-                of: "\(walk.oldStemBase)-(\\d{3})",
-                with: "\(walk.newStemBase)-$1",
-                options: .regularExpression
-            )
-            text = text.replacingOccurrences(of: walk.oldWalkName, with: walk.newWalkName)
-            if text != original {
-                try text.write(to: file, atomically: true, encoding: .utf8)
-                rewrittenTextFiles += 1
-            }
-        }
+        )
 
         return (renamedFiles, rewrittenTextFiles)
     }

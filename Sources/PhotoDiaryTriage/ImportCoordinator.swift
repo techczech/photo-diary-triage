@@ -3,8 +3,26 @@ import Foundation
 struct ImportResult {
     var session: ImportSession
     var walkManifest: WalkManifest
+    var walkManifests: [WalkManifest]
+    var tripManifests: [TripManifest]
     var fileManifests: [FileManifest]
     var events: [SessionLogEvent]
+
+    init(
+        session: ImportSession,
+        walkManifest: WalkManifest,
+        walkManifests: [WalkManifest]? = nil,
+        tripManifests: [TripManifest] = [],
+        fileManifests: [FileManifest],
+        events: [SessionLogEvent]
+    ) {
+        self.session = session
+        self.walkManifest = walkManifest
+        self.walkManifests = walkManifests ?? [walkManifest]
+        self.tripManifests = tripManifests
+        self.fileManifests = fileManifests
+        self.events = events
+    }
 }
 
 struct ImportCoordinator: ImportCoordinating {
@@ -27,71 +45,135 @@ struct ImportCoordinator: ImportCoordinating {
         session: ImportSession,
         progress: (@Sendable (ImportProgress) async -> Void)? = nil
     ) async throws -> ImportResult {
-        let plan = archivePlanner.plan(for: session)
+        let plans = archivePlanner.planWalks(for: session)
         let relativePathResolver = ArchiveRelativePathResolver(root: session.oneDrivePicturesRoot)
-        try AppDirectories.ensureExists(plan.archiveFolder, fileManager: fileManager)
 
         var updatedSession = session
         var events: [SessionLogEvent] = [
             SessionLogEvent(timestamp: Date(), event: "session_commit_started", mediaItemID: nil, details: [
                 "session_id": session.id.uuidString,
-                "archive_folder": plan.archiveFolder.path
+                "walk_count": "\(plans.count)"
             ])
         ]
 
-        let totalEntries = max(plan.entries.count, 1)
+        let totalEntries = max(plans.reduce(0) { $0 + $1.entries.count }, 1)
         var completedEntries = 0
+        var walkManifestResults: [WalkManifest] = []
+        var allFileManifests: [FileManifest] = []
+        var namedTripMembers: [String: (plan: ArchiveCommitPlan, walks: [WalkManifest])] = [:]
+        let tripManifestStore = TripManifestStore(fileManager: fileManager, renderer: manifestRenderer)
 
-        for entry in plan.entries {
-            if !fileManager.fileExists(atPath: entry.destinationURL.path) {
+        for plan in plans {
+            try AppDirectories.ensureExists(plan.archiveFolder, fileManager: fileManager)
+            var walkEvents: [SessionLogEvent] = [
+                SessionLogEvent(timestamp: Date(), event: "walk_commit_started", mediaItemID: nil, details: [
+                    "session_id": session.id.uuidString,
+                    "walk_id": plan.walkID?.uuidString ?? "",
+                    "archive_folder": plan.archiveFolder.path
+                ])
+            ]
+
+            for entry in plan.entries {
+                guard !fileManager.fileExists(atPath: entry.destinationURL.path) else {
+                    throw NSError(domain: "ImportCoordinator", code: 5, userInfo: [
+                        NSLocalizedDescriptionKey: "Planned archive destination already exists: \(entry.destinationURL.path)"
+                    ])
+                }
                 try fileManager.copyItem(at: entry.sourceURL, to: entry.destinationURL)
-            }
 
-            guard let index = updatedSession.mediaItems.firstIndex(where: { $0.id == entry.mediaItemID }) else {
-                continue
-            }
-
-            if entry.isCompanion {
-                if let companionIndex = updatedSession.mediaItems[index].companionFiles.firstIndex(where: { $0.id == entry.companionFileID }) {
-                    updatedSession.mediaItems[index].companionFiles[companionIndex].destinationURL = entry.destinationURL
-                    updatedSession.mediaItems[index].companionFiles[companionIndex].archiveRelativePath = relativePathResolver.relativePath(for: entry.destinationURL)
-                    updatedSession.mediaItems[index].companionFiles[companionIndex].importedAt = Date()
+                guard let index = updatedSession.mediaItems.firstIndex(where: { $0.id == entry.mediaItemID }) else {
+                    continue
                 }
-            } else {
-                updatedSession.mediaItems[index].destinationURL = entry.destinationURL
-                updatedSession.mediaItems[index].archiveRelativePath = relativePathResolver.relativePath(for: entry.destinationURL)
-                if updatedSession.mediaItems[index].lifecycleState == .discovered {
-                    updatedSession.mediaItems[index].lifecycleState = try updatedSession.mediaItems[index].lifecycleState.transition(to: .selectedForImport)
-                }
-                updatedSession.mediaItems[index].lifecycleState = try updatedSession.mediaItems[index].lifecycleState.transition(to: .imported)
-                updatedSession.mediaItems[index].importedAt = Date()
-            }
 
-            events.append(
-                SessionLogEvent(timestamp: Date(), event: "file_imported", mediaItemID: entry.mediaItemID, details: [
+                if entry.isCompanion {
+                    if let companionIndex = updatedSession.mediaItems[index].companionFiles.firstIndex(where: { $0.id == entry.companionFileID }) {
+                        updatedSession.mediaItems[index].companionFiles[companionIndex].destinationURL = entry.destinationURL
+                        updatedSession.mediaItems[index].companionFiles[companionIndex].archiveRelativePath = relativePathResolver.relativePath(for: entry.destinationURL)
+                        updatedSession.mediaItems[index].companionFiles[companionIndex].importedAt = Date()
+                    }
+                } else {
+                    updatedSession.mediaItems[index].destinationURL = entry.destinationURL
+                    updatedSession.mediaItems[index].archiveRelativePath = relativePathResolver.relativePath(for: entry.destinationURL)
+                    if updatedSession.mediaItems[index].lifecycleState == .discovered {
+                        updatedSession.mediaItems[index].lifecycleState = try updatedSession.mediaItems[index].lifecycleState.transition(to: .selectedForImport)
+                    }
+                    updatedSession.mediaItems[index].lifecycleState = try updatedSession.mediaItems[index].lifecycleState.transition(to: .imported)
+                    updatedSession.mediaItems[index].importedAt = Date()
+                }
+
+                let event = SessionLogEvent(timestamp: Date(), event: "file_imported", mediaItemID: entry.mediaItemID, details: [
                     "source": entry.sourceURL.path,
                     "destination": entry.destinationURL.path,
-                    "is_companion": entry.isCompanion ? "true" : "false"
+                    "is_companion": entry.isCompanion ? "true" : "false",
+                    "walk_id": plan.walkID?.uuidString ?? ""
                 ])
-            )
+                events.append(event)
+                walkEvents.append(event)
 
-            completedEntries += 1
-            if let progress {
-                await progress(ImportProgress(current: completedEntries, total: totalEntries))
+                completedEntries += 1
+                if let progress {
+                    await progress(ImportProgress(current: completedEntries, total: totalEntries))
+                }
+            }
+
+            updatedSession.lastUpdatedAt = Date()
+            updatedSession.status = "imported"
+
+            try verifyImportedFiles(in: &updatedSession, mediaItemIDs: Set(plan.entries.map(\.mediaItemID)), events: &events, walkEvents: &walkEvents)
+            refreshArchiveRelativePaths(in: &updatedSession)
+
+            let planMediaIDs = Set(plan.entries.filter { !$0.isCompanion }.map(\.mediaItemID))
+            let fileManifests = buildFileManifests(for: updatedSession, mediaItemIDs: planMediaIDs)
+            let walkManifest = buildWalkManifest(for: updatedSession, plan: plan, fileManifests: fileManifests)
+            try writeManifests(walkManifest: walkManifest, fileManifests: fileManifests, archiveFolder: plan.archiveFolder, events: walkEvents)
+            walkManifestResults.append(walkManifest)
+            allFileManifests.append(contentsOf: fileManifests)
+            if plan.tripTarget.kind != .defaultMonth {
+                let key = plan.tripFolder.path
+                var entry = namedTripMembers[key] ?? (plan, [])
+                entry.walks.append(walkManifest)
+                namedTripMembers[key] = entry
             }
         }
 
-        updatedSession.lastUpdatedAt = Date()
-        updatedSession.status = "imported"
+        let manifestedIDs = Set(allFileManifests.map(\.mediaItemID))
+        let existingCopiedIDs = Set(updatedSession.mediaItems
+            .filter { $0.selectionState.isIncluded && $0.destinationURL != nil && !manifestedIDs.contains($0.id) }
+            .map(\.id))
+        if !existingCopiedIDs.isEmpty {
+            allFileManifests.append(contentsOf: buildFileManifests(for: updatedSession, mediaItemIDs: existingCopiedIDs))
+        }
 
-        try verifyImportedFiles(in: &updatedSession, events: &events)
-        refreshArchiveRelativePaths(in: &updatedSession)
+        let tripManifests = try namedTripMembers.values.map { entry in
+            try tripManifestStore.updateNamedTripManifest(
+                folder: entry.plan.tripFolder,
+                title: entry.plan.tripTarget.title,
+                oneDrivePicturesRoot: updatedSession.oneDrivePicturesRoot,
+                adding: entry.walks.compactMap { walk in
+                    guard let relativePath = walk.archiveFolderRelativePath else { return nil }
+                    return TripManifestMemberUpdate(relativePath: relativePath, date: walk.walkDate)
+                }
+            )
+        }
+        updatedSession.proposedWalks = []
 
-        let fileManifests = buildFileManifests(for: updatedSession)
-        let walkManifest = buildWalkManifest(for: updatedSession, archiveFolder: plan.archiveFolder, fileManifests: fileManifests)
-        try writeManifests(walkManifest: walkManifest, fileManifests: fileManifests, archiveFolder: plan.archiveFolder, events: events)
+        guard let primaryWalkManifest = walkManifestResults.first else {
+            let empty = buildWalkManifest(
+                for: updatedSession,
+                plan: archivePlanner.plan(for: updatedSession),
+                fileManifests: []
+            )
+            return ImportResult(session: updatedSession, walkManifest: empty, walkManifests: [], tripManifests: tripManifests, fileManifests: [], events: events)
+        }
 
-        return ImportResult(session: updatedSession, walkManifest: walkManifest, fileManifests: fileManifests, events: events)
+        return ImportResult(
+            session: updatedSession,
+            walkManifest: primaryWalkManifest,
+            walkManifests: walkManifestResults,
+            tripManifests: tripManifests,
+            fileManifests: allFileManifests,
+            events: events
+        )
     }
 
     func cleanupImportedSources(in session: ImportSession) async throws -> ImportSession {
@@ -125,8 +207,13 @@ struct ImportCoordinator: ImportCoordinating {
         return updatedSession
     }
 
-    private func verifyImportedFiles(in session: inout ImportSession, events: inout [SessionLogEvent]) throws {
-        for index in session.mediaItems.indices where session.mediaItems[index].selectionState.isIncluded && session.mediaItems[index].lifecycleState == .imported {
+    private func verifyImportedFiles(
+        in session: inout ImportSession,
+        mediaItemIDs: Set<UUID>,
+        events: inout [SessionLogEvent],
+        walkEvents: inout [SessionLogEvent]
+    ) throws {
+        for index in session.mediaItems.indices where mediaItemIDs.contains(session.mediaItems[index].id) && session.mediaItems[index].selectionState.isIncluded && session.mediaItems[index].lifecycleState == .imported {
             guard let destinationURL = session.mediaItems[index].destinationURL else { continue }
             let sourceAttributes = try fileManager.attributesOfItem(atPath: session.mediaItems[index].sourceURL.path)
             let destinationAttributes = try fileManager.attributesOfItem(atPath: destinationURL.path)
@@ -149,20 +236,24 @@ struct ImportCoordinator: ImportCoordinating {
                 session.mediaItems[index].lifecycleState = try session.mediaItems[index].lifecycleState.transition(to: .sourceCleanupPending)
             }
 
-            events.append(
-                SessionLogEvent(timestamp: Date(), event: "file_verified", mediaItemID: session.mediaItems[index].id, details: [
+            let event = SessionLogEvent(timestamp: Date(), event: "file_verified", mediaItemID: session.mediaItems[index].id, details: [
                     "destination": destinationURL.path,
                     "size_bytes": destinationSize?.stringValue ?? "0"
                 ])
-            )
+            events.append(event)
+            walkEvents.append(event)
 
             if session.mediaItems[index].importRawCompanions {
-                try verifyCompanionFiles(for: &session.mediaItems[index], events: &events)
+                try verifyCompanionFiles(for: &session.mediaItems[index], events: &events, walkEvents: &walkEvents)
             }
         }
     }
 
-    private func verifyCompanionFiles(for item: inout MediaItem, events: inout [SessionLogEvent]) throws {
+    private func verifyCompanionFiles(
+        for item: inout MediaItem,
+        events: inout [SessionLogEvent],
+        walkEvents: inout [SessionLogEvent]
+    ) throws {
         for companionIndex in item.companionFiles.indices {
             guard let destinationURL = item.companionFiles[companionIndex].destinationURL else { continue }
             let sourceAttributes = try fileManager.attributesOfItem(atPath: item.companionFiles[companionIndex].sourceURL.path)
@@ -179,18 +270,18 @@ struct ImportCoordinator: ImportCoordinating {
             }
 
             item.companionFiles[companionIndex].verifiedAt = Date()
-            events.append(
-                SessionLogEvent(timestamp: Date(), event: "companion_verified", mediaItemID: item.id, details: [
-                    "source": item.companionFiles[companionIndex].sourceURL.path,
-                    "destination": destinationURL.path
-                ])
-            )
+            let event = SessionLogEvent(timestamp: Date(), event: "companion_verified", mediaItemID: item.id, details: [
+                "source": item.companionFiles[companionIndex].sourceURL.path,
+                "destination": destinationURL.path
+            ])
+            events.append(event)
+            walkEvents.append(event)
         }
     }
 
-    private func buildFileManifests(for session: ImportSession) -> [FileManifest] {
+    private func buildFileManifests(for session: ImportSession, mediaItemIDs: Set<UUID>) -> [FileManifest] {
         session.mediaItems
-            .filter { $0.selectionState.isIncluded }
+            .filter { mediaItemIDs.contains($0.id) && $0.selectionState.isIncluded }
             .compactMap { item in
                 guard let destinationURL = item.destinationURL else { return nil }
                 return FileManifest(
@@ -214,10 +305,12 @@ struct ImportCoordinator: ImportCoordinating {
             }
     }
 
-    private func buildWalkManifest(for session: ImportSession, archiveFolder: URL, fileManifests: [FileManifest]) -> WalkManifest {
-        let cleanupPending = session.mediaItems.filter { $0.lifecycleState == .sourceCleanupPending }.count
-        let cleaned = session.mediaItems.filter { $0.lifecycleState == .sourceCleaned }.count
-        let excludedFiles = session.mediaItems
+    private func buildWalkManifest(for session: ImportSession, plan: ArchiveCommitPlan, fileManifests: [FileManifest]) -> WalkManifest {
+        let planMediaIDs = Set(plan.entries.filter { !$0.isCompanion }.map(\.mediaItemID))
+        let manifestItems = session.mediaItems.filter { planMediaIDs.contains($0.id) }
+        let cleanupPending = manifestItems.filter { $0.lifecycleState == .sourceCleanupPending }.count
+        let cleaned = manifestItems.filter { $0.lifecycleState == .sourceCleaned }.count
+        let excludedFiles = manifestItems
             .filter { $0.selectionState.isExcluded }
             .map {
                 RejectedFileManifest(
@@ -227,26 +320,29 @@ struct ImportCoordinator: ImportCoordinating {
                     reason: "excluded"
                 )
             }
-        let candidateCount = session.mediaItems.filter { $0.selectionState.isCandidate }.count
-        let undecidedCount = session.mediaItems.filter { $0.selectionState.isUndecided }.count
+        let candidateCount = manifestItems.filter { $0.selectionState.isCandidate }.count
+        let undecidedCount = manifestItems.filter { $0.selectionState.isUndecided }.count
+        let relativeResolver = ArchiveRelativePathResolver(root: session.oneDrivePicturesRoot)
 
         return WalkManifest(
             sessionID: session.id,
-            walkDate: session.mediaItems.compactMap(\.capturedAt).min(),
+            walkID: plan.walkID,
+            tripFolderRelativePath: relativeResolver.relativePath(for: plan.tripFolder),
+            walkDate: manifestItems.compactMap(\.capturedAt).min(),
             sourceFolder: session.sourceFolder,
-            archiveFolder: archiveFolder,
-            archiveFolderRelativePath: ArchiveRelativePathResolver(root: session.oneDrivePicturesRoot).relativePath(for: archiveFolder),
-            title: session.walkMetadata.title.nonEmpty ?? "Photo Walk",
+            archiveFolder: plan.archiveFolder,
+            archiveFolderRelativePath: relativeResolver.relativePath(for: plan.archiveFolder),
+            title: plan.walkTitle?.nonEmpty ?? session.walkMetadata.title.nonEmpty ?? "Photo Walk",
             location: session.walkMetadata.location,
             notes: session.walkMetadata.notes,
             summary: .init(
-                totalSourceFiles: session.mediaItems.reduce(0) { $0 + 1 + $1.companionFiles.count },
-                visibleItems: session.mediaItems.count,
+                totalSourceFiles: manifestItems.reduce(0) { $0 + 1 + $1.companionFiles.count },
+                visibleItems: manifestItems.count,
                 importedFiles: fileManifests.count + fileManifests.reduce(0) { $0 + $1.companionArchivePaths.count },
                 excludedFiles: excludedFiles.count,
                 candidateFiles: candidateCount,
                 undecidedFiles: undecidedCount,
-                skippedFiles: session.mediaItems.count - fileManifests.count,
+                skippedFiles: manifestItems.count - fileManifests.count,
                 cleanupPendingFiles: cleanupPending,
                 cleanedSourceFiles: cleaned
             ),
@@ -282,4 +378,5 @@ struct ImportCoordinator: ImportCoordinating {
         let logURL = archiveFolder.appendingPathComponent("\(walkBasename)-session-log.jsonl")
         try manifestRenderer.renderLog(events).write(to: logURL, atomically: true, encoding: .utf8)
     }
+
 }

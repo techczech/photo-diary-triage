@@ -242,6 +242,12 @@ struct PhotoDiaryCommands: Commands {
             }
             .disabled(!appState.canOpenArchiveDestination)
 
+            Button("Move Selected Walk to Trip…") {
+                appState.moveSelectedArchiveWalkToTrip()
+            }
+            .keyboardShortcut("t", modifiers: [.command, .shift])
+            .disabled(!appState.canMoveSelectedArchiveWalkToTrip)
+
             Button("Confirm Backup And Enable Cleanup") {
                 appState.markBackupConfirmed()
             }

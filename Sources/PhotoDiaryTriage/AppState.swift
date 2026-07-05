@@ -215,6 +215,11 @@ final class AppState: ObservableObject {
             refreshPresentationState()
         }
     }
+    @Published var activeWalkCommitEditor: WalkCommitEditorState? {
+        didSet {
+            refreshPresentationState()
+        }
+    }
     @Published var revealedPhotoLog: PhotoLogRevealState? {
         didSet {
             refreshPresentationState()
@@ -310,6 +315,9 @@ final class AppState: ObservableObject {
     private let photoLogCreationResolver = PhotoLogCreationResolver()
     private let workflowGuidanceResolver = WorkflowGuidanceResolver()
     private let archiveCopySurveyor = ArchiveCopySurveyor()
+    private let walkBoundaryProposalService = WalkBoundaryProposalService()
+    private let tripLibraryScanner = TripLibraryScanner()
+    private let walkMover = WalkMover()
     private let fileManager: FileManager
     private let sourceWorkspaceFolderResolver: SourceWorkspaceFolderResolver
     private let supportRoot: URL
@@ -959,6 +967,23 @@ final class AppState: ObservableObject {
     }
 
     func pickSourceFolder() {
+        let shouldAddToCurrentTriage: Bool
+        if currentSession != nil && workspaceMode == .cameraTriage {
+            let alert = NSAlert()
+            alert.messageText = "Add another Source to this Triage?"
+            alert.informativeText = "Add Source keeps the current Triage open and merges photos from the chosen folder. Open New Source replaces the current source view."
+            alert.addButton(withTitle: "Add Source")
+            alert.addButton(withTitle: "Open New Source")
+            alert.addButton(withTitle: "Cancel")
+            let response = alert.runModal()
+            if response == .alertThirdButtonReturn {
+                return
+            }
+            shouldAddToCurrentTriage = response == .alertFirstButtonReturn
+        } else {
+            shouldAddToCurrentTriage = false
+        }
+
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
@@ -966,7 +991,22 @@ final class AppState: ObservableObject {
         panel.directoryURL = settings.defaultSourceRoot
 
         if panel.runModal() == .OK, let folder = panel.urls.first {
+            if shouldAddToCurrentTriage {
+                addSourceFolderToCurrentTriage(folder)
+            } else {
+                loadSourceWorkspace(folder: folder, origin: .manualPicker)
+            }
+        }
+    }
+
+    func addSourceFolderToCurrentTriage(_ folder: URL) {
+        guard let currentSession else {
             loadSourceWorkspace(folder: folder, origin: .manualPicker)
+            return
+        }
+        let generation = invalidateInFlightSourceLoad()
+        sourceLoadTask = Task { [weak self] in
+            await self?.performAdditionalSourceLoad(folder: folder, into: currentSession, generation: generation)
         }
     }
 
@@ -1175,6 +1215,56 @@ final class AppState: ObservableObject {
         }
     }
 
+    private func performAdditionalSourceLoad(
+        folder: URL,
+        into baseSession: ImportSession,
+        generation: Int
+    ) async {
+        let standardizedFolder = folder.standardizedFileURL
+        let resolvedFolder = sourceWorkspaceFolderResolver.resolve(selectedFolder: standardizedFolder)
+        do {
+            flushPendingSessionPersistence()
+            logger.log("Adding source \(resolvedFolder.path, privacy: .public) to current Triage \(baseSession.id.uuidString, privacy: .public)")
+            sourceWorkspaceState = .loading(sourcePath: resolvedFolder.path)
+            statusMessage = "Adding Source \(resolvedFolder.lastPathComponent)..."
+
+            let scanned = try await scanSourceFolder(for: resolvedFolder, settings: settings)
+            guard !Task.isCancelled, generation == sourceLoadGeneration else { return }
+
+            let provenance = SourceProvenance(folder: resolvedFolder)
+            var newItems = scanned.session.mediaItems
+            for index in newItems.indices {
+                newItems[index].sourceProvenanceID = provenance.id
+            }
+
+            var merged = baseSession
+            if !merged.sourceProvenances.contains(where: { $0.folder.standardizedFileURL.path == resolvedFolder.path }) {
+                merged.sourceProvenances.append(provenance)
+            }
+            let existingKeys = Set(merged.mediaItems.map { "\($0.sourceURL.path)|\($0.fileSizeBytes)" })
+            merged.mediaItems.append(contentsOf: newItems.filter { !existingKeys.contains("\($0.sourceURL.path)|\($0.fileSizeBytes)") })
+            merged.proposedWalks = []
+            merged.lastUpdatedAt = Date()
+            merged.weekdayTokenStyle = settings.weekdayTokenStyle
+
+            let grouped = groupingService.group(items: merged.mediaItems, settings: settings)
+            merged.mediaItems = grouped.items
+            try sessionManager.save(merged, bursts: grouped.burstGroups, clusters: grouped.timeClusters, to: sessionStore)
+            storePersistedSession(merged, bursts: grouped.burstGroups, clusters: grouped.timeClusters)
+            sourceWorkspaceState = .loaded(itemCount: merged.mediaItems.count, sourcePath: merged.workspaceSourceFolder.path)
+            openPersistedSessionRecord(
+                (merged, grouped.burstGroups, grouped.timeClusters),
+                status: "Added Source \(resolvedFolder.lastPathComponent); Triage now has \(merged.mediaItems.count) item(s) from \(merged.sourceProvenances.count) Source(s)."
+            )
+            requestVisibleThumbnails(prefetching: merged.mediaItems)
+        } catch {
+            guard generation == sourceLoadGeneration else { return }
+            logger.error("Failed to add source \(folder.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            sourceWorkspaceState = .failed(sourcePath: resolvedFolder.path, message: error.localizedDescription)
+            statusMessage = "Failed to add Source: \(error.localizedDescription)"
+        }
+    }
+
     func openSavedWalk(_ sessionID: UUID) {
         guard let record = persistedSessions.first(where: { $0.0.id == sessionID }) else {
             statusMessage = "Photo log could not be found in the local library."
@@ -1348,7 +1438,10 @@ final class AppState: ObservableObject {
             archiveMachineRole: currentSession.archiveMachineRole,
             sessionKind: .walkDraft,
             status: "draft",
-            mediaItems: draftGrouped.items
+            mediaItems: draftGrouped.items,
+            sourceProvenances: currentSession.sourceProvenances,
+            proposedWalks: [],
+            weekdayTokenStyle: settings.weekdayTokenStyle
         )
 
         var updatedInbox = currentSession
@@ -1456,8 +1549,13 @@ final class AppState: ObservableObject {
     }
 
     private func prepareSessionForCopy(_ session: ImportSession) throws -> ImportSession {
-        guard session.sessionKind == .inbox else { return session }
-        return try createAutomaticPhotoLogForCopy(from: session)
+        var prepared = session.sessionKind == .inbox ? try createAutomaticPhotoLogForCopy(from: session) : session
+        prepared.weekdayTokenStyle = settings.weekdayTokenStyle
+        prepared.proposedWalks = walkBoundaryProposalService.proposedWalks(for: prepared, timeClusters: timeClusters)
+        if prepared.proposedWalks.isEmpty {
+            throw CopyPreparationError.cannotCreateAutomaticLog("Mark photos with S before copying. The app needs at least one proposed Walk.")
+        }
+        return prepared
     }
 
     private func sourceDecisionAppendPlan(for sessionID: UUID) throws -> (target: ImportSession, inbox: ImportSession, itemsToAdd: [MediaItem]) {
@@ -1546,7 +1644,10 @@ final class AppState: ObservableObject {
             archiveMachineRole: inbox.archiveMachineRole,
             sessionKind: .walkDraft,
             status: "draft",
-            mediaItems: draftGrouped.items
+            mediaItems: draftGrouped.items,
+            sourceProvenances: inbox.sourceProvenances,
+            proposedWalks: [],
+            weekdayTokenStyle: settings.weekdayTokenStyle
         )
 
         var updatedInbox = inbox
@@ -1685,7 +1786,9 @@ final class AppState: ObservableObject {
 
     func setImportRawCompanions(for item: MediaItem, enabled: Bool) {
         guard let currentSession else { return }
-        save(sessionMutationCoordinator.sessionBySettingImportRawCompanions(currentSession, for: item.id, enabled: enabled))
+        var updated = sessionMutationCoordinator.sessionBySettingImportRawCompanions(currentSession, for: item.id, enabled: enabled)
+        updated.proposedWalks = []
+        save(updated)
     }
 
     func markBackupConfirmed() {
@@ -1731,12 +1834,95 @@ final class AppState: ObservableObject {
         }
     }
 
+    func moveArchiveWalkToTrip(_ node: BrowserNode) {
+        guard node.kind == .archiveWalkFolder, let walkFolder = node.folderURL else {
+            statusMessage = "Select an archived Walk before moving it to a Trip."
+            return
+        }
+        let yearURL = walkFolder.deletingLastPathComponent().deletingLastPathComponent()
+        let year = yearURL.lastPathComponent
+        let trips = tripLibraryScanner.namedTrips(in: settings.archiveRoot, year: year)
+
+        let popup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 360, height: 26), pullsDown: false)
+        popup.addItem(withTitle: "New Trip...")
+        for trip in trips {
+            popup.addItem(withTitle: trip.folder.lastPathComponent)
+        }
+        let titleField = NSTextField(frame: NSRect(x: 0, y: 34, width: 360, height: 24))
+        titleField.placeholderString = "New Trip title"
+        titleField.stringValue = walkFolder.deletingLastPathComponent().lastPathComponent
+            .replacingOccurrences(of: #"^\d\d-[^-]+-"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: "-", with: " ")
+        let stack = NSStackView(views: [popup, titleField])
+        stack.orientation = .vertical
+        stack.spacing = 8
+        stack.frame = NSRect(x: 0, y: 0, width: 380, height: 70)
+
+        let alert = NSAlert()
+        alert.messageText = "Move Walk to Trip"
+        alert.informativeText = "Choose an existing named Trip in \(year), or create a new named Trip beside the current month folder."
+        alert.accessoryView = stack
+        alert.addButton(withTitle: "Move")
+        alert.addButton(withTitle: "Cancel")
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let targetTripFolder: URL
+        if popup.indexOfSelectedItem == 0 {
+            let title = titleField.stringValue.nonEmpty ?? "Trip"
+            let date = dateForArchiveWalkFolder(walkFolder) ?? Date()
+            targetTripFolder = yearURL.appendingPathComponent(DateFormatting.archiveTripFolderName(from: date, tripTitle: title), isDirectory: true)
+        } else {
+            targetTripFolder = trips[popup.indexOfSelectedItem - 1].folder
+        }
+
+        do {
+            let result = try walkMover.moveWalk(at: walkFolder, to: targetTripFolder, oneDrivePicturesRoot: settings.oneDrivePicturesRoot)
+            archiveMediaCache.removeAll()
+            browserViewModel.invalidateArchiveTreeCache()
+            rebuildBrowserCaches()
+            selectedSidebarNodeID = "archive-walk-\(result.destinationFolder.path)"
+            statusMessage = "Moved \(result.destinationFolder.lastPathComponent) to \(targetTripFolder.lastPathComponent)."
+        } catch {
+            statusMessage = "Could not move Walk: \(error.localizedDescription)"
+        }
+    }
+
+    var canMoveSelectedArchiveWalkToTrip: Bool {
+        selectedArchiveWalkNodeForMove != nil
+    }
+
+    func moveSelectedArchiveWalkToTrip() {
+        guard let node = selectedArchiveWalkNodeForMove else {
+            statusMessage = "Select an archived Walk before moving it to a Trip."
+            return
+        }
+        moveArchiveWalkToTrip(node)
+    }
+
+    private var selectedArchiveWalkNodeForMove: BrowserNode? {
+        let folderNode = activePane == .folders && selectedFolderNodeIDs.count == 1
+            ? selectedFolderNodeIDs.first.flatMap { browserNodeMap[$0] }
+            : nil
+        let node = folderNode ?? selectedBrowserNode
+        guard node?.kind == .archiveWalkFolder, node?.folderURL != nil else { return nil }
+        return node
+    }
+
+    private func dateForArchiveWalkFolder(_ walkFolder: URL) -> Date? {
+        let year = walkFolder.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent
+        let monthFolder = walkFolder.deletingLastPathComponent().lastPathComponent
+        let walk = walkFolder.lastPathComponent
+        let month = String(monthFolder.prefix(2))
+        let day = String(walk.prefix(2))
+        return DateFormatting.archiveFormatterForParsing.date(from: "\(year)-\(month)-\(day)")
+    }
+
     func commitImport() {
         guard let session = currentSession else { return }
         guard canCommitImport else { return }
-        let preparedSession: ImportSession
         do {
-            preparedSession = try prepareSessionForCopy(session)
+            let preparedSession = try prepareSessionForCopy(session)
+            presentWalkCommitEditor(for: preparedSession)
         } catch {
             let message = userFacingCopyFailureMessage(for: error)
             importProgress = nil
@@ -1748,8 +1934,90 @@ final class AppState: ObservableObject {
                 destinationPath: importReadinessSnapshot(for: session)?.destinationPath
             )
             statusMessage = message
-            return
         }
+    }
+
+    func dismissWalkCommitEditor() {
+        activeWalkCommitEditor = nil
+        clearCurrentSessionProposedWalks()
+    }
+
+    private func clearCurrentSessionProposedWalks() {
+        guard var session = currentSession, !session.proposedWalks.isEmpty else { return }
+        session.proposedWalks = []
+        setCurrentSession(session, updateKind: .sessionOnly)
+    }
+
+    func updateWalkCommitEditor(_ editor: WalkCommitEditorState) {
+        activeWalkCommitEditor = editor
+    }
+
+    func confirmWalkCommit() {
+        guard let editor = activeWalkCommitEditor, var session = currentSession else { return }
+        session.proposedWalks = editor.walks
+        session.weekdayTokenStyle = settings.weekdayTokenStyle
+        activeWalkCommitEditor = nil
+        setCurrentSession(session, updateKind: .sessionOnly)
+        performConfirmedImport(session)
+    }
+
+    func mergeWalkProposalWithPrevious(_ walkID: UUID) {
+        guard var editor = activeWalkCommitEditor,
+              let index = editor.walks.firstIndex(where: { $0.id == walkID }),
+              index > 0 else { return }
+        var previous = editor.walks[index - 1]
+        let current = editor.walks[index]
+        previous.mediaItemIDs.append(contentsOf: current.mediaItemIDs)
+        var seenMediaIDs: Set<UUID> = []
+        previous.mediaItemIDs = previous.mediaItemIDs.filter { seenMediaIDs.insert($0).inserted }
+        previous.sourceProvenanceIDs.append(contentsOf: current.sourceProvenanceIDs)
+        previous.sourceProvenanceIDs = Array(Set(previous.sourceProvenanceIDs)).sorted { $0.uuidString < $1.uuidString }
+        editor.walks[index - 1] = previous
+        editor.walks.remove(at: index)
+        activeWalkCommitEditor = editor
+    }
+
+    func splitWalkProposal(_ walkID: UUID) {
+        guard var editor = activeWalkCommitEditor,
+              let index = editor.walks.firstIndex(where: { $0.id == walkID }) else { return }
+        let walk = editor.walks[index]
+        guard walk.mediaItemIDs.count > 1 else { return }
+        let splitIndex = walk.mediaItemIDs.count / 2
+        var first = walk
+        var second = walk
+        first.mediaItemIDs = Array(walk.mediaItemIDs.prefix(splitIndex))
+        second = Walk(
+            title: "\(walk.title) 2",
+            date: walk.date,
+            sourceProvenanceIDs: walk.sourceProvenanceIDs,
+            mediaItemIDs: Array(walk.mediaItemIDs.suffix(from: splitIndex)),
+            tripTarget: walk.tripTarget,
+            location: walk.location,
+            latitude: walk.latitude,
+            longitude: walk.longitude
+        )
+        editor.walks[index] = first
+        editor.walks.insert(second, at: index + 1)
+        activeWalkCommitEditor = editor
+    }
+
+    private func presentWalkCommitEditor(for preparedSession: ImportSession) {
+        setCurrentSession(preparedSession, updateKind: .sessionOnly)
+        let years = Set(preparedSession.proposedWalks.map { DateFormatting.archiveYearFolderName(from: $0.date) })
+        let existingTrips = years.isEmpty
+            ? tripLibraryScanner.namedTrips(in: settings.archiveRoot)
+            : years.flatMap { tripLibraryScanner.namedTrips(in: settings.archiveRoot, year: $0) }
+                .sorted { $0.folderRelativePath < $1.folderRelativePath }
+        activeWalkCommitEditor = WalkCommitEditorState(
+            id: UUID(),
+            walks: preparedSession.proposedWalks,
+            existingTrips: existingTrips,
+            tripDisplayLabel: settings.tripDisplayLabel,
+            walkDisplayLabel: settings.walkDisplayLabel
+        )
+    }
+
+    private func performConfirmedImport(_ preparedSession: ImportSession) {
         let readiness = importReadinessSnapshot(for: preparedSession)
         let destinationPath = readiness?.destinationPath
 
@@ -1796,7 +2064,7 @@ final class AppState: ObservableObject {
                 importOperation = ImportOperationSnapshot(
                     phase: .completed,
                     title: "Copy complete",
-                    detail: "Copied and verified \(result.fileManifests.count) photo(s). Manifests were written.",
+                    detail: "Copied and verified \(result.fileManifests.count) photo(s) into \(result.walkManifests.count) Walk(s). Manifests were written.",
                     progress: nil,
                     destinationPath: result.walkManifest.archiveFolder.path
                 )
@@ -2107,6 +2375,28 @@ final class AppState: ObservableObject {
         settings.proximityThresholdSeconds = clamped
         persistSettings()
         regroupCurrentSession(statusPrefix: "Updated time-cluster grouping")
+    }
+
+    func setWeekdayTokenStyle(_ style: WeekdayTokenStyle) {
+        settings.weekdayTokenStyle = style
+        if var session = currentSession {
+            session.weekdayTokenStyle = style
+            save(session)
+        }
+        persistSettings()
+        statusMessage = "Weekday token style set to \(style.title)."
+    }
+
+    func setWalkDisplayLabel(_ label: String) {
+        settings.walkDisplayLabel = label
+        persistSettings()
+        refreshAllUIState()
+    }
+
+    func setTripDisplayLabel(_ label: String) {
+        settings.tripDisplayLabel = label
+        persistSettings()
+        refreshAllUIState()
     }
 
     func setDayOrganizationMode(_ mode: DayOrganizationMode) {
@@ -2947,7 +3237,9 @@ final class AppState: ObservableObject {
     func toggleRawForCurrentMediaSelection() {
         guard canMutateImportSelection else { return }
         guard let currentSession else { return }
-        save(sessionMutationCoordinator.sessionByTogglingRawCompanions(currentSession, selectedIDs: currentSelectionMediaIDs()))
+        var updated = sessionMutationCoordinator.sessionByTogglingRawCompanions(currentSession, selectedIDs: currentSelectionMediaIDs())
+        updated.proposedWalks = []
+        save(updated)
     }
 
     func markComparisonItemForImport(_ itemID: UUID) {
@@ -3081,7 +3373,9 @@ final class AppState: ObservableObject {
 
     private func updateTriageState(for mediaIDs: Set<UUID>, selectionState: SelectionState) {
         guard let currentSession else { return }
-        save(sessionMutationCoordinator.sessionByUpdatingTriageState(currentSession, mediaIDs: mediaIDs, selectionState: selectionState))
+        var updated = sessionMutationCoordinator.sessionByUpdatingTriageState(currentSession, mediaIDs: mediaIDs, selectionState: selectionState)
+        updated.proposedWalks = []
+        save(updated)
     }
 
     private func updatePreviewItemTriageState(_ itemID: UUID, selectionState: SelectionState, action: String, suffix: String) {
@@ -3716,6 +4010,13 @@ final class AppState: ObservableObject {
         existingInbox: ImportSession?
     ) -> ImportSession {
         let existing = existingInbox
+        let provenance = existing?.sourceProvenances.first(where: {
+            $0.folder.standardizedFileURL.path == workspaceSourceFolder.standardizedFileURL.path
+        }) ?? SourceProvenance(folder: workspaceSourceFolder)
+        var mediaItems = scanned.session.mediaItems
+        for index in mediaItems.indices {
+            mediaItems[index].sourceProvenanceID = provenance.id
+        }
         return ImportSession(
             id: existing?.id ?? scanned.session.id,
             sourceFolder: scanned.session.sourceFolder,
@@ -3728,7 +4029,10 @@ final class AppState: ObservableObject {
             archiveMachineRole: scanned.session.archiveMachineRole,
             sessionKind: .inbox,
             status: "draft",
-            mediaItems: scanned.session.mediaItems
+            mediaItems: mediaItems,
+            sourceProvenances: [provenance],
+            proposedWalks: [],
+            weekdayTokenStyle: settings.weekdayTokenStyle
         )
     }
 
@@ -3934,7 +4238,7 @@ final class AppState: ObservableObject {
         switch origin {
         case .launchDefault, .mountedDefault:
             return false
-        case .manualPicker, .savedWalkInbox, .openDefaultSource, .settingsDefaultRoot, .reloadCurrentSource:
+        case .manualPicker, .savedWalkInbox, .openDefaultSource, .settingsDefaultRoot, .reloadCurrentSource, .addSource:
             return true
         }
     }
@@ -4340,6 +4644,7 @@ final class AppState: ObservableObject {
             startupAlert: startupAlert,
             previewingMediaItem: previewingMediaItem,
             activePhotoLogEditor: activePhotoLogEditor,
+            activeWalkCommitEditor: activeWalkCommitEditor,
             revealedPhotoLog: revealedPhotoLog
         )
         presentationState.update(snapshot)

@@ -68,8 +68,12 @@ enum DateFormatting {
         return "\(month)-\(Slugifier.makeDisplaySlug(from: tripTitle))"
     }
 
-    static func archiveWalkFolderName(from date: Date, title: String) -> String {
-        "\(archiveFormatter("dd-\(weekdayFormat)").string(from: date))-\(Slugifier.makeDisplaySlug(from: title))"
+    static func archiveWalkFolderName(
+        from date: Date,
+        title: String,
+        weekdayTokenStyle: WeekdayTokenStyle = .englishAbbreviated
+    ) -> String {
+        "\(archiveFormatter("dd-\(weekdayTokenStyle.dateFormatToken)").string(from: date))-\(Slugifier.makeDisplaySlug(from: title))"
     }
 
     static func archiveFileStem(from date: Date, title: String) -> String {
@@ -108,6 +112,14 @@ enum DateFormatting {
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = Locale(identifier: "en_GB_POSIX")
         formatter.dateFormat = "yyyy-MM-dd EEEE"
+        return formatter
+    }()
+
+    static let archiveFormatterForParsing: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_GB_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
         return formatter
     }()
 }
