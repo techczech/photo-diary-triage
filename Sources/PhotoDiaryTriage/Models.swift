@@ -170,6 +170,129 @@ struct WalkMetadata: Codable, Hashable, Sendable {
     static let empty = WalkMetadata(title: "", location: "", notes: "", backupConfirmedAt: nil)
 }
 
+struct SourceProvenance: Identifiable, Codable, Hashable, Sendable {
+    let id: UUID
+    var folder: URL
+    var label: String
+    var addedAt: Date
+
+    init(id: UUID = UUID(), folder: URL, label: String? = nil, addedAt: Date = Date()) {
+        self.id = id
+        self.folder = folder
+        self.label = label?.nonEmpty ?? folder.lastPathComponent
+        self.addedAt = addedAt
+    }
+}
+
+struct Walk: Identifiable, Codable, Hashable, Sendable {
+    let id: UUID
+    var title: String
+    var date: Date
+    var folderRelativePath: String?
+    var sourceProvenanceIDs: [UUID]
+    var mediaItemIDs: [UUID]
+    var tripTarget: TripTarget
+    var location: String
+    var latitude: Double?
+    var longitude: Double?
+
+    init(
+        id: UUID = UUID(),
+        title: String,
+        date: Date,
+        folderRelativePath: String? = nil,
+        sourceProvenanceIDs: [UUID] = [],
+        mediaItemIDs: [UUID],
+        tripTarget: TripTarget = .defaultMonth,
+        location: String = "",
+        latitude: Double? = nil,
+        longitude: Double? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.date = date
+        self.folderRelativePath = folderRelativePath
+        self.sourceProvenanceIDs = sourceProvenanceIDs
+        self.mediaItemIDs = mediaItemIDs
+        self.tripTarget = tripTarget
+        self.location = location
+        self.latitude = latitude
+        self.longitude = longitude
+    }
+}
+
+struct Trip: Identifiable, Codable, Hashable, Sendable {
+    let id: UUID
+    var title: String?
+    var startMonthKey: String
+    var folderRelativePath: String?
+    var memberWalkFolderPaths: [String]
+
+    init(
+        id: UUID = UUID(),
+        title: String? = nil,
+        startMonthKey: String,
+        folderRelativePath: String? = nil,
+        memberWalkFolderPaths: [String] = []
+    ) {
+        self.id = id
+        self.title = title
+        self.startMonthKey = startMonthKey
+        self.folderRelativePath = folderRelativePath
+        self.memberWalkFolderPaths = memberWalkFolderPaths
+    }
+}
+
+struct TripTarget: Codable, Hashable, Sendable {
+    enum Kind: String, Codable, Hashable, Sendable {
+        case defaultMonth
+        case existingNamedTrip
+        case newNamedTrip
+    }
+
+    var kind: Kind
+    var title: String?
+    var folderRelativePath: String?
+
+    static let defaultMonth = TripTarget(kind: .defaultMonth, title: nil, folderRelativePath: nil)
+
+    static func existing(title: String, folderRelativePath: String) -> TripTarget {
+        TripTarget(kind: .existingNamedTrip, title: title, folderRelativePath: folderRelativePath)
+    }
+
+    static func newNamed(title: String) -> TripTarget {
+        TripTarget(kind: .newNamedTrip, title: title, folderRelativePath: nil)
+    }
+}
+
+enum WeekdayTokenStyle: String, Codable, CaseIterable, Hashable, Sendable {
+    case englishAbbreviated
+    case englishFull
+    case numeric
+
+    var title: String {
+        switch self {
+        case .englishAbbreviated:
+            return "English short"
+        case .englishFull:
+            return "English full"
+        case .numeric:
+            return "Number"
+        }
+    }
+
+    var dateFormatToken: String {
+        switch self {
+        case .englishAbbreviated:
+            return "EEE"
+        case .englishFull:
+            return "EEEE"
+        case .numeric:
+            return "e"
+        }
+    }
+}
+
 enum PhotoLogScopeKind: String, Codable, CaseIterable, Hashable, Sendable {
     case folder
     case dateRange
@@ -309,6 +432,7 @@ enum SourceLoadOrigin: String, Equatable, Sendable {
     case openDefaultSource
     case settingsDefaultRoot
     case reloadCurrentSource
+    case addSource
 }
 
 enum SourceWorkspaceState: Equatable, Sendable {
@@ -358,6 +482,9 @@ struct AppSettings: Codable, Hashable, Sendable {
     var cleanupRequiresBackupConfirmation: Bool
     var reviewPresentationMode: ReviewPresentationMode
     var reviewGridColumnCount: Int
+    var weekdayTokenStyle: WeekdayTokenStyle
+    var walkDisplayLabel: String
+    var tripDisplayLabel: String
 
     static func `default`(fileManager: FileManager = .default) -> AppSettings {
         let libraryRoot = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -378,7 +505,10 @@ struct AppSettings: Codable, Hashable, Sendable {
             proximityThresholdSeconds: 600,
             cleanupRequiresBackupConfirmation: true,
             reviewPresentationMode: .grid,
-            reviewGridColumnCount: ReviewGridMetrics.defaultRequestedColumnCount()
+            reviewGridColumnCount: ReviewGridMetrics.defaultRequestedColumnCount(),
+            weekdayTokenStyle: .englishAbbreviated,
+            walkDisplayLabel: "walk",
+            tripDisplayLabel: "trip"
         )
     }
 
@@ -406,6 +536,10 @@ struct AppSettings: Codable, Hashable, Sendable {
         cleanupRequiresBackupConfirmation: Bool,
         reviewPresentationMode: ReviewPresentationMode,
         reviewGridColumnCount: Int
+        ,
+        weekdayTokenStyle: WeekdayTokenStyle = .englishAbbreviated,
+        walkDisplayLabel: String = "walk",
+        tripDisplayLabel: String = "trip"
     ) {
         self.defaultSourceRoot = defaultSourceRoot
         self.archiveRoot = archiveRoot
@@ -418,6 +552,9 @@ struct AppSettings: Codable, Hashable, Sendable {
         self.cleanupRequiresBackupConfirmation = cleanupRequiresBackupConfirmation
         self.reviewPresentationMode = reviewPresentationMode
         self.reviewGridColumnCount = reviewGridColumnCount
+        self.weekdayTokenStyle = weekdayTokenStyle
+        self.walkDisplayLabel = walkDisplayLabel.nonEmpty ?? "walk"
+        self.tripDisplayLabel = tripDisplayLabel.nonEmpty ?? "trip"
     }
 
     init(from decoder: Decoder) throws {
@@ -441,6 +578,15 @@ struct AppSettings: Codable, Hashable, Sendable {
         } else {
             reviewGridColumnCount = defaults.reviewGridColumnCount
         }
+        weekdayTokenStyle = try container.decodeIfPresent(WeekdayTokenStyle.self, forKey: .weekdayTokenStyle) ?? defaults.weekdayTokenStyle
+        walkDisplayLabel = try container.decodeIfPresent(String.self, forKey: .walkDisplayLabel) ?? defaults.walkDisplayLabel
+        if walkDisplayLabel.nonEmpty == nil {
+            walkDisplayLabel = defaults.walkDisplayLabel
+        }
+        tripDisplayLabel = try container.decodeIfPresent(String.self, forKey: .tripDisplayLabel) ?? defaults.tripDisplayLabel
+        if tripDisplayLabel.nonEmpty == nil {
+            tripDisplayLabel = defaults.tripDisplayLabel
+        }
     }
 
     func encode(to encoder: Encoder) throws {
@@ -456,6 +602,9 @@ struct AppSettings: Codable, Hashable, Sendable {
         try container.encode(cleanupRequiresBackupConfirmation, forKey: .cleanupRequiresBackupConfirmation)
         try container.encode(reviewPresentationMode, forKey: .reviewPresentationMode)
         try container.encode(reviewGridColumnCount, forKey: .reviewGridColumnCount)
+        try container.encode(weekdayTokenStyle, forKey: .weekdayTokenStyle)
+        try container.encode(walkDisplayLabel, forKey: .walkDisplayLabel)
+        try container.encode(tripDisplayLabel, forKey: .tripDisplayLabel)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -470,6 +619,9 @@ struct AppSettings: Codable, Hashable, Sendable {
         case cleanupRequiresBackupConfirmation
         case reviewPresentationMode
         case reviewGridColumnCount
+        case weekdayTokenStyle
+        case walkDisplayLabel
+        case tripDisplayLabel
     }
 
     private enum LegacyCodingKeys: String, CodingKey {
@@ -492,6 +644,9 @@ struct ImportSession: Identifiable, Codable, Hashable, Sendable {
     var sessionKindWasExplicit: Bool
     var status: String
     var mediaItems: [MediaItem]
+    var sourceProvenances: [SourceProvenance]
+    var proposedWalks: [Walk]
+    var weekdayTokenStyle: WeekdayTokenStyle
 
     init(
         id: UUID = UUID(),
@@ -507,7 +662,10 @@ struct ImportSession: Identifiable, Codable, Hashable, Sendable {
         sessionKind: SessionKind = .walkDraft,
         sessionKindWasExplicit: Bool = true,
         status: String = "draft",
-        mediaItems: [MediaItem] = []
+        mediaItems: [MediaItem] = [],
+        sourceProvenances: [SourceProvenance] = [],
+        proposedWalks: [Walk] = [],
+        weekdayTokenStyle: WeekdayTokenStyle = .englishAbbreviated
     ) {
         self.id = id
         self.sourceFolder = sourceFolder
@@ -523,6 +681,11 @@ struct ImportSession: Identifiable, Codable, Hashable, Sendable {
         self.sessionKindWasExplicit = sessionKindWasExplicit
         self.status = status
         self.mediaItems = mediaItems
+        self.sourceProvenances = sourceProvenances.isEmpty
+            ? [SourceProvenance(folder: self.sourceFolder)]
+            : sourceProvenances
+        self.proposedWalks = proposedWalks
+        self.weekdayTokenStyle = weekdayTokenStyle
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -539,6 +702,9 @@ struct ImportSession: Identifiable, Codable, Hashable, Sendable {
         case sessionKind
         case status
         case mediaItems
+        case sourceProvenances
+        case proposedWalks
+        case weekdayTokenStyle
     }
 
     init(from decoder: Decoder) throws {
@@ -557,6 +723,9 @@ struct ImportSession: Identifiable, Codable, Hashable, Sendable {
         sessionKind = try container.decodeIfPresent(SessionKind.self, forKey: .sessionKind) ?? .inbox
         status = try container.decodeIfPresent(String.self, forKey: .status) ?? "draft"
         mediaItems = try container.decodeIfPresent([MediaItem].self, forKey: .mediaItems) ?? []
+        sourceProvenances = try container.decodeIfPresent([SourceProvenance].self, forKey: .sourceProvenances) ?? [SourceProvenance(folder: sourceFolder)]
+        proposedWalks = try container.decodeIfPresent([Walk].self, forKey: .proposedWalks) ?? []
+        weekdayTokenStyle = try container.decodeIfPresent(WeekdayTokenStyle.self, forKey: .weekdayTokenStyle) ?? .englishAbbreviated
     }
 
     func encode(to encoder: Encoder) throws {
@@ -574,6 +743,9 @@ struct ImportSession: Identifiable, Codable, Hashable, Sendable {
         try container.encode(sessionKind, forKey: .sessionKind)
         try container.encode(status, forKey: .status)
         try container.encode(mediaItems, forKey: .mediaItems)
+        try container.encode(sourceProvenances, forKey: .sourceProvenances)
+        try container.encode(proposedWalks, forKey: .proposedWalks)
+        try container.encode(weekdayTokenStyle, forKey: .weekdayTokenStyle)
     }
 }
 
@@ -672,6 +844,7 @@ struct MediaItem: Identifiable, Codable, Hashable, Sendable {
     var verifiedAt: Date?
     var sourceCleanedAt: Date?
     var cropRelationship: CropRelationship?
+    var sourceProvenanceID: UUID?
 
     init(
         id: UUID = UUID(),
@@ -695,7 +868,8 @@ struct MediaItem: Identifiable, Codable, Hashable, Sendable {
         importedAt: Date? = nil,
         verifiedAt: Date? = nil,
         sourceCleanedAt: Date? = nil,
-        cropRelationship: CropRelationship? = nil
+        cropRelationship: CropRelationship? = nil,
+        sourceProvenanceID: UUID? = nil
     ) {
         self.id = id
         self.sourceURL = sourceURL
@@ -719,6 +893,7 @@ struct MediaItem: Identifiable, Codable, Hashable, Sendable {
         self.verifiedAt = verifiedAt
         self.sourceCleanedAt = sourceCleanedAt
         self.cropRelationship = cropRelationship
+        self.sourceProvenanceID = sourceProvenanceID
     }
 }
 
@@ -845,11 +1020,37 @@ struct ArchiveEntry: Codable, Hashable, Sendable {
 }
 
 struct ArchiveCommitPlan: Codable, Hashable, Sendable {
+    var walkID: UUID?
+    var walkTitle: String?
+    var tripTarget: TripTarget
     var archiveFolder: URL
+    var tripFolder: URL
     var entries: [ArchiveEntry]
     var totalSourceFiles: Int
     var selectedCount: Int
     var skippedCount: Int
+
+    init(
+        walkID: UUID? = nil,
+        walkTitle: String? = nil,
+        tripTarget: TripTarget = .defaultMonth,
+        archiveFolder: URL,
+        tripFolder: URL? = nil,
+        entries: [ArchiveEntry],
+        totalSourceFiles: Int,
+        selectedCount: Int,
+        skippedCount: Int
+    ) {
+        self.walkID = walkID
+        self.walkTitle = walkTitle
+        self.tripTarget = tripTarget
+        self.archiveFolder = archiveFolder
+        self.tripFolder = tripFolder ?? archiveFolder.deletingLastPathComponent()
+        self.entries = entries
+        self.totalSourceFiles = totalSourceFiles
+        self.selectedCount = selectedCount
+        self.skippedCount = skippedCount
+    }
 }
 
 struct WalkManifest: Codable, Hashable, Sendable {
@@ -866,6 +1067,8 @@ struct WalkManifest: Codable, Hashable, Sendable {
     }
 
     var sessionID: UUID
+    var walkID: UUID?
+    var tripFolderRelativePath: String?
     var walkDate: Date?
     var sourceFolder: URL
     var archiveFolder: URL
@@ -879,6 +1082,8 @@ struct WalkManifest: Codable, Hashable, Sendable {
 
     init(
         sessionID: UUID,
+        walkID: UUID? = nil,
+        tripFolderRelativePath: String? = nil,
         walkDate: Date?,
         sourceFolder: URL,
         archiveFolder: URL,
@@ -891,6 +1096,8 @@ struct WalkManifest: Codable, Hashable, Sendable {
         excludedFiles: [RejectedFileManifest] = []
     ) {
         self.sessionID = sessionID
+        self.walkID = walkID
+        self.tripFolderRelativePath = tripFolderRelativePath
         self.walkDate = walkDate
         self.sourceFolder = sourceFolder
         self.archiveFolder = archiveFolder
@@ -902,6 +1109,16 @@ struct WalkManifest: Codable, Hashable, Sendable {
         self.importedFiles = importedFiles
         self.excludedFiles = excludedFiles
     }
+}
+
+struct TripManifest: Codable, Hashable, Sendable {
+    var tripID: UUID
+    var title: String
+    var folder: URL
+    var folderRelativePath: String?
+    var startDate: Date?
+    var endDate: Date?
+    var memberWalkFolderPaths: [String]
 }
 
 struct RejectedFileManifest: Codable, Hashable, Sendable {

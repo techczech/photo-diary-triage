@@ -79,6 +79,14 @@ struct PhotoLogRevealState: Identifiable, Equatable {
     var id: UUID { sessionID }
 }
 
+struct WalkCommitEditorState: Identifiable, Equatable {
+    let id: UUID
+    var walks: [Walk]
+    var existingTrips: [ExistingTrip]
+    var tripDisplayLabel: String
+    var walkDisplayLabel: String
+}
+
 struct ImportReadinessSnapshot: Equatable, Sendable {
     let sessionKind: SessionKind
     let includedItems: Int
@@ -548,6 +556,7 @@ struct PresentationSnapshot: Equatable {
     let startupAlert: AppStartupAlert?
     let previewingMediaItem: MediaItem?
     let activePhotoLogEditor: PhotoLogEditorState?
+    let activeWalkCommitEditor: WalkCommitEditorState?
     let revealedPhotoLog: PhotoLogRevealState?
 
     static let empty = PresentationSnapshot(
@@ -555,6 +564,7 @@ struct PresentationSnapshot: Equatable {
         startupAlert: nil,
         previewingMediaItem: nil,
         activePhotoLogEditor: nil,
+        activeWalkCommitEditor: nil,
         revealedPhotoLog: nil
     )
 }

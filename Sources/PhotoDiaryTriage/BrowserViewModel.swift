@@ -54,7 +54,7 @@ final class BrowserViewModel {
         if let session = currentSession {
             return BrowserNode(
                 id: "section-current-session",
-                title: "Current Session",
+                title: "Current Triage",
                 subtitle: session.sourceFolder.lastPathComponent,
                 kind: .sessionSection,
                 parentID: nil,
@@ -66,7 +66,7 @@ final class BrowserViewModel {
 
         return BrowserNode(
             id: "section-current-session",
-            title: "Current Session",
+            title: "Current Triage",
             subtitle: subtitleForEmptyCurrentSession(sourceWorkspaceState),
             kind: .sessionSection,
             parentID: nil,

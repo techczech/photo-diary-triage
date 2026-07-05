@@ -124,6 +124,12 @@ struct ContentView: View {
             PhotoLogEditorSheet(appState: appState, editor: editor)
         }
         .sheet(item: Binding(
+            get: { presentationState.snapshot.activeWalkCommitEditor },
+            set: { _ in appState.dismissWalkCommitEditor() }
+        )) { editor in
+            WalkCommitEditorSheet(appState: appState, editor: editor)
+        }
+        .sheet(item: Binding(
             get: { presentationState.snapshot.revealedPhotoLog },
             set: { _ in appState.dismissRevealedPhotoLog() }
         )) { revealed in

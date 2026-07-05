@@ -69,6 +69,13 @@ struct SidebarNodeTreeItem: View {
                     .onTapGesture {
                         appState.selectSidebarNode(node.id)
                     }
+                    .contextMenu {
+                        if node.kind == .archiveWalkFolder {
+                            Button("Move to Trip...") {
+                                appState.moveArchiveWalkToTrip(node)
+                            }
+                        }
+                    }
             }
             .tag(node.id)
         } else {
@@ -76,6 +83,13 @@ struct SidebarNodeTreeItem: View {
                 .contentShape(Rectangle())
                 .onTapGesture {
                     appState.selectSidebarNode(node.id)
+                }
+                .contextMenu {
+                    if node.kind == .archiveWalkFolder {
+                        Button("Move to Trip...") {
+                            appState.moveArchiveWalkToTrip(node)
+                        }
+                    }
                 }
                 .tag(node.id)
         }

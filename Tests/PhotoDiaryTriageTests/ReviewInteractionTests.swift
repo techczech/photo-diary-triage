@@ -1803,6 +1803,8 @@ import Testing
     state.activePane = .media
 
     state.commitImport()
+    #expect(state.presentationState.snapshot.activeWalkCommitEditor != nil)
+    state.confirmWalkCommit()
     for _ in 0..<60 {
         if state.currentSession?.status == "imported" || state.importOperation.phase == .failed {
             break
@@ -1816,7 +1818,32 @@ import Testing
     #expect(state.currentSession?.mediaItems.count == 2)
     #expect(state.currentSession?.mediaItems.first { $0.fileName == "IMG_0001.jpg" }?.lifecycleState == .verified)
     #expect(state.currentSession?.mediaItems.first { $0.fileName == "IMG_0002.jpg" }?.selectionState == .excluded)
-    #expect(state.statusMessage.contains("Imported 1 marked items"))
+    #expect(state.importOperation.phase == .completed)
+    #expect(state.importOperation.detail.contains("Copied and verified 1 photo"))
+}
+
+@MainActor
+@Test func cancelWalkCommitEditorThenMarkMoreRecomputesWalkProposals() throws {
+    let capturedAt = Date(timeIntervalSince1970: 1_779_532_200)
+    let items = [
+        makeTestMediaItem(sourceRoot: URL(fileURLWithPath: "/tmp/review-state"), fileName: "IMG_0001.jpg", capturedAt: capturedAt, selectionState: .included, lifecycleState: .selectedForImport),
+        makeTestMediaItem(sourceRoot: URL(fileURLWithPath: "/tmp/review-state"), fileName: "IMG_0002.jpg", capturedAt: capturedAt.addingTimeInterval(60))
+    ]
+    let state = makeReviewAppState(items: items)
+
+    state.commitImport()
+    let firstEditor = try #require(state.presentationState.snapshot.activeWalkCommitEditor)
+    #expect(Set(firstEditor.walks.flatMap(\.mediaItemIDs)) == [items[0].id])
+
+    state.dismissWalkCommitEditor()
+    #expect(state.currentSession?.proposedWalks.isEmpty == true)
+
+    state.selectMediaItems([items[1].id])
+    state.markCurrentSelectionForImport()
+    state.commitImport()
+
+    let secondEditor = try #require(state.presentationState.snapshot.activeWalkCommitEditor)
+    #expect(Set(secondEditor.walks.flatMap(\.mediaItemIDs)) == Set(items.map(\.id)))
 }
 
 @MainActor
@@ -1853,6 +1880,8 @@ import Testing
     state.activePane = .media
 
     state.commitImport()
+    #expect(state.presentationState.snapshot.activeWalkCommitEditor != nil)
+    state.confirmWalkCommit()
     for _ in 0..<60 {
         if state.currentSession?.status == "imported" || state.importOperation.phase == .failed {
             break

@@ -2,7 +2,16 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-BUILD_DIR="$ROOT_DIR/.build/arm64-apple-macosx/debug"
+SWIFT_BUILD_ARGS=()
+if [[ -n "${PDT_BUILD_PATH:-}" ]]; then
+    SWIFT_BUILD_ARGS+=(--build-path "$PDT_BUILD_PATH")
+    BUILD_DIR="$PDT_BUILD_PATH/arm64-apple-macosx/debug"
+else
+    BUILD_DIR="$ROOT_DIR/.build/arm64-apple-macosx/debug"
+fi
+if [[ "${PDT_DISABLE_SWIFTPM_SANDBOX:-0}" == "1" ]]; then
+    SWIFT_BUILD_ARGS+=(--disable-sandbox)
+fi
 APP_DIR="$ROOT_DIR/dist/Walkfolio.app"
 MACOS_DIR="$APP_DIR/Contents/MacOS"
 RESOURCES_DIR="$APP_DIR/Contents/Resources"
@@ -13,7 +22,7 @@ RELEASE_ENV="$ROOT_DIR/APP_RELEASE.env"
 source "$RELEASE_ENV"
 
 cd "$ROOT_DIR"
-swift build
+swift build "${SWIFT_BUILD_ARGS[@]}"
 
 pkill -f "$APP_DIR/Contents/MacOS/PhotoDiaryTriage" 2>/dev/null || true
 rm -rf "$APP_DIR"

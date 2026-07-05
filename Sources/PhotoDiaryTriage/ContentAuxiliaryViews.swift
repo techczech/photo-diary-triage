@@ -164,6 +164,143 @@ struct KeyboardHelpSheet: View {
 }
 
 @MainActor
+struct WalkCommitEditorSheet: View {
+    let appState: AppState
+    @State private var editor: WalkCommitEditorState
+
+    init(appState: AppState, editor: WalkCommitEditorState) {
+        self.appState = appState
+        _editor = State(initialValue: editor)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Confirm Triage Walks")
+                        .font(.title2.weight(.bold))
+                    Text("Review proposed \(editor.walkDisplayLabel)s, adjust names, and choose the target \(editor.tripDisplayLabel) for each one.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Cancel") {
+                    appState.dismissWalkCommitEditor()
+                }
+                .keyboardShortcut(.cancelAction)
+            }
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach($editor.walks) { $walk in
+                        walkRow(walk: $walk)
+                    }
+                }
+                .padding(.trailing, 8)
+            }
+
+            HStack {
+                Text("\(editor.walks.count) proposed \(editor.walkDisplayLabel)\(editor.walks.count == 1 ? "" : "s")")
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Cancel") {
+                    appState.dismissWalkCommitEditor()
+                }
+                Button("Copy To Archive") {
+                    appState.updateWalkCommitEditor(editor)
+                    appState.confirmWalkCommit()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(editor.walks.isEmpty || editor.walks.contains { $0.title.nonEmpty == nil || $0.mediaItemIDs.isEmpty })
+            }
+        }
+        .padding(24)
+        .frame(minWidth: 760, minHeight: 560)
+        .onDisappear {
+            if appState.presentationState.snapshot.activeWalkCommitEditor != nil {
+                appState.updateWalkCommitEditor(editor)
+            }
+        }
+    }
+
+    private func walkRow(walk: Binding<Walk>) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                TextField("Walk title", text: walk.title)
+                    .font(.headline)
+                Spacer()
+                Text("\(walk.wrappedValue.mediaItemIDs.count) photo(s)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Picker("Target \(editor.tripDisplayLabel)", selection: tripSelection(for: walk)) {
+                Text("Default month \(editor.tripDisplayLabel)").tag("default")
+                ForEach(existingTrips(for: walk.wrappedValue)) { trip in
+                    Text(trip.folder.lastPathComponent).tag("existing|\(trip.folderRelativePath)")
+                }
+                Text("New named \(editor.tripDisplayLabel)").tag("new|\(walk.wrappedValue.title)")
+            }
+
+            HStack {
+                Button("Merge With Previous") {
+                    appState.updateWalkCommitEditor(editor)
+                    appState.mergeWalkProposalWithPrevious(walk.wrappedValue.id)
+                    if let refreshed = appState.presentationState.snapshot.activeWalkCommitEditor {
+                        editor = refreshed
+                    }
+                }
+                .disabled(editor.walks.first?.id == walk.wrappedValue.id)
+
+                Button("Split") {
+                    appState.updateWalkCommitEditor(editor)
+                    appState.splitWalkProposal(walk.wrappedValue.id)
+                    if let refreshed = appState.presentationState.snapshot.activeWalkCommitEditor {
+                        editor = refreshed
+                    }
+                }
+                .disabled(walk.wrappedValue.mediaItemIDs.count < 2)
+
+                Spacer()
+            }
+            .controlSize(.small)
+        }
+        .sheetSectionStyle()
+    }
+
+    private func tripSelection(for walk: Binding<Walk>) -> Binding<String> {
+        Binding(
+            get: {
+                switch walk.wrappedValue.tripTarget.kind {
+                case .defaultMonth:
+                    return "default"
+                case .existingNamedTrip:
+                    return "existing|\(walk.wrappedValue.tripTarget.folderRelativePath ?? "")"
+                case .newNamedTrip:
+                    return "new|\(walk.wrappedValue.tripTarget.title ?? walk.wrappedValue.title)"
+                }
+            },
+            set: { value in
+                if value == "default" {
+                    walk.wrappedValue.tripTarget = .defaultMonth
+                } else if value.hasPrefix("existing|") {
+                    let relative = String(value.dropFirst("existing|".count))
+                    let title = editor.existingTrips.first(where: { $0.folderRelativePath == relative })?.title ?? relative
+                    walk.wrappedValue.tripTarget = .existing(title: title, folderRelativePath: relative)
+                } else if value.hasPrefix("new|") {
+                    walk.wrappedValue.tripTarget = .newNamed(title: walk.wrappedValue.title)
+                }
+            }
+        )
+    }
+
+    private func existingTrips(for walk: Walk) -> [ExistingTrip] {
+        let year = DateFormatting.archiveYearFolderName(from: walk.date)
+        return editor.existingTrips.filter { $0.year == year }
+    }
+}
+
+@MainActor
 struct PhotoLogEditorSheet: View {
     @Environment(\.dismiss) private var dismiss
 
