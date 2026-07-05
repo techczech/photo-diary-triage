@@ -72,6 +72,23 @@ deferrals" is a standing user instruction).
   (`MapPanelView.swift`, macOS 14 SwiftUI Map) as an inline review panel with walk-level
   pin assignment (`walkMetadata.latitude/longitude`).
 
+## Storage reality (measured 2026-07-05 — constrains several releases)
+
+The "main archive machine" does NOT hold the photos locally: the Pictures tree is ~716 GB
+logical while the Mac's internal disk (OneDrive sync root) has ~30 GB free. Nearly all
+archive photos are dataless placeholders even on the main machine; on-demand hydration
+works (verified). Consequences — REQUIRED before the affected features run on the real
+archive:
+
+- Any whole-archive byte-reading batch (thumbnail backfill from Release C; AI-description
+  batches in Release F; Google Photos pushes of archived Trips in Release G) must process
+  **hydrate → work → evict** per file (bounded working set, e.g. a few GB), using
+  `NSFileProviderManager.evictItem` (fallback: `fileproviderctl evict <path>`), with free-
+  disk-space monitoring that pauses the batch below a safety floor (e.g. 15 GB).
+- The Release C thumbnail backfill as shipped would fill the disk — add the
+  hydrate/evict/floor logic as the FIRST work item of Release D.
+- Do not assume `.mainArchive` role implies local bytes anywhere.
+
 ## Releases
 
 ### Release A — 0.4.1 `test-suite-repair`
