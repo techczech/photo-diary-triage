@@ -41,8 +41,10 @@ struct ToolbarModeControls: View {
                 get: { appState.workspaceMode },
                 set: { appState.setWorkspaceMode($0) }
             )) {
+                // Text-only: macOS toolbar segmented controls drop Label titles and show
+                // bare icons, which proved unreadable (user feedback 2026-07-05).
                 ForEach(WorkspaceMode.displayOrder, id: \.self) { mode in
-                    Label(mode.title, systemImage: mode.systemImage)
+                    Text(mode.title)
                         .tag(mode)
                 }
             }
@@ -54,7 +56,7 @@ struct ToolbarModeControls: View {
             } label: {
                 Label("Open in Finder", systemImage: "folder")
             }
-            .labelStyle(.iconOnly)
+            .labelStyle(.titleAndIcon)
             .disabled(!appState.canOpenSelectedBrowserFolder)
             .help("Open the selected browser folder in Finder")
         }

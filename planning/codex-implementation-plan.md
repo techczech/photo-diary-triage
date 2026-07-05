@@ -213,7 +213,11 @@ Introduce Walks and Trips as real model objects and break one-session-one-folder
 - MANUAL ASK: user provides OAuth client + runs one real push of a small Trip.
 
 ### Release H — 0.11.0 `historical-triage` (WP7)
-1. Archive Triage mode matures into historical processing: open ANY folder (e.g. the
+NOTE (2026-07-05): the user merged the mode switcher to three modes — Archive · Triage ·
+Photo Logs; `.archiveTriage` is a hidden legacy enum case. Historical processing therefore
+lives INSIDE the Triage mode (an old folder opened as a Source with historical defaults),
+not in a fourth mode.
+1. Historical processing matures inside Triage: open ANY folder (e.g. the
    pre-app `2020/03/28` folders or a 2013 holiday dump) as a Source with historical
    defaults: keep-all stance (all items pre-marked selected), Trip/Walk titles proposed
    from folder names/path segments, date fallbacks from folder-name hints then file
