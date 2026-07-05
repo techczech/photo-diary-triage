@@ -362,16 +362,18 @@ enum WorkspaceMode: String, CaseIterable, Equatable, Sendable {
     case archiveView
     case cameraTriage
     case photoLogs
+    // Legacy mode kept only so persisted state decodes; folded into Triage (user decision
+    // 2026-07-05) — historical processing is ordinary Triage on an old folder.
     case archiveTriage
 
-    static let displayOrder: [WorkspaceMode] = [.archiveView, .cameraTriage, .photoLogs, .archiveTriage]
+    static let displayOrder: [WorkspaceMode] = [.archiveView, .cameraTriage, .photoLogs]
 
     var title: String {
         switch self {
         case .archiveView:
-            return "Archive View"
+            return "Archive"
         case .cameraTriage:
-            return "Camera Triage"
+            return "Triage"
         case .photoLogs:
             return "Photo Logs"
         case .archiveTriage:
