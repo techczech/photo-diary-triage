@@ -402,6 +402,7 @@ final class AppState: ObservableObject {
         let settingsStore = SettingsStore(fileURL: self.supportRoot.appendingPathComponent("settings.json"))
         let settings = settingsStore.load(defaults: AppSettings.default())
         self.settings = settings
+        ArchiveByteReadPolicyContext.shared.update(settings: settings)
         self.settingsStore = settingsStore
         self.scanner = FileScanner()
         self.groupingService = GroupingService()
@@ -1752,6 +1753,7 @@ final class AppState: ObservableObject {
     func updateWalkMetadata(title: String, location: String, notes: String) {
         guard let currentSession else { return }
         save(sessionMutationCoordinator.sessionByUpdatingWalkMetadata(currentSession, title: title, location: location, notes: notes))
+        refreshArchiveIndexAfterMetadataEditIfNeeded()
     }
 
     var currentWalkLocationName: String {
@@ -1777,6 +1779,7 @@ final class AppState: ObservableObject {
             latitude: latitude,
             longitude: longitude
         ))
+        refreshArchiveIndexAfterMetadataEditIfNeeded()
         statusMessage = trimmed.isEmpty ? "Cleared walk location." : "Saved walk location: \(trimmed)."
     }
 
@@ -1875,8 +1878,15 @@ final class AppState: ObservableObject {
             targetTripFolder = trips[popup.indexOfSelectedItem - 1].folder
         }
 
+        let oldWalkRelativePath = ArchiveIndexStore.archiveRelativePath(for: walkFolder, archiveRoot: settings.archiveRoot)
+        let sourceTripFolder = walkFolder.deletingLastPathComponent()
         do {
             let result = try walkMover.moveWalk(at: walkFolder, to: targetTripFolder, oneDrivePicturesRoot: settings.oneDrivePicturesRoot)
+            refreshArchiveIndexAfterWalkMove(
+                destinationWalkFolder: result.destinationFolder,
+                removingWalkPath: oldWalkRelativePath,
+                tripFolders: [sourceTripFolder, targetTripFolder]
+            )
             archiveMediaCache.removeAll()
             browserViewModel.invalidateArchiveTreeCache()
             rebuildBrowserCaches()
@@ -2070,6 +2080,7 @@ final class AppState: ObservableObject {
                 )
                 archiveYearFolders = ArchiveLibraryInspector.existingYearFolders(in: settings.archiveRoot)
                 browserViewModel.invalidateArchiveTreeCache()
+                scheduleArchiveIndexUpdate(after: result)
             } catch {
                 let message = userFacingCopyFailureMessage(for: error)
                 importProgress = nil
@@ -2163,6 +2174,49 @@ final class AppState: ObservableObject {
         enqueueThumbnailRequests([item], priority: .visible)
     }
 
+    func isArchiveByteReadBlocked(for item: MediaItem) -> Bool {
+        ArchiveByteReadPolicyContext.shared.isOnlineOnlyArchiveFile(item.sourceURL)
+    }
+
+    func downloadArchiveItemForViewing(_ item: MediaItem) {
+        guard isArchiveByteReadBlocked(for: item) else {
+            openCurrentSelection()
+            return
+        }
+        ArchiveByteReadPolicyContext.shared.invalidateOnlineOnlyVerdict(for: item.sourceURL)
+        if NSWorkspace.shared.open(item.sourceURL) {
+            statusMessage = "Requested download/view for \(item.fileName). OneDrive may need a moment before the full preview is available."
+        } else {
+            statusMessage = "Could not request download for \(item.fileName)."
+        }
+    }
+
+    var canDownloadBlockedArchiveSelectionToView: Bool {
+        blockedArchiveSelectionItem != nil
+    }
+
+    func downloadBlockedArchiveSelectionToView() {
+        guard let item = blockedArchiveSelectionItem else {
+            statusMessage = "Select an online-only archive photo before requesting a download."
+            return
+        }
+        downloadArchiveItemForViewing(item)
+    }
+
+    private var blockedArchiveSelectionItem: MediaItem? {
+        let preferredIDs = [focusedReviewItemID].compactMap { $0 } + Array(selectedMediaItemIDs)
+        for id in preferredIDs {
+            guard let item = mediaItem(for: id), isArchiveByteReadBlocked(for: item) else { continue }
+            return item
+        }
+        return nil
+    }
+
+    func decodedImageRequest(for item: MediaItem, priority: TaskPriority = .userInitiated) -> DecodedImageRequest? {
+        guard ArchiveByteReadPolicyContext.shared.canReadBytes(at: item.sourceURL) else { return nil }
+        return .interactiveDisplay(item.sourceURL, priority: priority)
+    }
+
     func setArchiveRoot(_ archiveRoot: URL) {
         cancelArchiveMediaLoad()
         let shouldFollowArchiveRoot = settings.oneDrivePicturesRoot.standardizedFileURL == settings.archiveRoot.standardizedFileURL
@@ -2184,8 +2238,90 @@ final class AppState: ObservableObject {
         }
 
         persistSettings()
+        ArchiveByteReadPolicyContext.shared.update(settings: settings)
         let existingYears = archiveYearFolders.isEmpty ? "no existing 202x folders detected yet" : "found year folders: \(archiveYearFolders.joined(separator: ", "))"
         statusMessage = "Archive root set to \(archiveRoot.path); \(existingYears)."
+    }
+
+    func backfillArchiveIndexThumbnailsInteractively() {
+        guard canWriteArchiveIndex else {
+            statusMessage = archiveIndexWriteHelp
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = "Backfill Archive Index thumbnails?"
+        alert.informativeText = "This scans the Archive and writes missing 512px JPEG thumbnails to _index/thumbs. Existing thumbnails are left untouched."
+        alert.addButton(withTitle: "Backfill")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else {
+            statusMessage = "Archive thumbnail backfill cancelled."
+            return
+        }
+
+        let archiveRoot = settings.archiveRoot
+        let supportedExtensions = settings.supportedExtensions
+        let policy = archiveIndexWritePolicy
+        statusMessage = "Backfilling Archive Index thumbnails…"
+        Task {
+            let result = await ArchiveIndexMutationQueue.shared.backfillThumbnails(
+                archiveRoot: archiveRoot,
+                supportedExtensions: supportedExtensions,
+                policy: policy,
+                progress: { current, total in
+                    await MainActor.run { [weak self] in
+                        self?.statusMessage = "Backfilling Archive Index thumbnails \(current)/\(total)…"
+                    }
+                }
+            )
+            guard let result else {
+                statusMessage = policy.disabledHelp
+                return
+            }
+            statusMessage = "Archive thumbnail backfill finished: \(result.generatedThumbnails) generated, \(result.existingThumbnails) already present, \(result.failures.count) failed."
+        }
+    }
+
+    func rebuildArchiveIndexInteractively() {
+        guard canWriteArchiveIndex else {
+            statusMessage = archiveIndexWriteHelp
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = "Rebuild Archive Index?"
+        alert.informativeText = "This rebuilds _index/index-<year>.jsonl from the Trip, Walk, and file manifests. The manifests remain the source of truth."
+        alert.addButton(withTitle: "Rebuild")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else {
+            statusMessage = "Archive Index rebuild cancelled."
+            return
+        }
+
+        let archiveRoot = settings.archiveRoot
+        let policy = archiveIndexWritePolicy
+        statusMessage = "Rebuilding Archive Index…"
+        Task {
+            do {
+                if let result = try await ArchiveIndexMutationQueue.shared.rebuildIndex(archiveRoot: archiveRoot, policy: policy) {
+                    self.statusMessage = "Archive Index rebuilt with \(result.entryCount) entries across \(result.years.count) year shard(s)."
+                } else {
+                    self.statusMessage = policy.disabledHelp
+                }
+            } catch {
+                self.statusMessage = "Archive Index rebuild failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    var canWriteArchiveIndex: Bool {
+        archiveIndexWritePolicy.canWriteIndex
+    }
+
+    var archiveIndexWriteHelp: String {
+        archiveIndexWritePolicy.disabledHelp
+    }
+
+    private var archiveIndexWritePolicy: ArchiveIndexWritePolicy {
+        ArchiveIndexWritePolicy(machineRole: settings.archiveMachineRole)
     }
 
     func migrateArchiveLayoutInteractively() {
@@ -2273,6 +2409,7 @@ final class AppState: ObservableObject {
         if result.failures.isEmpty && problems.isEmpty {
             alert.messageText = "Archive migrated to layout v2"
             alert.informativeText = "\(result.migratedWalks) walk(s) migrated, \(result.renamedFiles) file(s) renamed, \(result.rewrittenTextFiles) manifest(s) rewritten. Report: \(reportURL.lastPathComponent)."
+            rebuildArchiveIndexAfterSuccessfulMigration(archiveRoot: archiveRoot)
         } else {
             alert.messageText = "Archive migration finished with issues"
             alert.informativeText = "\(result.failures.count) failure(s), \(problems.count) verification problem(s). See \(reportURL.lastPathComponent) in the archive root."
@@ -2288,6 +2425,7 @@ final class AppState: ObservableObject {
             save(session)
         }
         persistSettings()
+        ArchiveByteReadPolicyContext.shared.update(settings: settings)
         statusMessage = "OneDrive Pictures root set to \(root.path)."
     }
 
@@ -2298,6 +2436,7 @@ final class AppState: ObservableObject {
             save(session)
         }
         persistSettings()
+        ArchiveByteReadPolicyContext.shared.update(settings: settings)
         statusMessage = "Machine role set to \(role.title)."
     }
 
@@ -5357,6 +5496,7 @@ final class AppState: ObservableObject {
         let requests = itemIDs
             .prefix(max(limit, 0))
             .compactMap { mediaItem(for: $0) }
+            .filter { ArchiveByteReadPolicyContext.shared.canReadBytes(at: $0.sourceURL) }
             .filter { fileManager.fileExists(atPath: $0.sourceURL.path) }
             .map { DecodedImageRequest.interactiveDisplay($0.sourceURL, priority: .userInitiated) }
 
@@ -5366,7 +5506,84 @@ final class AppState: ObservableObject {
         }
     }
 
+    private func refreshArchiveIndexAfterMetadataEditIfNeeded() {
+        guard canWriteArchiveIndex,
+              let currentSession,
+              currentSession.mediaItems.contains(where: { $0.destinationURL != nil }) else { return }
+        let walkFolders = Array(Set(currentSession.mediaItems.compactMap { $0.destinationURL?.deletingLastPathComponent() }))
+        guard !walkFolders.isEmpty else { return }
+        refreshArchiveIndexAfterWalkFolders(walkFolders, statusPrefix: "Archive Index refreshed for updated metadata")
+    }
+
+    private func refreshArchiveIndexAfterWalkMove(destinationWalkFolder: URL, removingWalkPath: String?, tripFolders: [URL]) {
+        guard canWriteArchiveIndex else { return }
+        let archiveRoot = settings.archiveRoot
+        let policy = archiveIndexWritePolicy
+        Task {
+            do {
+                try await ArchiveIndexMutationQueue.shared.replaceWalkFolders(
+                    [destinationWalkFolder],
+                    archiveRoot: archiveRoot,
+                    policy: policy,
+                    removingWalkPaths: Set([removingWalkPath].compactMap { $0 }),
+                    tripFolders: Array(Set(tripFolders))
+                )
+            } catch {
+                logger.error("Archive Index refresh after Walk move failed: \(error.localizedDescription, privacy: .public)")
+                statusMessage = "Moved Walk, but Archive Index refresh failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func refreshArchiveIndexAfterWalkFolders(_ walkFolders: [URL], statusPrefix: String) {
+        guard canWriteArchiveIndex else { return }
+        let archiveRoot = settings.archiveRoot
+        let policy = archiveIndexWritePolicy
+        Task {
+            do {
+                try await ArchiveIndexMutationQueue.shared.replaceWalkFolders(
+                    walkFolders,
+                    archiveRoot: archiveRoot,
+                    policy: policy
+                )
+                statusMessage = "\(statusPrefix)."
+            } catch {
+                logger.error("Archive Index targeted refresh failed: \(error.localizedDescription, privacy: .public)")
+                statusMessage = "\(statusPrefix) failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func scheduleArchiveIndexUpdate(after result: ImportResult) {
+        let policy = ArchiveIndexWritePolicy(machineRole: result.session.archiveMachineRole)
+        guard policy.canWriteIndex else { return }
+        Task {
+            statusMessage = "Copy complete; updating Archive Index in the background..."
+            do {
+                try await ArchiveIndexMutationQueue.shared.updateAfterImport(result: result, policy: policy)
+                statusMessage = "Archive Index updated for \(result.fileManifests.count) imported photo(s)."
+            } catch {
+                logger.error("Archive Index update after import failed: \(error.localizedDescription, privacy: .public)")
+                statusMessage = "Copy complete; Archive Index update failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func rebuildArchiveIndexAfterSuccessfulMigration(archiveRoot: URL) {
+        guard canWriteArchiveIndex else { return }
+        let policy = archiveIndexWritePolicy
+        Task {
+            do {
+                _ = try await ArchiveIndexMutationQueue.shared.rebuildIndex(archiveRoot: archiveRoot, policy: policy)
+            } catch {
+                logger.error("Archive Index rebuild after migration failed: \(error.localizedDescription, privacy: .public)")
+                statusMessage = "Archive migration finished, but Archive Index rebuild failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
     private func configurePersistence() {
+        ArchiveByteReadPolicyContext.shared.update(settings: settings)
         let configuration = sessionLifecycleCoordinator.configurePersistence(settings: settings)
         sessionStore = configuration.sessionStore
         previewStore = configuration.previewStore
@@ -5392,6 +5609,10 @@ final class AppState: ObservableObject {
         cancelArchiveMediaLoad()
 
         if let cachedItems = archiveMediaCache[nodeID] {
+            let cachedURLs = cachedItems.map(\.sourceURL)
+            Task.detached(priority: .utility) {
+                ArchiveByteReadPolicyContext.shared.warmOnlineOnlyVerdicts(for: cachedURLs)
+            }
             requestVisibleThumbnails(prefetching: cachedItems)
             DispatchQueue.main.async { [weak self] in
                 self?.latencyRecorder.end("archive.load")
@@ -5408,7 +5629,11 @@ final class AppState: ObservableObject {
             let result: Result<ArchiveLoadResult?, Error>
             do {
                 let loader = BrowserViewModel(scanner: FileScanner())
-                result = .success(try loader.loadArchiveMedia(for: node, settings: settings))
+                let loadResult = try loader.loadArchiveMedia(for: node, settings: settings)
+                if let loadResult {
+                    ArchiveByteReadPolicyContext.shared.warmOnlineOnlyVerdicts(for: loadResult.items.map(\.sourceURL))
+                }
+                result = .success(loadResult)
             } catch {
                 result = .failure(error)
             }
