@@ -2,9 +2,9 @@
 
 item_id: PDT-2026-07-12-098
 title: Codebase review and next-step recommendation
-status: review_complete_pending_user_direction
-target_release_version: TBD after review
-target_feature_slug: TBD after review
+status: design_in_review
+target_release_version: 0.7.0
+target_feature_slug: timeline-and-search
 
 ## User request summary
 
@@ -62,3 +62,24 @@ Review complete pending user direction. No implementation authorised by this ite
   Archive byte lifecycle and batch safety, then implement Index reader/cache/query models,
   then present and approve the Timeline/Search interaction design before replacing the
   current folder browser.
+
+## Archive browsing design direction
+
+The Archive should provide two views over the same indexed Trips:
+
+- **Timeline** is the default view. It uses wide chronological rows with a cover image,
+  title, date range, location, Walk count, and photo count. It supports linear Up and Down
+  keyboard navigation and makes similar Trips easy to distinguish.
+- **Contact Sheet** is the compact visual view. It uses year-banded photographic tiles and
+  two-dimensional arrow-key navigation for rapid recognition.
+
+Both views preserve the same selected Trip, year position, search query, and navigation
+state. The app remembers the last chosen view. A compact view control sits beside the
+`Trips` heading, while global Archive search remains in the trailing side of the toolbar.
+
+The earlier large-card grid is rejected because it consumes more space than the Contact
+Sheet while exposing less metadata than the Timeline. It does not support a distinct user
+task.
+
+This direction remains under design review. It is not a locked mockup and does not
+authorise implementation.
