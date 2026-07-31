@@ -2,9 +2,9 @@
 
 item_id: PDT-2026-07-12-098
 title: Codebase review and next-step recommendation
-status: reinstalled_pending_user_confirmation
-target_release_version: 0.7.0
-target_feature_slug: timeline-and-search
+status: archive_thumbnail_loading_shipped_pending_user_test
+target_release_version: 0.7.2
+target_feature_slug: archive-thumbnail-loading
 
 ## User request summary
 
@@ -216,3 +216,38 @@ record identified 0.7.0 build 136, but the overlaid app directory retained its
 directory and explicitly re-registered. Its metadata, executable checksum, new
 directory identity, and signature verify as 0.7.0 build 136. Waiting for the
 user to confirm the visible label before the real-Archive test continues.
+
+## Installed Archive screenshot follow-up
+
+The user's screenshot confirms that the installed executable contains the new
+Archive sidebar. It also exposes a routing defect: after an Unorganised Folder
+has opened in the photo grid, choosing a year or entry type can leave the old
+photo-folder context active in the detail pane. The visible `06` is the physical
+folder name, not the application version.
+
+The correction must make every year and entry-type choice return to the Archive
+catalogue, clear the active photo-folder context, and preserve the current
+Timeline or Contact Sheet. The stale `photowalk`, year/month, and Walk guidance
+in the photo-grid header must use the locked Trip and Unorganised Folder terms.
+The fix shipped as Walkfolio 0.7.1 build 137. The focused transition regression
+and the complete 186-test suite pass. The corrected bundle is freshly installed
+and waiting for the user's short Dev Traffic Control check.
+
+## Installed Archive thumbnail correction
+
+The user clarified that the screenshot's immediate problem is that most photos
+show a warning and Retry instead of loading a thumbnail. Inspection found that
+the ordinary preview path rejects every Archive original when an Archive Index
+thumbnail is absent. That safeguard also rejects photos whose bytes are already
+available locally, so those photos can never populate the normal thumbnail
+cache.
+
+Walkfolio 0.7.2 must allow locally available Archive photos to generate ordinary
+cached thumbnails while continuing to refuse implicit reads of online-only
+Archive originals. A policy regression must cover both cases, and the complete
+test suite must pass before a fresh bundle is installed.
+
+The correction is implemented and freshly installed as Walkfolio 0.7.2 build
+138. The focused availability-policy regression and the complete 187-test suite
+pass. Waiting for the user's short Dev Traffic Control check against the real
+Archive.
