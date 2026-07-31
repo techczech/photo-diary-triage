@@ -1,5 +1,11 @@
 # Walkfolio 0.7.0 Archive mockup
 
+## Design lock
+
+Dominik approved the mixed Archive design on 2026-07-31. This interactive mockup and
+`docs/adr/0003-archive-browse-includes-unorganised-folders.md` govern production
+implementation.
+
 ## Purpose
 
 Test whether Timeline and Contact Sheet work as two useful readings of one indexed Archive.

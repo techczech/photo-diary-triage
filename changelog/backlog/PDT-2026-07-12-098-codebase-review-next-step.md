@@ -2,7 +2,7 @@
 
 item_id: PDT-2026-07-12-098
 title: Codebase review and next-step recommendation
-status: mixed_archive_mockup_waiting_on_user
+status: archive_design_locked_ready_for_implementation
 target_release_version: 0.7.0
 target_feature_slug: timeline-and-search
 
@@ -163,3 +163,22 @@ Revision completed:
 
 Status: mixed Archive mockup ready; waiting for user review. Production implementation
 remains unauthorised until the user locks this design.
+
+## Design approval
+
+The user approved the mixed Archive design on 2026-07-31.
+
+The locked design contract is:
+
+- Timeline and Contact Sheet are two views over the same Archive.
+- Recognised Trips and Unorganised Folders appear together with visible type distinctions.
+- A year filters the current view.
+- Folder depth and the approximate 2016 transition never establish months, Trips, or Walks.
+- Opening an Unorganised Folder browses its photos without file changes.
+- Organising an Unorganised Folder as a Trip remains a separate explicit action.
+
+The durable decision is `docs/adr/0003-archive-browse-includes-unorganised-folders.md`.
+Production implementation must cite that decision and the locked mockup.
+
+Status: design locked and ready for an implementation plan. No production code or release
+metadata changed as part of the approval record.

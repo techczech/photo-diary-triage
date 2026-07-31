@@ -10,6 +10,8 @@ Build app UI in `src/`. Keep `.openai/hosting.json`, `worker/index.js`, `scripts
 
 ## Locked inputs for this prototype
 
+- Dominik approved this design on 2026-07-31. Production implementation must preserve these
+  inputs unless he explicitly reopens the decision.
 - The mockup combines the selected Timeline and Contact Sheet concepts as two views over
   one Archive.
 - Timeline is the default; Contact Sheet is the remembered compact alternative.

@@ -89,15 +89,24 @@ This document outranks incidental implementation choices. If the current app beh
 - Date/group/folder browsing may use list or outline structures.
 - Final photo browsing must default to a grid.
 - If list view exists for photos, it must be secondary and explicitly chosen.
-- The primary Archive browse surface is the Timeline of Trips (newest first: cover, title,
-  dates, location, counts) → Trip → Walks → photo grid. The raw folder drill-down is retired
-  as a UI (folders remain on disk).
+- The primary Archive browse surface is a Timeline of Archive entries (newest first: cover,
+  title, dates, location or path, and counts). A recognised Trip opens to its Walks and then
+  a photo grid; an Unorganised Folder opens directly to its photo grid.
+- Timeline and Contact Sheet show recognised Trips and Unorganised Folders together. They
+  identify the entry type visibly but preserve the same selection, search, sort, and year
+  filter.
+- A year filters the current Archive view; it is not a separate browsing destination.
+- Physical folder depth never establishes a month, Trip, or Walk. The approximate date when
+  the Archive became consistently month-organised is not a parsing rule.
+- Raw hierarchical folder drill-down is retired as the primary UI. Unorganised Folders
+  remain directly browsable as Archive entries without moving, renaming, or rewriting them.
+- Organising an Unorganised Folder as a Trip is a separate explicit action.
 - Map mode (all located Walks as clustered pins) and Search (filename + AI description FTS)
   are sanctioned alternative lenses over the same Archive Index. Both terminate in the photo
   grid, preserving rule 1.
-- Archive browsing, search, and map must function from the Archive Index alone — they may
-  not require photo bytes, and in travel mode they must never trigger implicit downloads
-  (ADR 0002).
+- Archive browsing, search, and map must not require photo bytes. Manifest-backed material
+  uses the Archive Index; any derived summary of Unorganised Folders is rebuildable and never
+  becomes canonical. Travel mode must never trigger implicit downloads (ADR 0002).
 
 ### Focus Model
 
