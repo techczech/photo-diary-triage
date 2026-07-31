@@ -4,37 +4,43 @@ import SwiftUI
 struct SidebarPaneView: View {
     let appState: AppState
     @ObservedObject var state: SidebarState
+    @ObservedObject var archiveState: ArchiveBrowserState
     let appRelease: AppRelease
     @State private var expandedNodeIDs: Set<String> = []
     @State private var expansionSignature = ""
 
     var body: some View {
-        let snapshot = state.snapshot
+        Group {
+            if appState.workspaceMode == .archiveView {
+                ArchiveSidebarView(appState: appState, state: archiveState)
+            } else {
+                let snapshot = state.snapshot
+                VStack(alignment: .leading, spacing: 8) {
+                    List(selection: Binding(
+                        get: { state.snapshot.tree.selectedSidebarNodeID },
+                        set: { appState.selectSidebarNode($0) }
+                    )) {
+                        ForEach(snapshot.tree.browserRoots) { node in
+                            SidebarNodeTreeItem(
+                                appState: appState,
+                                node: node,
+                                expandedNodeIDs: $expandedNodeIDs
+                            )
+                        }
+                    }
+                    .listStyle(.sidebar)
+                    .onAppear {
+                        applyAutomaticExpansion(to: snapshot.tree.browserRoots)
+                    }
+                    .onChange(of: snapshot.tree.browserRoots) { _, roots in
+                        applyAutomaticExpansion(to: roots)
+                    }
 
-        VStack(alignment: .leading, spacing: 8) {
-            List(selection: Binding(
-                get: { state.snapshot.tree.selectedSidebarNodeID },
-                set: { appState.selectSidebarNode($0) }
-            )) {
-                ForEach(snapshot.tree.browserRoots) { node in
-                    SidebarNodeTreeItem(
-                        appState: appState,
-                        node: node,
-                        expandedNodeIDs: $expandedNodeIDs
-                    )
+                    SidebarStatusView(state: state, appRelease: appRelease)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 10)
                 }
             }
-            .listStyle(.sidebar)
-            .onAppear {
-                applyAutomaticExpansion(to: snapshot.tree.browserRoots)
-            }
-            .onChange(of: snapshot.tree.browserRoots) { _, roots in
-                applyAutomaticExpansion(to: roots)
-            }
-
-            SidebarStatusView(state: state, appRelease: appRelease)
-                .padding(.horizontal, 12)
-                .padding(.bottom, 10)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }

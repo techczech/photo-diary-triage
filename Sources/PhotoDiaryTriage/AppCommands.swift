@@ -39,16 +39,64 @@ struct PhotoDiaryCommands: Commands {
             }
         }
 
+        CommandMenu("Archive") {
+            Button("Show Timeline") {
+                appState.setArchiveBrowseViewMode(.timeline)
+            }
+            .keyboardShortcut("1", modifiers: [.command])
+            .disabled(appState.workspaceMode != .archiveView)
+
+            Button("Show Contact Sheet") {
+                appState.setArchiveBrowseViewMode(.contactSheet)
+            }
+            .keyboardShortcut("2", modifiers: [.command])
+            .disabled(appState.workspaceMode != .archiveView)
+
+            Button("Search the Archive") {
+                appState.requestArchiveSearchFocus()
+            }
+            .keyboardShortcut("f", modifiers: [.command, .shift])
+            .disabled(appState.workspaceMode != .archiveView)
+
+            Button("Open Selected Archive Entry") {
+                appState.openSelectedArchiveItem()
+            }
+            .keyboardShortcut(.return, modifiers: [])
+            .disabled(appState.workspaceMode != .archiveView || !appState.canOpenSelectedArchiveItem)
+
+            Button("Organise Selected Folder as a Trip…") {
+                appState.organiseSelectedUnorganisedFolder()
+            }
+            .disabled(appState.workspaceMode != .archiveView || !appState.canOrganiseSelectedUnorganisedFolder)
+
+            Divider()
+
+            Button(appState.settings.showArchivePreviews ? "Hide Archive Photo Previews" : "Show Archive Photo Previews") {
+                appState.setShowArchivePreviews(!appState.settings.showArchivePreviews)
+            }
+            .disabled(appState.workspaceMode != .archiveView)
+
+            Button("Refresh Archive Catalogue") {
+                appState.reloadArchiveCatalogue()
+            }
+            .disabled(appState.workspaceMode != .archiveView)
+
+            Button("Cancel Archive Thumbnail Backfill") {
+                appState.cancelArchiveIndexThumbnailBackfill()
+            }
+            .disabled(!appState.archiveBackfillIsRunning)
+        }
+
         CommandMenu("Triage") {
             Button("Focus Sidebar Navigation") {
                 appState.focusSidebarNavigation()
             }
-            .keyboardShortcut("1", modifiers: [.command])
+            .keyboardShortcut("1", modifiers: [.command, .control])
 
             Button("Focus Review Grid") {
                 appState.focusReviewSurface()
             }
-            .keyboardShortcut("2", modifiers: [.command])
+            .keyboardShortcut("2", modifiers: [.command, .control])
             .disabled(!appState.canFocusReviewSurface)
 
             Button(appState.isDetailsInspectorVisible ? "Hide Inspector" : "Show Inspector") {

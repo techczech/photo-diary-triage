@@ -68,28 +68,47 @@ struct BrowserOrReviewPaneView: View {
     @ObservedObject var state: ReviewState
     @ObservedObject var navigationState: ReviewNavigationState
     @ObservedObject var sidebarState: SidebarState
+    @ObservedObject var archiveState: ArchiveBrowserState
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HeaderPaneView(appState: appState)
-
-            Group {
-                if appState.workspaceMode == .photoLogs {
+        Group {
+            if appState.workspaceMode == .archiveView {
+                switch archiveState.snapshot.level {
+                case .archive:
+                    ArchiveMainPaneView(appState: appState, state: archiveState)
+                case .trip:
+                    ArchiveTripPaneView(appState: appState, state: archiveState)
+                case .photos:
+                    VStack(alignment: .leading, spacing: 10) {
+                        HeaderPaneView(appState: appState)
+                        if state.snapshot.contextMediaItemCount > 0 {
+                            DayContextPaneView(appState: appState, state: state, navigationState: navigationState)
+                        } else {
+                            ProgressView("Loading Archive photos…")
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
+                    }
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    HeaderPaneView(appState: appState)
+                    if appState.workspaceMode == .photoLogs {
                     PhotoLogLibraryMainPane(appState: appState, state: sidebarState)
-                } else if state.snapshot.contextMediaItemCount > 0 {
-                    DayContextPaneView(appState: appState, state: state, navigationState: navigationState)
-                } else if !state.snapshot.detailFolderNodes.isEmpty {
-                    FolderBrowserPaneView(appState: appState, state: state)
-                } else {
-                    ContentUnavailableView(
-                        emptyTitle,
-                        systemImage: appState.workspaceMode.systemImage,
-                        description: Text(emptyDescription)
-                    )
+                    } else if state.snapshot.contextMediaItemCount > 0 {
+                        DayContextPaneView(appState: appState, state: state, navigationState: navigationState)
+                    } else if !state.snapshot.detailFolderNodes.isEmpty {
+                        FolderBrowserPaneView(appState: appState, state: state)
+                    } else {
+                        ContentUnavailableView(
+                            emptyTitle,
+                            systemImage: appState.workspaceMode.systemImage,
+                            description: Text(emptyDescription)
+                        )
+                    }
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var emptyTitle: String {

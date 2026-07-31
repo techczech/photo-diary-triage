@@ -34,6 +34,11 @@ final class PreviewStore: PreviewCaching {
             return true
         }
 
+        guard !ArchiveByteReadPolicyContext.shared.isArchiveFile(item.sourceURL) else {
+            logger.error("Skipped implicit archive thumbnail read for \(item.sourceURL.path, privacy: .public); rebuild the Archive Index thumbnails explicitly")
+            return false
+        }
+
         guard ArchiveByteReadPolicyContext.shared.canReadBytes(at: item.sourceURL) else {
             logger.error("Blocked implicit archive byte read for \(item.sourceURL.path, privacy: .public)")
             return false

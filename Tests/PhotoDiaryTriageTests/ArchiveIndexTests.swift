@@ -95,6 +95,26 @@ import Testing
     #expect(trip.title == "May")
 }
 
+@Test func archiveIndexRebuildDoesNotInventTripsFromYearFolderDepth() throws {
+    let root = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let archiveRoot = root.appendingPathComponent("archive", isDirectory: true)
+    try writeTestFile(
+        archiveRoot.appendingPathComponent("2013/05-May/01-Tue-Czech/IMG_0001.jpg"),
+        contents: "historical"
+    )
+
+    let result = try ArchiveIndexStore().rebuildIndex(archiveRoot: archiveRoot)
+
+    #expect(result.entryCount == 0)
+    #expect(result.years.isEmpty)
+    #expect(FileManager.default.fileExists(
+        atPath: ArchiveIndexStore.indexRoot(for: archiveRoot)
+            .appendingPathComponent("index-2013.jsonl")
+            .path
+    ) == false)
+}
+
 @Test func archiveByteReadPolicyTreatsSparseArchiveFileAsOnlineOnlyInTravelMode() throws {
     let root = try makeTemporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -196,6 +216,44 @@ import Testing
     try await queue.replaceWalkFolders([walk], archiveRoot: archiveRoot, policy: policy)
 
     #expect(FileManager.default.fileExists(atPath: ArchiveIndexStore.indexRoot(for: archiveRoot).path) == false)
+}
+
+@Test func archiveThumbnailBackfillStopsBeforeLowSpaceFloorWithoutReadingPhotoBytes() async throws {
+    let root = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let archiveRoot = root.appendingPathComponent("archive", isDirectory: true)
+    let photo = archiveRoot.appendingPathComponent("2013/Irregular Folder/photo.jpg")
+    try writeTestFile(photo, contents: "not-read")
+    var evictionCalls = 0
+    let store = ArchiveIndexStore(
+        backfillSafety: ArchiveThumbnailBackfillSafety(minimumFreeBytes: 100),
+        availableCapacityProvider: { _ in 99 },
+        evictor: { _ in evictionCalls += 1 }
+    )
+
+    let result = await store.backfillThumbnails(
+        archiveRoot: archiveRoot,
+        supportedExtensions: ["jpg"],
+        throttleNanoseconds: 0
+    )
+
+    #expect(result.scannedPhotos == 1)
+    #expect(result.generatedThumbnails == 0)
+    #expect(result.stoppedForLowSpace)
+    #expect(result.cancelled == false)
+    #expect(evictionCalls == 0)
+    #expect(FileManager.default.fileExists(atPath: ArchiveIndexStore.thumbnailURL(for: photo, archiveRoot: archiveRoot).path) == false)
+}
+
+@Test func archiveThumbnailBackfillSafetyEvictsOnlyNewlyHydratedOriginals() {
+    let safety = ArchiveThumbnailBackfillSafety(minimumFreeBytes: 15)
+
+    #expect(safety.hasSafeCapacity(15))
+    #expect(safety.hasSafeCapacity(14) == false)
+    #expect(safety.hasSafeCapacity(nil) == false)
+    #expect(safety.shouldEvict(wasOnlineOnly: true, generatedThumbnail: true))
+    #expect(safety.shouldEvict(wasOnlineOnly: false, generatedThumbnail: true) == false)
+    #expect(safety.shouldEvict(wasOnlineOnly: true, generatedThumbnail: false) == false)
 }
 
 private func readIndexEntries(archiveRoot: URL, year: String) throws -> [ArchiveIndexEntry] {

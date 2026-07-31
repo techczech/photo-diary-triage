@@ -113,7 +113,7 @@ import Testing
     #expect(!state.canMutateImportSelection)
 }
 
-@Test func archiveBrowserTreeIsReusedUntilInvalidated() throws {
+@Test func archiveBrowserRootDoesNotInferYearMonthOrWalkNodesFromFolderDepth() throws {
     let root = try makeTemporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
 
@@ -152,9 +152,10 @@ import Testing
         workspaceMode: .archiveView
     )
 
-    #expect(archiveWalkCount(in: firstRoots) == 1)
-    #expect(archiveWalkCount(in: cachedRoots) == 1)
-    #expect(archiveWalkCount(in: refreshedRoots) == 2)
+    #expect(firstRoots == cachedRoots)
+    #expect(firstRoots == refreshedRoots)
+    #expect(firstRoots.first?.children?.first?.kind == .archiveRoot)
+    #expect(firstRoots.first?.children?.first?.children == nil)
 }
 
 @Test func archiveMediaLoadUsesFastFileAttributeScan() throws {
@@ -256,12 +257,6 @@ import Testing
     #expect(resolved.collisions.map(\.relativePath) == ["0.jpg"])
     #expect(resolved.collisions.first?.owningTitle == "Existing Same Source")
     #expect(resolved.disabledReason == "Some photos in this plan already belong to another photo log.")
-}
-
-private func archiveWalkCount(in nodes: [BrowserNode]) -> Int {
-    nodes.reduce(0) { count, node in
-        count + (node.kind == .archiveWalkFolder ? 1 : 0) + archiveWalkCount(in: node.children ?? [])
-    }
 }
 
 @Test func copyReadinessGuidesPhotoLogContinuationWhenNoIncludedFilesExist() {

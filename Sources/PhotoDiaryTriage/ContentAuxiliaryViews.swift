@@ -73,6 +73,14 @@ struct KeyboardHelpSheet: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
+                    shortcutSection("Archive", rows: [
+                        ("Cmd-1 / Cmd-2", "Show Timeline or Contact Sheet without changing the selected Archive entry."),
+                        ("Cmd-Shift-F", "Focus Archive search."),
+                        ("Arrow Keys", "Move through Timeline, Contact Sheet, or a Trip’s Walk cards."),
+                        ("Return", "Open the selected Trip, Walk, or Unorganised Folder."),
+                        ("Escape", "Return from photos to the Trip, or from a Trip to the Archive.")
+                    ])
+
                     shortcutSection("Review Selection", rows: [
                         ("Arrow Keys", "Move grid focus; hold Shift to extend selection."),
                         ("Space", "Toggle the focused photo selection."),
@@ -109,7 +117,7 @@ struct KeyboardHelpSheet: View {
 
                     shortcutSection("Focus And Global Commands", rows: [
                         ("Cmd-O", "Choose a source folder."),
-                        ("Cmd-1 / Cmd-2", "Focus sidebar navigation or jump into the review grid."),
+                        ("Cmd-Control-1 / Cmd-Control-2", "Focus sidebar navigation or jump into the review grid."),
                         ("Cmd-Return", "Open the current item, jump from sidebar into review, or drill into the focused grouped section."),
                         ("Cmd-Option-I", "Toggle the right-side inspector."),
                         ("Cmd-Option-S", "Toggle the left sidebar."),

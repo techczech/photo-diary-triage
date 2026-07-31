@@ -4,6 +4,7 @@ import SwiftUI
 struct ContentView: View {
     let appState: AppState
     @ObservedObject private var sidebarState: SidebarState
+    @ObservedObject private var archiveBrowserState: ArchiveBrowserState
     @ObservedObject private var reviewState: ReviewState
     @ObservedObject private var reviewNavigationState: ReviewNavigationState
     @ObservedObject private var inspectorState: InspectorState
@@ -13,12 +14,14 @@ struct ContentView: View {
     @State private var walkTitle: String = ""
     @State private var walkLocation: String = ""
     @State private var walkNotes: String = ""
+    @FocusState private var archiveSearchFocused: Bool
 
     private let appRelease = AppRelease.current
 
     init(appState: AppState) {
         self.appState = appState
         _sidebarState = ObservedObject(wrappedValue: appState.sidebarState)
+        _archiveBrowserState = ObservedObject(wrappedValue: appState.archiveBrowserState)
         _reviewState = ObservedObject(wrappedValue: appState.reviewState)
         _reviewNavigationState = ObservedObject(wrappedValue: appState.reviewNavigationState)
         _inspectorState = ObservedObject(wrappedValue: appState.inspectorState)
@@ -31,6 +34,7 @@ struct ContentView: View {
             SidebarPaneView(
                 appState: appState,
                 state: sidebarState,
+                archiveState: archiveBrowserState,
                 appRelease: appRelease
             )
             .navigationSplitViewColumnWidth(min: 220, ideal: 280, max: 340)
@@ -75,7 +79,8 @@ struct ContentView: View {
             appState: appState,
             state: reviewState,
             navigationState: reviewNavigationState,
-            sidebarState: sidebarState
+            sidebarState: sidebarState,
+            archiveState: archiveBrowserState
         )
         .frame(minWidth: 560, maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
@@ -140,11 +145,16 @@ struct ContentView: View {
             hydrateForm()
         }
         .onExitCommand {
-            if reviewNavigationState.snapshot.reviewGridHasFocus {
+            if appState.workspaceMode == .archiveView {
+                appState.navigateToParent()
+            } else if reviewNavigationState.snapshot.reviewGridHasFocus {
                 appState.deactivateReviewGridFocus()
             } else {
                 appState.navigateToParent()
             }
+        }
+        .onChange(of: archiveBrowserState.snapshot.searchFocusRevision) { _, _ in
+            archiveSearchFocused = true
         }
     }
 
@@ -193,6 +203,19 @@ struct ContentView: View {
                 Label("Settings", systemImage: "gearshape")
             }
             .help("Open settings")
+        }
+
+        if appState.workspaceMode == .archiveView {
+            ToolbarItem {
+                TextField("Search Archive", text: Binding(
+                    get: { archiveBrowserState.snapshot.searchQuery },
+                    set: { appState.updateArchiveSearch($0) }
+                ))
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 260)
+                .focused($archiveSearchFocused)
+                .help("Search filenames, descriptions, titles, notes, locations, and cameras")
+            }
         }
 
         ToolbarItemGroup {

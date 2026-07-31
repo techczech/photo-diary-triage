@@ -313,10 +313,9 @@ final class BrowserViewModel {
     }
 
     private func buildArchiveSection(rootURL: URL) -> BrowserNode {
-        let children = buildArchiveYearNodes(rootURL: rootURL)
         return BrowserNode(
             id: "section-archive-library",
-            title: "Archive Library",
+            title: "Archive",
             subtitle: rootURL.path,
             kind: .archiveSection,
             parentID: nil,
@@ -329,7 +328,7 @@ final class BrowserViewModel {
                     kind: .archiveRoot,
                     parentID: "section-archive-library",
                     mediaItemIDs: [],
-                    children: children,
+                    children: nil,
                     folderURL: rootURL
                 )
             ],
