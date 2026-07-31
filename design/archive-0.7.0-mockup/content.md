@@ -1,11 +1,12 @@
 # Walkfolio Archive mockup content
 
-All visible Trip names and cover photographs are drawn from Dominik's local photo Archive.
-Counts are representative mock data for evaluating layout density.
+All visible names and cover photographs are drawn from Dominik's local photo Archive. Counts
+and folder paths are representative mock data for evaluating layout density and interaction.
 
-The sidebar uses "All Trips" for the complete Archive and "Filter by year" for year
-choices. Selecting a year keeps the same Timeline or Contact Sheet and shows only that
-year. All Trips groups the chosen view into year bands.
+The complete view is "Archive" because it contains both recognised Trips and unorganised
+folders. The sidebar can filter these entry types and filter by year. Selecting a year keeps
+the same Timeline or Contact Sheet and shows only that year.
 
 The principal interface nouns follow `CONTEXT.md`: Archive, Trip, Walk, Triage, Photo Log,
-and Archive Index.
+and Archive Index. "Unorganised folder" describes a physical folder which has not yet been
+made into a Trip or Walk; it does not add a new diary entity.

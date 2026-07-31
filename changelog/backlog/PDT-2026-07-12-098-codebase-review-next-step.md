@@ -2,7 +2,7 @@
 
 item_id: PDT-2026-07-12-098
 title: Codebase review and next-step recommendation
-status: revised_mockup_waiting_on_user
+status: mixed_archive_mockup_waiting_on_user
 target_release_version: 0.7.0
 target_feature_slug: timeline-and-search
 
@@ -123,3 +123,43 @@ Revision completed:
 
 Status: revised mockup ready; waiting for user review. Production implementation remains
 unauthorised until the user locks this design.
+
+## Mixed historical folders revision
+
+User feedback: the physical Archive is not uniformly organised as year, month, and Walk.
+Month folders became consistent only around 2016, while earlier years contain varied
+subfolder structures. The complete Archive view must therefore work before every folder has
+been organised as a Trip or Walk.
+
+Revision intent:
+
+- Rename the complete view from `All Trips` to `Archive`, because it contains both recognised
+  Trips and folders that have not yet been organised.
+- Treat years as filters over the same Timeline or Contact Sheet.
+- Recognise Trips and Walks from manifests rather than inferring them from folder depth.
+- Present unrecognised folders as `Unorganised folders` with their own cover, date, path, and
+  photo count.
+- Open an unorganised folder directly into its photo grid without moving, renaming, or
+  rewriting anything.
+- Offer explicit organisation as a later action; never use 2016 as a hard-coded parser
+  boundary.
+- Keep production implementation unauthorised until the mixed Archive design has been
+  reviewed and locked.
+
+Revision completed:
+
+- The complete destination is now `Archive`; `All Trips` no longer stands for the mixed
+  collection.
+- The sidebar filters the same view by entry type and by year.
+- Ten recognised Trips and nine representative unorganised folders appear together across
+  five years.
+- The 2013 year filter shows the same Timeline or Contact Sheet with nine unorganised
+  folders and no invented month or Trip layer.
+- An unorganised folder opens a folder summary with `Open Photos` and a separate
+  `Organise as a Trip…` action.
+- All covers remain photographs from the user's local Archive.
+- The production build, Sites packaging tests, interaction checks, responsive check, and
+  clean browser reload passed.
+
+Status: mixed Archive mockup ready; waiting for user review. Production implementation
+remains unauthorised until the user locks this design.

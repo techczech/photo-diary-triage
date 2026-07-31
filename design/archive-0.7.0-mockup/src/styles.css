@@ -186,6 +186,7 @@ kbd {
 }
 
 .sidebar-trip,
+.kind-list button,
 .year-list button {
   width: 100%;
   border: 0;
@@ -205,6 +206,7 @@ kbd {
 }
 
 .sidebar-trip.selected,
+.kind-list button.selected,
 .year-list button.selected {
   background: #dedee1;
   font-weight: 600;
@@ -219,8 +221,27 @@ kbd {
   text-transform: uppercase;
 }
 
+.kind-list {
+  display: grid;
+  gap: 2px;
+}
+
+.kind-list button {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  min-height: 31px;
+  padding: 0 10px;
+  border-radius: 6px;
+  color: #4f5054;
+  font-size: 12.5px;
+}
+
+.kind-list button:hover { background: #e7e7e9; }
+
 .year-list {
-  max-height: calc(100vh - 230px);
+  max-height: calc(100vh - 330px);
   overflow-y: auto;
 }
 
@@ -254,7 +275,7 @@ kbd {
 }
 
 .sidebar-footer div { display: grid; gap: 2px; }
-.sidebar-footer span { color: #7d7e82; }
+.sidebar-footer span { color: #7d7e82; line-height: 1.25; }
 
 .content {
   display: grid;
@@ -408,7 +429,7 @@ kbd {
 .trip-copy {
   display: grid;
   align-content: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
 }
 
@@ -428,6 +449,32 @@ kbd {
   min-width: 0;
   color: #6d6e72;
   font-size: 12.5px;
+}
+
+.entry-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: max-content;
+  min-height: 20px;
+  padding: 2px 7px;
+  border: 1px solid #d5d6d9;
+  border-radius: 999px;
+  background: #f3f3f4;
+  color: #5e5f63;
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.entry-badge.folder {
+  border-color: #d8c49c;
+  background: #f7f1e7;
+  color: #705c35;
+}
+
+.timeline-row.folder:not(.selected) {
+  border-left-color: #d8bd87;
 }
 
 .trip-counts {
@@ -471,6 +518,8 @@ kbd {
   border-radius: 5px;
   background: #e2e3e5;
 }
+
+.trip-tile > .entry-badge { margin-top: 1px; }
 
 .tile-title {
   overflow: hidden;
@@ -614,8 +663,15 @@ kbd {
 .trip-modal { width: min(720px, 92vw); }
 .trip-modal > img { width: 100%; max-height: 390px; object-fit: cover; display: block; }
 .trip-modal-body { padding: 18px; }
+.trip-modal-body > .entry-badge { margin-bottom: 12px; }
 .trip-summary { display: flex; flex-wrap: wrap; gap: 12px 22px; }
 .trip-modal-body p { color: #616266; font-size: 13px; line-height: 1.5; }
+
+.modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 
 .palette-search {
   display: flex;
