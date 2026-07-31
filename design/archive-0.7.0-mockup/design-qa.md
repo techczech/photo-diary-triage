@@ -73,7 +73,7 @@
   selected view.
 - Choosing 2024 keeps Contact Sheet active and shows only the 2024 year band.
 - Switching to Timeline while 2024 is selected keeps the year filter.
-- Returning to All Trips keeps Timeline active and restores all five year bands.
+- Returning to All keeps Timeline active and restores all five year bands.
 - Search for “Prague” returns the single matching Trip and keeps the active view.
 - Arrow keys move selection and Return opens the selected Trip.
 - `⌘1` opens Timeline and `⌘⇧P` opens the command palette.
@@ -104,7 +104,10 @@
 **Implementation checklist**
 
 - Keep the high-fidelity prototype available for design review.
-- Lock the combined Timeline and Contact Sheet design before transferring it into the production SwiftUI app.
+- The combined Timeline, Contact Sheet, Trip, and Unorganised Folder design was locked by
+  Dominik on 2026-07-31.
+- Production SwiftUI work must cite the locked mockup and
+  `docs/adr/0003-archive-browse-includes-unorganised-folders.md`.
 
 **Follow-up polish**
 

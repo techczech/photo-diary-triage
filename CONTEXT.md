@@ -9,8 +9,9 @@ labels are user-configurable, but the model names below are canonical in code an
 ## Language
 
 **Archive**:
-The structured on-disk photo diary (year/trip/walk folders plus Markdown/JSONL manifests).
-The primary object the app manages — browsed, described, and extended over time.
+The on-disk photo diary: recognised Trips and Walks alongside older Unorganised Folders,
+with Markdown/JSONL manifests where material has been organised. The primary object the app
+manages — browsed, described, and extended over time.
 _Avoid_: library, catalog (the catalog is the in-app SQLite cache, never the source of truth)
 
 **Triage**:
@@ -26,10 +27,15 @@ _Avoid_: session, outing, shoot
 
 **Trip**:
 A named group of Walks the diary tells one story about — a holiday, a journey, or a month's
-ordinary outings. The unit the Archive is organised and browsed by, and a physical folder on
-disk. Every Walk belongs to exactly one Trip; a Walk never spans two. The plain month itself
-is the **default Trip** for Walks that belong to no named one.
+ordinary outings. The unit organised material is browsed by, and a physical folder on disk.
+Every Walk belongs to exactly one Trip; a Walk never spans two. The plain month itself is
+the **default Trip** for Walks that belong to no named one.
 _Avoid_: collection, holiday, event (kinds of Trip, not model terms)
+
+**Unorganised Folder**:
+An existing physical folder in the Archive whose contents have not yet been described as
+Trips and Walks. It remains directly browsable without being treated as either.
+_Avoid_: legacy Trip, unknown Trip, raw Trip
 
 **Source**:
 An external volume or folder (typically the camera SSD, or an old photo folder during
