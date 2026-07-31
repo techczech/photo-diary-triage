@@ -8,6 +8,7 @@ import {
   CircleHelp,
   Command,
   Footprints,
+  Folder,
   FolderOpen,
   Grid2X2,
   Image,
@@ -23,9 +24,10 @@ import {
   X,
 } from "lucide-react";
 
-const trips = [
+const archiveItems = [
   {
     id: "river-walk-2025",
+    kind: "trip",
     title: "River Walk",
     date: "3 July 2025",
     sortKey: "2025-07-03",
@@ -37,6 +39,7 @@ const trips = [
   },
   {
     id: "may-evening-2025",
+    kind: "trip",
     title: "May Evening",
     date: "29 May 2025",
     sortKey: "2025-05-29",
@@ -48,6 +51,7 @@ const trips = [
   },
   {
     id: "woodland-flight-2025",
+    kind: "trip",
     title: "Woodland Flight",
     date: "13 April 2025",
     sortKey: "2025-04-13",
@@ -59,6 +63,7 @@ const trips = [
   },
   {
     id: "heron-water-2025",
+    kind: "trip",
     title: "Heron Water",
     date: "24 March 2025",
     sortKey: "2025-03-24",
@@ -70,6 +75,7 @@ const trips = [
   },
   {
     id: "hill-walk-2024",
+    kind: "trip",
     title: "Hill Walk",
     date: "4 July 2024",
     sortKey: "2024-07-04",
@@ -81,6 +87,7 @@ const trips = [
   },
   {
     id: "misty-water-2024",
+    kind: "trip",
     title: "Misty Water",
     date: "31 October 2024",
     sortKey: "2024-10-31",
@@ -92,6 +99,7 @@ const trips = [
   },
   {
     id: "herons-in-the-trees-2024",
+    kind: "trip",
     title: "Herons in the Trees",
     date: "25 May 2024",
     sortKey: "2024-05-25",
@@ -103,6 +111,7 @@ const trips = [
   },
   {
     id: "march-fields-2024",
+    kind: "trip",
     title: "March Fields",
     date: "31 March 2024",
     sortKey: "2024-03-31",
@@ -114,6 +123,7 @@ const trips = [
   },
   {
     id: "winter-garden-2023",
+    kind: "trip",
     title: "Winter Garden",
     date: "4 December 2023",
     sortKey: "2023-12-04",
@@ -125,6 +135,7 @@ const trips = [
   },
   {
     id: "wales-coast-2022",
+    kind: "trip",
     title: "Wales Coast",
     date: "September 2022",
     sortKey: "2022-09-30",
@@ -136,120 +147,131 @@ const trips = [
   },
   {
     id: "thurne",
+    kind: "folder",
     title: "Thurne · 4 August",
     date: "4 August 2013",
     sortKey: "2013-08-04",
     location: "Thurne, Norfolk",
     year: 2013,
-    walks: 2,
     photos: 184,
+    path: "2013 / Thurne 4 August",
     image: "/archive-covers/thurne.jpg",
   },
   {
     id: "czech",
+    kind: "folder",
     title: "Czech Republic Visit",
     date: "29 August – 5 September 2013",
     sortKey: "2013-09-05",
     location: "Prague and North Bohemia",
     year: 2013,
-    walks: 9,
     photos: 612,
+    path: "2013 / Czech Republic Visit",
     image: "/archive-covers/prague.jpg",
   },
   {
     id: "norwich",
+    kind: "folder",
     title: "Norwich Morning Walk",
     date: "30 October 2013",
     sortKey: "2013-10-30",
     location: "Norwich, Norfolk",
     year: 2013,
-    walks: 1,
     photos: 126,
+    path: "2013 / Norwich Morning Walk",
     image: "/archive-covers/norwich.jpg",
   },
   {
     id: "st-bennets",
+    kind: "folder",
     title: "St Benet’s Abbey in Autumn",
     date: "19 October 2013",
     sortKey: "2013-10-19",
     location: "Ludham, Norfolk",
     year: 2013,
-    walks: 1,
     photos: 94,
+    path: "2013 / St Benet’s Abbey in Autumn",
     image: "/archive-covers/st-bennets.jpg",
   },
   {
     id: "womack",
+    kind: "folder",
     title: "Womack Water",
     date: "10 November 2013",
     sortKey: "2013-11-10",
     location: "Ludham, Norfolk",
     year: 2013,
-    walks: 1,
     photos: 138,
+    path: "2013 / Womack Water",
     image: "/archive-covers/womack.jpg",
   },
   {
     id: "broads",
+    kind: "folder",
     title: "Broads Trip",
     date: "5–9 July 2013",
     sortKey: "2013-07-09",
     location: "Norfolk Broads",
     year: 2013,
-    walks: 6,
     photos: 487,
+    path: "2013 / Broads Trip",
     image: "/archive-covers/broads.jpg",
   },
   {
     id: "horsey",
+    kind: "folder",
     title: "Horsey Trip with Seals",
     date: "14 April 2013",
     sortKey: "2013-04-14",
     location: "Horsey, Norfolk",
     year: 2013,
-    walks: 2,
     photos: 203,
+    path: "2013 / Horsey Trip with Seals",
     image: "/archive-covers/horsey.jpg",
   },
   {
     id: "whitlingham",
+    kind: "folder",
     title: "Whitlingham Broad · Indian Summer",
     date: "24 October 2013",
     sortKey: "2013-10-24",
     location: "Whitlingham, Norfolk",
     year: 2013,
-    walks: 1,
     photos: 116,
+    path: "2013 / Whitlingham Broad – Indian Summer",
     image: "/archive-covers/whitlingham.jpg",
   },
   {
     id: "ranworth",
+    kind: "folder",
     title: "Cockshoot and Ranworth",
     date: "29 April 2013",
     sortKey: "2013-04-29",
     location: "Ranworth, Norfolk",
     year: 2013,
-    walks: 2,
     photos: 172,
+    path: "2013 / Cockshoot and Ranworth",
     image: "/archive-covers/ranworth.jpg",
   },
 ];
 
-const yearRows = [
-  [2025, 4],
-  [2024, 4],
-  [2023, 1],
-  [2022, 1],
-  [2013, 9],
-];
+const tripCount = archiveItems.filter((item) => item.kind === "trip").length;
+const folderCount = archiveItems.filter((item) => item.kind === "folder").length;
+const walkCount = archiveItems.reduce(
+  (total, item) => total + (item.kind === "trip" ? item.walks || 0 : 0),
+  0,
+);
+const yearRows = [...new Set(archiveItems.map((item) => item.year))]
+  .sort((a, b) => b - a)
+  .map((year) => [year, archiveItems.filter((item) => item.year === year).length]);
 
 const commands = [
   ["Search the Archive", "⌘⇧F"],
   ["Show Timeline", "⌘1"],
   ["Show Contact Sheet", "⌘2"],
-  ["Open selected Trip", "↩"],
-  ["Selected Trip actions", "⌘K"],
-  ["Show Trip inspector", "⌘P"],
+  ["Open selected item", "↩"],
+  ["Selected item actions", "⌘K"],
+  ["Show item inspector", "⌘P"],
   ["Navigation switcher", "⌘⇧K"],
   ["Settings", "⌘,"],
   ["Shortcut guide", "⌘/"],
@@ -260,6 +282,16 @@ function Meta({ icon: Icon, children }) {
     <span className="meta">
       <Icon aria-hidden="true" size={15} strokeWidth={1.8} />
       {children}
+    </span>
+  );
+}
+
+function EntryBadge({ kind }) {
+  const isFolder = kind === "folder";
+  return (
+    <span className={`entry-badge ${kind}`}>
+      {isFolder ? <Folder size={12} aria-hidden="true" /> : <Footprints size={12} aria-hidden="true" />}
+      {isFolder ? "Unorganised folder" : "Trip"}
     </span>
   );
 }
@@ -288,10 +320,11 @@ function Modal({ title, onClose, children, className = "" }) {
 
 export function App() {
   const [view, setView] = useState(() => localStorage.getItem("walkfolio-archive-view") || "timeline");
-  const [selectedId, setSelectedId] = useState("thurne");
+  const [selectedId, setSelectedId] = useState("river-walk-2025");
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState("date");
   const [selectedYear, setSelectedYear] = useState("all");
+  const [selectedKind, setSelectedKind] = useState("all");
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [openSurface, setOpenSurface] = useState(null);
   const [toast, setToast] = useState("");
@@ -300,39 +333,46 @@ export function App() {
 
   const filtered = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
-    const result = trips.filter((trip) => {
-      const inYear = selectedYear === "all" || trip.year === selectedYear;
+    const result = archiveItems.filter((item) => {
+      const inYear = selectedYear === "all" || item.year === selectedYear;
+      const isSelectedKind = selectedKind === "all" || item.kind === selectedKind;
       const matches =
         !normalized ||
-        [trip.title, trip.date, trip.location, String(trip.year)]
+        [item.title, item.date, item.location, item.path, item.kind, String(item.year)]
           .join(" ")
           .toLocaleLowerCase()
           .includes(normalized);
-      return inYear && matches;
+      return inYear && isSelectedKind && matches;
     });
     return result.toSorted((a, b) =>
       sort === "title" ? a.title.localeCompare(b.title) : b.sortKey.localeCompare(a.sortKey),
     );
-  }, [query, selectedYear, sort]);
+  }, [query, selectedKind, selectedYear, sort]);
 
-  const selectedTrip = trips.find((trip) => trip.id === selectedId) || trips[0];
-  const groupedTrips = useMemo(
+  const selectedItem = archiveItems.find((item) => item.id === selectedId) || archiveItems[0];
+  const groupedItems = useMemo(
     () =>
-      [...new Set(filtered.map((trip) => trip.year))]
+      [...new Set(filtered.map((item) => item.year))]
         .sort((a, b) => b - a)
         .map((year) => ({
           year,
-          trips: filtered.filter((trip) => trip.year === year),
+          items: filtered.filter((item) => item.year === year),
         })),
     [filtered],
   );
+  const filteredTrips = filtered.filter((item) => item.kind === "trip").length;
+  const filteredFolders = filtered.filter((item) => item.kind === "folder").length;
+  const visibleSummary = [
+    `${filteredTrips} ${filteredTrips === 1 ? "Trip" : "Trips"}`,
+    `${filteredFolders} unorganised ${filteredFolders === 1 ? "folder" : "folders"}`,
+  ].join(" · ");
 
   useEffect(() => {
     localStorage.setItem("walkfolio-archive-view", view);
   }, [view]);
 
   useEffect(() => {
-    if (filtered.length && !filtered.some((trip) => trip.id === selectedId)) {
+    if (filtered.length && !filtered.some((item) => item.id === selectedId)) {
       setSelectedId(filtered[0].id);
     }
   }, [filtered, selectedId]);
@@ -393,7 +433,7 @@ export function App() {
       }
       if (isTyping || openSurface || !filtered.length) return;
 
-      const current = Math.max(0, filtered.findIndex((trip) => trip.id === selectedId));
+      const current = Math.max(0, filtered.findIndex((item) => item.id === selectedId));
       let next = current;
       if (view === "timeline") {
         if (event.key === "ArrowDown") next = Math.min(filtered.length - 1, current + 1);
@@ -410,14 +450,14 @@ export function App() {
         event.preventDefault();
         setSelectedId(filtered[next].id);
         requestAnimationFrame(() => {
-          document.querySelector(`[data-trip="${filtered[next].id}"]`)?.scrollIntoView({
+          document.querySelector(`[data-entry="${filtered[next].id}"]`)?.scrollIntoView({
             block: "nearest",
           });
         });
       }
       if (event.key === "Enter") {
         event.preventDefault();
-        setOpenSurface("trip");
+        setOpenSurface("item");
       }
     };
     window.addEventListener("keydown", handleKey);
@@ -451,7 +491,10 @@ export function App() {
           <button onClick={() => showToast("Triage remains unchanged in this mockup.")}>Triage</button>
           <button onClick={() => showToast("Photo Logs remain unchanged in this mockup.")}>Photo Logs</button>
         </nav>
-        <button className="toolbar-button finder-button" onClick={() => showToast("Would open the selected Trip in Finder.")}>
+        <button
+          className="toolbar-button finder-button"
+          onClick={() => showToast(`Would reveal “${selectedItem.title}” in Finder.`)}
+        >
           <FolderOpen size={16} />
           <span>Open in Finder</span>
         </button>
@@ -461,8 +504,8 @@ export function App() {
             ref={searchRef}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search photos, Walks and Trips"
-            aria-label="Search photos, Walks and Trips"
+            placeholder="Search photos, Trips and folders"
+            aria-label="Search photos, Trips and folders"
           />
           {query && (
             <button onClick={() => setQuery("")} aria-label="Clear search">
@@ -491,13 +534,34 @@ export function App() {
           <span>Archive</span>
         </div>
         <button
-          className={`sidebar-trip ${selectedYear === "all" ? "selected" : ""}`}
-          onClick={() => setSelectedYear("all")}
+          className={`sidebar-trip ${selectedYear === "all" && selectedKind === "all" ? "selected" : ""}`}
+          onClick={() => { setSelectedYear("all"); setSelectedKind("all"); }}
         >
           <Image size={17} />
-          <span>All Trips</span>
-          <span className="count">19</span>
+          <span>All</span>
+          <span className="count">{archiveItems.length}</span>
         </button>
+        <p className="sidebar-label">Contents</p>
+        <div className="kind-list">
+          <button
+            className={selectedKind === "trip" ? "selected" : ""}
+            onClick={() => setSelectedKind(selectedKind === "trip" ? "all" : "trip")}
+            aria-pressed={selectedKind === "trip"}
+          >
+            <Footprints size={14} />
+            <span>Trips</span>
+            <span className="count">{tripCount}</span>
+          </button>
+          <button
+            className={selectedKind === "folder" ? "selected" : ""}
+            onClick={() => setSelectedKind(selectedKind === "folder" ? "all" : "folder")}
+            aria-pressed={selectedKind === "folder"}
+          >
+            <Folder size={14} />
+            <span>Unorganised folders</span>
+            <span className="count">{folderCount}</span>
+          </button>
+        </div>
         <p className="sidebar-label">Filter by year</p>
         <div className="year-list">
           {yearRows.map(([year, count]) => (
@@ -505,7 +569,7 @@ export function App() {
               key={year}
               className={selectedYear === year ? "selected" : ""}
               onClick={() => setSelectedYear(year)}
-              aria-label={`Filter Trips by ${year}`}
+              aria-label={`Filter Archive by ${year}`}
             >
               <span>{year}</span>
               <span className="count">{count}</span>
@@ -515,8 +579,8 @@ export function App() {
         <div className="sidebar-footer">
           <Archive size={17} />
           <div>
-            <strong>Archive Index</strong>
-            <span>19 Trips · 39 Walks</span>
+            <strong>Archive contents</strong>
+            <span>{tripCount} Trips · {folderCount} folders · {walkCount} Walks</span>
           </div>
           <ChevronRight size={14} />
         </div>
@@ -528,18 +592,14 @@ export function App() {
             <div className="eyebrow">
               <Archive size={15} />
               Archive
+              {selectedYear !== "all" && <span>{selectedYear}</span>}
               {query && <span>Search results</span>}
             </div>
-            <h1>
-              {query
-                ? `Results for “${query}”`
-                : selectedYear === "all"
-                  ? "All Trips"
-                  : `Trips in ${selectedYear}`}
-            </h1>
+            <h1>{query ? `Results for “${query}”` : "Archive"}</h1>
             <p>
-              {filtered.length} {filtered.length === 1 ? "Trip" : "Trips"}
-              {!query && selectedYear === "all" && ` across ${groupedTrips.length} years`}
+              {visibleSummary}
+              {!query && selectedYear === "all" &&
+                ` across ${groupedItems.length} ${groupedItems.length === 1 ? "year" : "years"}`}
               {!query && selectedYear !== "all" && " in this year"}
             </p>
           </div>
@@ -578,39 +638,46 @@ export function App() {
           ref={contentRef}
           className={`archive-content ${view}`}
           tabIndex={0}
-          aria-label={`${view === "timeline" ? "Timeline" : "Contact Sheet"} of Trips`}
+          aria-label={`${view === "timeline" ? "Timeline" : "Contact Sheet"} of Archive entries`}
         >
           {!filtered.length ? (
             <div className="empty-state">
               <Search size={34} />
-              <h2>No Trips match this search</h2>
-              <p>Try a place, date, Trip title, or clear the current filters.</p>
-              <button className="primary-button" onClick={() => { setQuery(""); setSelectedYear("all"); }}>
+              <h2>No Archive items match</h2>
+              <p>Try a place, date, Trip, folder name, or clear the current filters.</p>
+              <button className="primary-button" onClick={() => { setQuery(""); setSelectedYear("all"); setSelectedKind("all"); }}>
                 Clear search and filters
               </button>
             </div>
           ) : view === "timeline" ? (
             <div className="timeline-list">
-              {groupedTrips.map((group) => (
+              {groupedItems.map((group) => (
                 <section className="year-group" key={group.year}>
                   <h2 className="year-heading">{group.year}</h2>
-                  {group.trips.map((trip) => (
+                  {group.items.map((item) => (
                     <button
-                      key={trip.id}
-                      data-trip={trip.id}
-                      className={`timeline-row ${selectedId === trip.id ? "selected" : ""}`}
-                      onClick={() => setSelectedId(trip.id)}
-                      onDoubleClick={() => setOpenSurface("trip")}
+                      key={item.id}
+                      data-entry={item.id}
+                      className={`timeline-row ${item.kind} ${selectedId === item.id ? "selected" : ""}`}
+                      onClick={() => setSelectedId(item.id)}
+                      onDoubleClick={() => setOpenSurface("item")}
                     >
-                      <img src={trip.image} alt="" />
+                      <img src={item.image} alt="" />
                       <div className="trip-copy">
-                        <strong>{trip.title}</strong>
-                        <Meta icon={CalendarDays}>{trip.date}</Meta>
-                        <Meta icon={MapPin}>{trip.location}</Meta>
+                        <EntryBadge kind={item.kind} />
+                        <strong>{item.title}</strong>
+                        <Meta icon={CalendarDays}>{item.date}</Meta>
+                        <Meta icon={item.kind === "trip" ? MapPin : FolderOpen}>
+                          {item.kind === "trip" ? item.location : item.path}
+                        </Meta>
                       </div>
                       <div className="trip-counts">
-                        <Meta icon={Footprints}>{trip.walks} {trip.walks === 1 ? "Walk" : "Walks"}</Meta>
-                        <Meta icon={Image}>{trip.photos} photos</Meta>
+                        {item.kind === "trip" ? (
+                          <Meta icon={Footprints}>{item.walks} {item.walks === 1 ? "Walk" : "Walks"}</Meta>
+                        ) : (
+                          <Meta icon={Folder}>Folder</Meta>
+                        )}
+                        <Meta icon={Image}>{item.photos} photos</Meta>
                       </div>
                       <ChevronRight size={17} className="disclosure" />
                     </button>
@@ -620,22 +687,27 @@ export function App() {
             </div>
           ) : (
             <div className="contact-sheet">
-              {groupedTrips.map((group) => (
+              {groupedItems.map((group) => (
                 <section className="year-group" key={group.year}>
                   <h2 className="year-heading">{group.year}</h2>
                   <div className="tile-grid">
-                    {group.trips.map((trip) => (
+                    {group.items.map((item) => (
                       <button
-                        key={trip.id}
-                        data-trip={trip.id}
-                        className={`trip-tile ${selectedId === trip.id ? "selected" : ""}`}
-                        onClick={() => setSelectedId(trip.id)}
-                        onDoubleClick={() => setOpenSurface("trip")}
+                        key={item.id}
+                        data-entry={item.id}
+                        className={`trip-tile ${item.kind} ${selectedId === item.id ? "selected" : ""}`}
+                        onClick={() => setSelectedId(item.id)}
+                        onDoubleClick={() => setOpenSurface("item")}
                       >
-                        <img src={trip.image} alt="" />
-                        <span className="tile-title">{trip.title}</span>
-                        <span className="tile-date">{trip.date}</span>
-                        <span className="tile-counts">{trip.walks} {trip.walks === 1 ? "Walk" : "Walks"} · {trip.photos} photos</span>
+                        <img src={item.image} alt="" />
+                        <EntryBadge kind={item.kind} />
+                        <span className="tile-title">{item.title}</span>
+                        <span className="tile-date">{item.date}</span>
+                        <span className="tile-counts">
+                          {item.kind === "trip"
+                            ? `${item.walks} ${item.walks === 1 ? "Walk" : "Walks"} · ${item.photos} photos`
+                            : `${item.photos} photos · Opens as a folder`}
+                        </span>
                       </button>
                     ))}
                   </div>
@@ -646,11 +718,8 @@ export function App() {
         </div>
 
         <footer className="statusbar">
-          <span><Check size={13} /> Archive Index ready</span>
-          <span>
-            {view === "timeline" ? "Timeline" : "Contact Sheet"} · {filtered.length}{" "}
-            {filtered.length === 1 ? "Trip" : "Trips"}
-          </span>
+          <span><Check size={13} /> Archive ready</span>
+          <span>{view === "timeline" ? "Timeline" : "Contact Sheet"} · {visibleSummary}</span>
           <span>Arrow keys move · Return opens</span>
         </footer>
       </section>
@@ -658,38 +727,69 @@ export function App() {
       {inspectorOpen && (
         <aside className="inspector">
           <header>
-            <strong>Trip</strong>
+            <strong>{selectedItem.kind === "trip" ? "Trip" : "Unorganised folder"}</strong>
             <button className="icon-button" onClick={() => setInspectorOpen(false)} aria-label="Close inspector">
               <X size={16} />
             </button>
           </header>
-          <img src={selectedTrip.image} alt="" />
-          <h2>{selectedTrip.title}</h2>
-          <Meta icon={CalendarDays}>{selectedTrip.date}</Meta>
-          <Meta icon={MapPin}>{selectedTrip.location}</Meta>
+          <img src={selectedItem.image} alt="" />
+          <h2>{selectedItem.title}</h2>
+          <Meta icon={CalendarDays}>{selectedItem.date}</Meta>
+          <Meta icon={selectedItem.kind === "trip" ? MapPin : FolderOpen}>
+            {selectedItem.kind === "trip" ? selectedItem.location : selectedItem.path}
+          </Meta>
           <div className="inspector-stats">
-            <div><strong>{selectedTrip.walks}</strong><span>Walks</span></div>
-            <div><strong>{selectedTrip.photos}</strong><span>Photos</span></div>
+            {selectedItem.kind === "trip" ? (
+              <div><strong>{selectedItem.walks}</strong><span>Walks</span></div>
+            ) : (
+              <div><strong>As is</strong><span>No file changes</span></div>
+            )}
+            <div><strong>{selectedItem.photos}</strong><span>Photos</span></div>
           </div>
-          <button className="primary-button" onClick={() => setOpenSurface("trip")}>Open Trip</button>
-          <button className="secondary-button" onClick={() => setOpenSurface("actions")}>Trip actions</button>
+          <button className="primary-button" onClick={() => setOpenSurface("item")}>
+            {selectedItem.kind === "trip" ? "Open Trip" : "Open Photos"}
+          </button>
+          <button className="secondary-button" onClick={() => setOpenSurface("actions")}>
+            {selectedItem.kind === "trip" ? "Trip actions" : "Folder actions"}
+          </button>
         </aside>
       )}
 
-      {openSurface === "trip" && (
-        <Modal title={selectedTrip.title} onClose={() => setOpenSurface(null)} className="trip-modal">
-          <img src={selectedTrip.image} alt="" />
+      {openSurface === "item" && (
+        <Modal title={selectedItem.title} onClose={() => setOpenSurface(null)} className="trip-modal">
+          <img src={selectedItem.image} alt="" />
           <div className="trip-modal-body">
+            <EntryBadge kind={selectedItem.kind} />
             <div className="trip-summary">
-              <Meta icon={CalendarDays}>{selectedTrip.date}</Meta>
-              <Meta icon={MapPin}>{selectedTrip.location}</Meta>
-              <Meta icon={Footprints}>{selectedTrip.walks} Walks</Meta>
-              <Meta icon={Image}>{selectedTrip.photos} photos</Meta>
+              <Meta icon={CalendarDays}>{selectedItem.date}</Meta>
+              <Meta icon={selectedItem.kind === "trip" ? MapPin : FolderOpen}>
+                {selectedItem.kind === "trip" ? selectedItem.location : selectedItem.path}
+              </Meta>
+              {selectedItem.kind === "trip" && (
+                <Meta icon={Footprints}>{selectedItem.walks} {selectedItem.walks === 1 ? "Walk" : "Walks"}</Meta>
+              )}
+              <Meta icon={Image}>{selectedItem.photos} photos</Meta>
             </div>
-            <p>This is the Trip destination. In Walkfolio it opens the Trip’s Walks, then each Walk opens its photo grid.</p>
-            <button className="primary-button" onClick={() => { setOpenSurface(null); showToast("Trip navigation is represented, not implemented, in this mockup."); }}>
-              Open Walks
-            </button>
+            {selectedItem.kind === "trip" ? (
+              <>
+                <p>This Trip opens to its Walks. Each Walk then opens its photo grid.</p>
+                <button className="primary-button" onClick={() => { setOpenSurface(null); showToast("Trip navigation is represented, not implemented, in this mockup."); }}>
+                  Open Walks
+                </button>
+              </>
+            ) : (
+              <>
+                <p>This folder opens directly to its photo grid. Browsing it does not move, rename, or rewrite anything.</p>
+                <div className="modal-actions">
+                  <button className="primary-button" onClick={() => { setOpenSurface(null); showToast("Folder photo browsing is represented, not implemented, in this mockup."); }}>
+                    Open Photos
+                  </button>
+                  <button className="secondary-button" onClick={() => { setOpenSurface(null); showToast("Organisation would begin as a separate, reviewable action."); }}>
+                    Organise as a Trip…
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </Modal>
       )}
@@ -714,10 +814,10 @@ export function App() {
         <Modal title="Go to" onClose={() => setOpenSurface(null)} className="command-modal">
           <label className="palette-search">
             <Search size={16} />
-            <input autoFocus placeholder="Trip, Walk, year, or workspace" />
+            <input autoFocus placeholder="Trip, folder, Walk, year, or workspace" />
           </label>
           <div className="command-list">
-            <button onClick={() => setOpenSurface(null)}><span>Archive · All Trips</span><kbd>Current</kbd></button>
+            <button onClick={() => setOpenSurface(null)}><span>Archive · All</span><kbd>Current</kbd></button>
             <button onClick={() => setOpenSurface(null)}><span>Triage</span></button>
             <button onClick={() => setOpenSurface(null)}><span>Photo Logs</span></button>
           </div>
@@ -725,11 +825,18 @@ export function App() {
       )}
 
       {openSurface === "actions" && (
-        <Modal title={`Actions for ${selectedTrip.title}`} onClose={() => setOpenSurface(null)} className="action-modal">
+        <Modal title={`Actions for ${selectedItem.title}`} onClose={() => setOpenSurface(null)} className="action-modal">
           <div className="command-list">
-            <button onClick={() => setOpenSurface("trip")}><span>Open Trip</span><kbd>↩</kbd></button>
+            <button onClick={() => setOpenSurface("item")}>
+              <span>{selectedItem.kind === "trip" ? "Open Trip" : "Open Photos"}</span><kbd>↩</kbd>
+            </button>
+            {selectedItem.kind === "folder" && (
+              <button onClick={() => { setOpenSurface(null); showToast("Organisation would begin as a separate, reviewable action."); }}>
+                <span>Organise as a Trip…</span>
+              </button>
+            )}
             <button onClick={() => { setInspectorOpen(true); setOpenSurface(null); }}><span>Show inspector</span><kbd>⌘P</kbd></button>
-            <button onClick={() => showToast("Would reveal this Trip in Finder.")}><span>Reveal in Finder</span></button>
+            <button onClick={() => showToast(`Would reveal “${selectedItem.title}” in Finder.`)}><span>Reveal in Finder</span></button>
           </div>
         </Modal>
       )}
