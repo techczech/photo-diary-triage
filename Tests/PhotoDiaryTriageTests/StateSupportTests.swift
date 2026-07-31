@@ -113,6 +113,55 @@ import Testing
     #expect(!state.canMutateImportSelection)
 }
 
+@MainActor
+@Test func archiveFiltersReturnFromAnOpenFolderToTheCurrentArchiveView() throws {
+    let root = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let archiveRoot = root.appendingPathComponent("archive", isDirectory: true)
+    try writeTestFile(archiveRoot.appendingPathComponent("2025/06/0001.jpg"))
+
+    let state = AppState(testing: true)
+    state.settings = makeTestSettings(root: root)
+    let entry = ArchiveBrowseEntry(
+        id: "folder-2025-06",
+        kind: .unorganisedFolder,
+        year: "2025",
+        archiveRelativePath: "2025/06",
+        title: "06",
+        startDate: nil,
+        endDate: nil,
+        location: nil,
+        photoCount: 1,
+        walkCount: 0,
+        coverThumbnailPath: nil
+    )
+    state.testingInstallArchiveCatalogue(
+        ArchiveCatalogue(entries: [entry], walksByTripPath: [:], photos: [])
+    )
+    state.setArchiveKindFilter(.unorganisedFolders)
+    state.setArchiveYearFilter("2025")
+    state.selectArchiveEntry(entry.id)
+    state.openSelectedArchiveItem()
+
+    #expect(state.archiveBrowserState.snapshot.level == .photos(path: "2025/06", parentTripPath: nil))
+    #expect(state.breadcrumbTitles == ["06"])
+
+    state.setArchiveYearFilter(nil)
+
+    #expect(state.archiveBrowserState.snapshot.level == .archive)
+    #expect(state.selectedBrowserNode?.id == "archive-root")
+    #expect(state.breadcrumbTitles != ["06"])
+    #expect(state.visibleMediaItems.isEmpty)
+
+    state.selectArchiveEntry(entry.id)
+    state.openSelectedArchiveItem()
+    state.setArchiveKindFilter(.all)
+
+    #expect(state.archiveBrowserState.snapshot.level == .archive)
+    #expect(state.selectedBrowserNode?.id == "archive-root")
+    #expect(state.visibleMediaItems.isEmpty)
+}
+
 @Test func archiveBrowserRootDoesNotInferYearMonthOrWalkNodesFromFolderDepth() throws {
     let root = try makeTemporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }

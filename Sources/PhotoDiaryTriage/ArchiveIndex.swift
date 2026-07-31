@@ -128,6 +128,11 @@ struct ArchiveByteReadPolicy: Sendable {
         return isOnlineOnly(url) == false
     }
 
+    func canGenerateImplicitThumbnail(at url: URL) -> Bool {
+        guard isInsideArchive(url) else { return true }
+        return isOnlineOnly(url) == false
+    }
+
     func isOnlineOnly(_ url: URL) -> Bool {
         do {
             let values = try url.resourceValues(forKeys: [.fileSizeKey, .totalFileAllocatedSizeKey])
@@ -168,6 +173,16 @@ final class ArchiveByteReadPolicyContext: @unchecked Sendable {
     func isOnlineOnlyArchiveFile(_ url: URL) -> Bool {
         let current = snapshot()
         guard current.machineRole == .travel, current.isInsideArchive(url) else { return false }
+        return cachedOnlineOnlyVerdict(for: url, policy: current)
+    }
+
+    func canGenerateImplicitThumbnail(at url: URL) -> Bool {
+        let current = snapshot()
+        guard current.isInsideArchive(url) else { return true }
+        return cachedOnlineOnlyVerdict(for: url, policy: current) == false
+    }
+
+    private func cachedOnlineOnlyVerdict(for url: URL, policy current: ArchiveByteReadPolicy) -> Bool {
         let key = url.standardizedFileURL.path
         lock.lock()
         if let cached = onlineOnlyVerdicts[key] {

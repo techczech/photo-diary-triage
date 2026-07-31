@@ -1,10 +1,10 @@
 # PDT-2026-07-12-098 Archive Timeline, Contact Sheet, and search
 
 item_id: PDT-2026-07-12-098
-shipped_release_version: 0.7.0
-shipped_build: 136
-shipped_feature_slug: timeline-and-search
-status: reinstalled_pending_user_confirmation
+shipped_release_version: 0.7.2
+shipped_build: 138
+shipped_feature_slug: archive-thumbnail-loading
+status: archive_thumbnail_loading_shipped_pending_user_test
 
 ## Summary
 
@@ -31,9 +31,10 @@ that a folder is a month, Trip, or Walk.
   renaming, or rewriting its contents.
 - `Organise as a Trip…` is a separate visible and contextual action that opens
   the folder in Triage; no organisation occurs merely by browsing.
-- Archive browsing uses existing Archive Index thumbnails where available.
-  Missing previews remain placeholders rather than implicitly downloading
-  archived originals.
+- Archive browsing uses existing Archive Index thumbnails where available and
+  generates ordinary cached thumbnails from locally available Archive photos.
+  Online-only originals remain placeholders rather than being downloaded
+  implicitly.
 - Archive thumbnail backfill now stops below a 15 GB free-space floor, processes
   one original at a time, supports cancellation, and requests eviction only for
   an original that the operation newly hydrated.
@@ -85,9 +86,9 @@ that a folder is a month, Trip, or Walk.
 - The native interface has not been launched by automation because app testing
   must not take over the user's screen. The installed build is waiting for a
   short user check against the real Archive.
-- Existing Archive folders without index thumbnails show placeholders until the
-  user explicitly runs the bounded backfill. Browsing itself does not hydrate
-  those originals.
+- Online-only Archive originals without index thumbnails remain placeholders
+  until the user explicitly runs the bounded backfill. Browsing itself does not
+  hydrate those originals.
 - The existing Swift 6 sendability warnings in archive migration callbacks and
   one review-grid binding remain; this release introduces no new build warning.
 
@@ -106,3 +107,52 @@ verified bundle, given a current modification date, and explicitly registered
 with Launch Services. The fresh installation verifies as 0.7.0 build 136 with
 feature slug `timeline-and-search`; its executable checksum matches the tested
 bundle and strict deep code-signature verification passes.
+
+## Installed screenshot correction
+
+Dominik's screenshot confirmed that the installed 0.7.0 executable contained
+the new Archive sidebar. The visible `06` was the name of an open physical
+Unorganised Folder, not the application version. It also exposed a routing
+defect: choosing a year or entry type while a folder was open could leave that
+folder's photo grid active instead of returning to Timeline or Contact Sheet.
+
+Walkfolio 0.7.1 now treats every year and entry-type choice as navigation back
+to the Archive catalogue. It cancels any active folder scan, clears the physical
+folder context and photo selection, restores the Archive root, retains the
+chosen Timeline or Contact Sheet, and applies the requested filter there. The
+photo-grid guidance now uses Trip and Unorganised Folder terminology instead of
+the previous photowalk and year/month language.
+
+Verification for the correction:
+
+- The focused regression opens a synthetic `2025/06` Unorganised Folder and
+  confirms that both year and entry-type choices return to the Archive root.
+- The complete Swift suite passes with 186 tests in two suites and no failures.
+- `dist/Walkfolio.app` and `/Applications/Walkfolio.app` both verify as version
+  0.7.1, build 137, feature slug `archive-filter-return`.
+- The installed executable matches the tested bundle byte for byte, and strict
+  deep code-signature verification passes.
+
+## Installed thumbnail-loading correction
+
+Dominik clarified that the screenshot's immediate failure was the grey warning
+cards and Retry buttons. The preview path was rejecting every Archive original
+without an Archive Index thumbnail, including photos whose bytes were already
+available locally.
+
+Walkfolio 0.7.2 replaces that blanket rejection with an availability policy.
+Locally available Archive photos may now generate thumbnails in the ordinary
+cache. Sparse online-only originals are still rejected before Quick Look is
+called, on both the Main Archive and Travel machines, so this correction does
+not silently download the cloud collection.
+
+Verification for the correction:
+
+- The focused policy regression confirms that local Archive photos and photos
+  outside the Archive are readable for thumbnail generation, while an
+  online-only Archive original is not.
+- The complete Swift suite passes with 187 tests in two suites and no failures.
+- `dist/Walkfolio.app` and `/Applications/Walkfolio.app` both verify as version
+  0.7.2, build 138, feature slug `archive-thumbnail-loading`.
+- The installed executable matches the tested bundle byte for byte, and strict
+  deep code-signature verification passes.

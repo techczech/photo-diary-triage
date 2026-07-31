@@ -147,6 +147,27 @@ import Testing
     #expect(policy.canReadBytes(at: tiny))
 }
 
+@Test func archiveThumbnailPolicyReadsLocalPhotosButNotOnlineOnlyOriginals() throws {
+    let root = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let archiveRoot = root.appendingPathComponent("archive", isDirectory: true)
+    let local = archiveRoot.appendingPathComponent("2025/06/local.jpg")
+    let sparse = archiveRoot.appendingPathComponent("2025/06/online-only.jpg")
+    let outsideArchive = root.appendingPathComponent("inbox/photo.jpg")
+    try writeTestFile(local, contents: "local photo bytes")
+    try writeTestFile(outsideArchive, contents: "inbox photo bytes")
+    FileManager.default.createFile(atPath: sparse.path, contents: nil)
+    let handle = try FileHandle(forWritingTo: sparse)
+    try handle.truncate(atOffset: 10 * 1024 * 1024)
+    try handle.close()
+
+    let policy = ArchiveByteReadPolicy(archiveRoot: archiveRoot, machineRole: .mainArchive)
+
+    #expect(policy.canGenerateImplicitThumbnail(at: local))
+    #expect(policy.canGenerateImplicitThumbnail(at: sparse) == false)
+    #expect(policy.canGenerateImplicitThumbnail(at: outsideArchive))
+}
+
 @Test func archiveIndexThumbnailNamingUsesArchiveRelativePathAndExtension() throws {
     let archiveRoot = URL(fileURLWithPath: "/Archive", isDirectory: true)
     let jpg = archiveRoot

@@ -328,6 +328,14 @@ final class AppState: ObservableObject {
     private let latencyRecorder = LatencyRecorder()
     private var compareSelectionBackup: CompareSelectionBackup?
     var testingSourceScanHandler: ((URL, AppSettings) async throws -> SessionOpenResult)?
+
+    func testingInstallArchiveCatalogue(_ catalogue: ArchiveCatalogue) {
+        archiveCatalogue = catalogue
+        archiveCatalogueIsLoading = false
+        archiveCatalogueError = nil
+        reconcileArchiveSelection()
+        refreshArchiveBrowserState()
+    }
     private let sessionPersistenceQueue = DispatchQueue(label: "PhotoDiaryTriage.session-persistence", qos: .utility)
     private let thumbnailScheduler = ThumbnailScheduler()
     private let thumbnailImageCache = NSCache<NSURL, NSImage>()
@@ -518,7 +526,7 @@ final class AppState: ObservableObject {
     var workspaceModeDetail: String {
         switch workspaceMode {
         case .archiveView:
-            return "Browse saved photowalks in the archive library."
+            return "Browse Trips and Unorganised Folders in the Archive."
         case .cameraTriage:
             if currentSession?.sessionKind == .walkDraft {
                 return "Review the active photo log. S photos copy to archive; C/X stay recorded in this log."
@@ -565,10 +573,14 @@ final class AppState: ObservableObject {
     var workspaceModeNextAction: String {
         switch workspaceMode {
         case .archiveView:
-            if visibleMediaItems.isEmpty {
-                return "Choose a year, month, or walk. Open in Finder shows the same folder on disk."
+            switch archiveNavigationLevel {
+            case .archive:
+                return "Choose a Trip or Unorganised Folder. Years and entry types filter this Archive view."
+            case .trip:
+                return "Choose a Walk to browse its photos."
+            case .photos:
+                return "Viewing \(visibleMediaItems.count) archived photo(s). Return to Archive to change the year or view."
             }
-            return "Viewing \(visibleMediaItems.count) archived photo(s). Open in Finder confirms the folder on disk."
         case .cameraTriage:
             guard let currentSession else {
                 return "Open a source folder, then use S, C, and X to decide what belongs in a photo log."
@@ -1086,16 +1098,35 @@ final class AppState: ObservableObject {
 
     func setArchiveYearFilter(_ year: String?) {
         archiveYearFilter = year
-        archiveNavigationLevel = .archive
+        let returnedFromNestedContent = returnToArchiveCatalogueFromFilter()
         reconcileArchiveSelection()
-        refreshArchiveBrowserState()
+        if returnedFromNestedContent {
+            refreshAllUIState()
+        } else {
+            refreshArchiveBrowserState()
+        }
     }
 
     func setArchiveKindFilter(_ filter: ArchiveBrowseKindFilter) {
         archiveKindFilter = filter
-        archiveNavigationLevel = .archive
+        let returnedFromNestedContent = returnToArchiveCatalogueFromFilter()
         reconcileArchiveSelection()
-        refreshArchiveBrowserState()
+        if returnedFromNestedContent {
+            refreshAllUIState()
+        } else {
+            refreshArchiveBrowserState()
+        }
+    }
+
+    private func returnToArchiveCatalogueFromFilter() -> Bool {
+        guard archiveNavigationLevel != .archive || activeArchiveContentNode != nil else { return false }
+        cancelArchiveMediaLoad()
+        archiveNavigationLevel = .archive
+        activeArchiveContentNode = nil
+        selectedSidebarNodeID = preferredSidebarNodeID(for: .archiveView)
+        activePane = .media
+        clearDetailSelections()
+        return true
     }
 
     func setArchiveSort(_ sort: ArchiveBrowseSort) {
@@ -4753,7 +4784,7 @@ final class AppState: ObservableObject {
     private func statusMessage(for mode: WorkspaceMode) -> String {
         switch mode {
         case .archiveView:
-            return "Archive View. Browse saved photowalks and open folders in Finder to confirm files on disk."
+            return "Archive View. Browse Trips and Unorganised Folders without changing their files."
         case .cameraTriage:
             if currentSession == nil {
                 return "Camera Triage. Open a source folder to sort new photos into a photo log."
