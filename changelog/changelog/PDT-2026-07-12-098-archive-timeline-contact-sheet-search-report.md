@@ -4,7 +4,7 @@ item_id: PDT-2026-07-12-098
 shipped_release_version: 0.7.0
 shipped_build: 136
 shipped_feature_slug: timeline-and-search
-status: shipped_pending_user_test
+status: reinstalled_pending_user_confirmation
 
 ## Summary
 
@@ -90,3 +90,19 @@ that a folder is a month, Trip, or Walk.
   those originals.
 - The existing Swift 6 sendability warnings in archive migration callbacks and
   one review-grid binding remain; this release introduces no new build warning.
+
+## Installation follow-up
+
+The user reported that the installed app still displayed version 0.6 after the
+initial installation. Inspection found that the installed executable,
+Info.plist, embedded release record, and Launch Services record all identified
+0.7.0 build 136, and the executable matched the tested bundle byte for byte.
+However, copying over the existing app had retained the bundle directory's
+0.6-era modification date.
+
+The existing bundle was moved intact to `/tmp/Walkfolio-replaced.app`.
+`/Applications/Walkfolio.app` was then created as a fresh directory from the
+verified bundle, given a current modification date, and explicitly registered
+with Launch Services. The fresh installation verifies as 0.7.0 build 136 with
+feature slug `timeline-and-search`; its executable checksum matches the tested
+bundle and strict deep code-signature verification passes.

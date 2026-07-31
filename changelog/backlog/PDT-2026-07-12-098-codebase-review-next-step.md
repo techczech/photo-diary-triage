@@ -2,7 +2,7 @@
 
 item_id: PDT-2026-07-12-098
 title: Codebase review and next-step recommendation
-status: shipped_pending_user_test
+status: reinstalled_pending_user_confirmation
 target_release_version: 0.7.0
 target_feature_slug: timeline-and-search
 
@@ -209,5 +209,10 @@ The shipped feature must:
 - keep Archive thumbnail work bounded and safe for the real dataless OneDrive collection;
 - preserve keyboard and visible-control parity from the locked mockup.
 
-Status: shipped in Walkfolio 0.7.0 (build 136); waiting for the user to test the
-installed app against the real Archive.
+Status: the user reported that the installed app still displayed 0.6. The
+installed executable, Info.plist, embedded release record, and Launch Services
+record identified 0.7.0 build 136, but the overlaid app directory retained its
+0.6-era modification date. The bundle has now been replaced as a fresh
+directory and explicitly re-registered. Its metadata, executable checksum, new
+directory identity, and signature verify as 0.7.0 build 136. Waiting for the
+user to confirm the visible label before the real-Archive test continues.
