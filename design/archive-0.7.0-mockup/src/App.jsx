@@ -25,6 +25,116 @@ import {
 
 const trips = [
   {
+    id: "river-walk-2025",
+    title: "River Walk",
+    date: "3 July 2025",
+    sortKey: "2025-07-03",
+    location: "Location not set",
+    year: 2025,
+    walks: 1,
+    photos: 199,
+    image: "/archive-covers/2025-july.jpg",
+  },
+  {
+    id: "may-evening-2025",
+    title: "May Evening",
+    date: "29 May 2025",
+    sortKey: "2025-05-29",
+    location: "Location not set",
+    year: 2025,
+    walks: 1,
+    photos: 15,
+    image: "/archive-covers/2025-may.jpg",
+  },
+  {
+    id: "woodland-flight-2025",
+    title: "Woodland Flight",
+    date: "13 April 2025",
+    sortKey: "2025-04-13",
+    location: "Location not set",
+    year: 2025,
+    walks: 1,
+    photos: 25,
+    image: "/archive-covers/2025-april.jpg",
+  },
+  {
+    id: "heron-water-2025",
+    title: "Heron Water",
+    date: "24 March 2025",
+    sortKey: "2025-03-24",
+    location: "Location not set",
+    year: 2025,
+    walks: 1,
+    photos: 19,
+    image: "/archive-covers/2025-march.jpg",
+  },
+  {
+    id: "hill-walk-2024",
+    title: "Hill Walk",
+    date: "4 July 2024",
+    sortKey: "2024-07-04",
+    location: "Location not set",
+    year: 2024,
+    walks: 1,
+    photos: 2,
+    image: "/archive-covers/2024-july.jpg",
+  },
+  {
+    id: "misty-water-2024",
+    title: "Misty Water",
+    date: "31 October 2024",
+    sortKey: "2024-10-31",
+    location: "Location not set",
+    year: 2024,
+    walks: 1,
+    photos: 55,
+    image: "/archive-covers/2024-october.jpg",
+  },
+  {
+    id: "herons-in-the-trees-2024",
+    title: "Herons in the Trees",
+    date: "25 May 2024",
+    sortKey: "2024-05-25",
+    location: "Location not set",
+    year: 2024,
+    walks: 1,
+    photos: 3,
+    image: "/archive-covers/2024-may.jpg",
+  },
+  {
+    id: "march-fields-2024",
+    title: "March Fields",
+    date: "31 March 2024",
+    sortKey: "2024-03-31",
+    location: "Location not set",
+    year: 2024,
+    walks: 1,
+    photos: 20,
+    image: "/archive-covers/2024-march.jpg",
+  },
+  {
+    id: "winter-garden-2023",
+    title: "Winter Garden",
+    date: "4 December 2023",
+    sortKey: "2023-12-04",
+    location: "Location not set",
+    year: 2023,
+    walks: 1,
+    photos: 6,
+    image: "/archive-covers/2023-december.jpg",
+  },
+  {
+    id: "wales-coast-2022",
+    title: "Wales Coast",
+    date: "September 2022",
+    sortKey: "2022-09-30",
+    location: "Wales",
+    year: 2022,
+    walks: 5,
+    photos: 217,
+    image: "/archive-covers/2022-wales.jpg",
+  },
+  {
     id: "thurne",
     title: "Thurne · 4 August",
     date: "4 August 2013",
@@ -126,26 +236,11 @@ const trips = [
 ];
 
 const yearRows = [
-  [2026, 4],
-  [2025, 8],
-  [2024, 7],
-  [2023, 8],
-  [2022, 7],
-  [2021, 7],
-  [2020, 8],
-  [2019, 11],
-  [2018, 10],
-  [2017, 13],
-  [2016, 7],
-  [2015, 12],
-  [2014, 22],
-  [2013, 46],
-  [2012, 11],
-  [2011, 12],
-  [2010, 19],
-  [2009, 12],
-  [2008, 27],
-  [2007, 5],
+  [2025, 4],
+  [2024, 4],
+  [2023, 1],
+  [2022, 1],
+  [2013, 9],
 ];
 
 const commands = [
@@ -221,6 +316,16 @@ export function App() {
   }, [query, selectedYear, sort]);
 
   const selectedTrip = trips.find((trip) => trip.id === selectedId) || trips[0];
+  const groupedTrips = useMemo(
+    () =>
+      [...new Set(filtered.map((trip) => trip.year))]
+        .sort((a, b) => b - a)
+        .map((year) => ({
+          year,
+          trips: filtered.filter((trip) => trip.year === year),
+        })),
+    [filtered],
+  );
 
   useEffect(() => {
     localStorage.setItem("walkfolio-archive-view", view);
@@ -390,16 +495,17 @@ export function App() {
           onClick={() => setSelectedYear("all")}
         >
           <Image size={17} />
-          <span>Trips</span>
-          <span className="count">184</span>
+          <span>All Trips</span>
+          <span className="count">19</span>
         </button>
-        <p className="sidebar-label">Years</p>
+        <p className="sidebar-label">Filter by year</p>
         <div className="year-list">
           {yearRows.map(([year, count]) => (
             <button
               key={year}
               className={selectedYear === year ? "selected" : ""}
               onClick={() => setSelectedYear(year)}
+              aria-label={`Filter Trips by ${year}`}
             >
               <span>{year}</span>
               <span className="count">{count}</span>
@@ -410,7 +516,7 @@ export function App() {
           <Archive size={17} />
           <div>
             <strong>Archive Index</strong>
-            <span>184 Trips · 23,572 Walks</span>
+            <span>19 Trips · 39 Walks</span>
           </div>
           <ChevronRight size={14} />
         </div>
@@ -424,10 +530,17 @@ export function App() {
               Archive
               {query && <span>Search results</span>}
             </div>
-            <h1>{query ? `Results for “${query}”` : selectedYear === "all" ? "Trips" : String(selectedYear)}</h1>
+            <h1>
+              {query
+                ? `Results for “${query}”`
+                : selectedYear === "all"
+                  ? "All Trips"
+                  : `Trips in ${selectedYear}`}
+            </h1>
             <p>
               {filtered.length} {filtered.length === 1 ? "Trip" : "Trips"}
-              {!query && " in chronological order"}
+              {!query && selectedYear === "all" && ` across ${groupedTrips.length} years`}
+              {!query && selectedYear !== "all" && " in this year"}
             </p>
           </div>
           <div className="content-controls">
@@ -478,48 +591,56 @@ export function App() {
             </div>
           ) : view === "timeline" ? (
             <div className="timeline-list">
-              <h2 className="year-heading">2013</h2>
-              {filtered.map((trip) => (
-                <button
-                  key={trip.id}
-                  data-trip={trip.id}
-                  className={`timeline-row ${selectedId === trip.id ? "selected" : ""}`}
-                  onClick={() => setSelectedId(trip.id)}
-                  onDoubleClick={() => setOpenSurface("trip")}
-                >
-                  <img src={trip.image} alt="" />
-                  <div className="trip-copy">
-                    <strong>{trip.title}</strong>
-                    <Meta icon={CalendarDays}>{trip.date}</Meta>
-                    <Meta icon={MapPin}>{trip.location}</Meta>
-                  </div>
-                  <div className="trip-counts">
-                    <Meta icon={Footprints}>{trip.walks} {trip.walks === 1 ? "Walk" : "Walks"}</Meta>
-                    <Meta icon={Image}>{trip.photos} photos</Meta>
-                  </div>
-                  <ChevronRight size={17} className="disclosure" />
-                </button>
+              {groupedTrips.map((group) => (
+                <section className="year-group" key={group.year}>
+                  <h2 className="year-heading">{group.year}</h2>
+                  {group.trips.map((trip) => (
+                    <button
+                      key={trip.id}
+                      data-trip={trip.id}
+                      className={`timeline-row ${selectedId === trip.id ? "selected" : ""}`}
+                      onClick={() => setSelectedId(trip.id)}
+                      onDoubleClick={() => setOpenSurface("trip")}
+                    >
+                      <img src={trip.image} alt="" />
+                      <div className="trip-copy">
+                        <strong>{trip.title}</strong>
+                        <Meta icon={CalendarDays}>{trip.date}</Meta>
+                        <Meta icon={MapPin}>{trip.location}</Meta>
+                      </div>
+                      <div className="trip-counts">
+                        <Meta icon={Footprints}>{trip.walks} {trip.walks === 1 ? "Walk" : "Walks"}</Meta>
+                        <Meta icon={Image}>{trip.photos} photos</Meta>
+                      </div>
+                      <ChevronRight size={17} className="disclosure" />
+                    </button>
+                  ))}
+                </section>
               ))}
             </div>
           ) : (
             <div className="contact-sheet">
-              <h2 className="year-heading">2013</h2>
-              <div className="tile-grid">
-                {filtered.map((trip) => (
-                  <button
-                    key={trip.id}
-                    data-trip={trip.id}
-                    className={`trip-tile ${selectedId === trip.id ? "selected" : ""}`}
-                    onClick={() => setSelectedId(trip.id)}
-                    onDoubleClick={() => setOpenSurface("trip")}
-                  >
-                    <img src={trip.image} alt="" />
-                    <span className="tile-title">{trip.title}</span>
-                    <span className="tile-date">{trip.date}</span>
-                    <span className="tile-counts">{trip.walks} {trip.walks === 1 ? "Walk" : "Walks"} · {trip.photos} photos</span>
-                  </button>
-                ))}
-              </div>
+              {groupedTrips.map((group) => (
+                <section className="year-group" key={group.year}>
+                  <h2 className="year-heading">{group.year}</h2>
+                  <div className="tile-grid">
+                    {group.trips.map((trip) => (
+                      <button
+                        key={trip.id}
+                        data-trip={trip.id}
+                        className={`trip-tile ${selectedId === trip.id ? "selected" : ""}`}
+                        onClick={() => setSelectedId(trip.id)}
+                        onDoubleClick={() => setOpenSurface("trip")}
+                      >
+                        <img src={trip.image} alt="" />
+                        <span className="tile-title">{trip.title}</span>
+                        <span className="tile-date">{trip.date}</span>
+                        <span className="tile-counts">{trip.walks} {trip.walks === 1 ? "Walk" : "Walks"} · {trip.photos} photos</span>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              ))}
             </div>
           )}
         </div>
@@ -596,7 +717,7 @@ export function App() {
             <input autoFocus placeholder="Trip, Walk, year, or workspace" />
           </label>
           <div className="command-list">
-            <button onClick={() => setOpenSurface(null)}><span>Archive · Trips</span><kbd>Current</kbd></button>
+            <button onClick={() => setOpenSurface(null)}><span>Archive · All Trips</span><kbd>Current</kbd></button>
             <button onClick={() => setOpenSurface(null)}><span>Triage</span></button>
             <button onClick={() => setOpenSurface(null)}><span>Photo Logs</span></button>
           </div>

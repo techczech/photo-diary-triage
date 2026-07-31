@@ -33,11 +33,11 @@ def comparison(reference_name: str, implementation_name: str, output_name: str) 
 
 comparison(
     "timeline-reference.png",
-    "timeline-1440x1024.png",
+    "all-trips-timeline-1440x1024.png",
     "timeline-comparison.png",
 )
 comparison(
     "contact-sheet-reference.png",
-    "contact-sheet-1440x1024.png",
+    "all-trips-contact-sheet-1440x1024.png",
     "contact-sheet-comparison.png",
 )
