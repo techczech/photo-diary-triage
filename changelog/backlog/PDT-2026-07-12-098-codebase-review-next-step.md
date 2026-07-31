@@ -2,7 +2,7 @@
 
 item_id: PDT-2026-07-12-098
 title: Codebase review and next-step recommendation
-status: design_in_review
+status: mockup_ready_waiting_on_user
 target_release_version: 0.7.0
 target_feature_slug: timeline-and-search
 
@@ -81,5 +81,18 @@ The earlier large-card grid is rejected because it consumes more space than the 
 Sheet while exposing less metadata than the Timeline. It does not support a distinct user
 task.
 
-This direction remains under design review. It is not a locked mockup and does not
-authorise implementation.
+## Review mockup
+
+The high-fidelity interactive mockup is in
+`design/archive-0.7.0-mockup/`. It combines the Timeline and Contact Sheet over
+one Archive state. Timeline is the default; the last chosen view persists.
+
+The mockup uses resized copies of photographs from the user's local Archive.
+Generated cover photography is not used.
+
+Design QA passed at 1,440 × 1,024 and 820 × 900. Search, view switching,
+selection continuity, keyboard navigation, Trip opening, the command palette,
+Settings, build output, and Sites packaging tests were verified.
+
+Status: mockup ready; waiting for user review. Production implementation remains
+unauthorised until the user locks this design.
