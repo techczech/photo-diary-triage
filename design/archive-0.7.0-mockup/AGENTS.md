@@ -14,6 +14,8 @@ Build app UI in `src/`. Keep `.openai/hosting.json`, `worker/index.js`, `scripts
   one Archive.
 - Timeline is the default; Contact Sheet is the remembered compact alternative.
 - Selection, year position, and search query survive view changes.
+- "All Trips" and individual years are not separate destinations. A year filters the
+  same Timeline or Contact Sheet, and the All Trips view groups Trips by year.
 - Use only local photographs selected from Dominik's Archive. Do not use generated or
   externally hosted cover images.
 - This prototype is a design artefact. It must not be treated as production Walkfolio code.

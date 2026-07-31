@@ -363,11 +363,14 @@ kbd {
 .timeline-list,
 .contact-sheet { padding: 15px 24px 32px; }
 
+.year-group + .year-group { margin-top: 25px; }
+
 .year-heading {
   margin: 0;
   padding: 2px 4px 8px;
   color: #6e6f73;
   font-size: 15px;
+  font-weight: 650;
   letter-spacing: -0.01em;
 }
 

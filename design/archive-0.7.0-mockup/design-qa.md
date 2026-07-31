@@ -11,8 +11,8 @@
 - Fonts and typography: The implementation uses the macOS system font stack with the same compact hierarchy as the references. Titles, metadata and small navigation labels remain legible at both tested widths without unintended wrapping.
 - Spacing and layout rhythm: The title bar, year sidebar, content header, view switcher, Timeline rows and four-column Contact Sheet retain the proportions and alignment of the references. The 820-pixel test keeps the primary Archive controls and readable Timeline rows without overlap.
 - Colours and visual tokens: The implementation matches the neutral macOS palette, hairline separators, blue selection state and low-contrast metadata treatment. There are no decorative gradients or ungrounded brand colours.
-- Image quality and asset fidelity: All nine covers are local Archive photographs, resized to a maximum of 1,200 pixels and cropped with `object-fit: cover`. They remain sharp at both row and tile sizes.
-- Copy and content: Archive, Trips, Walks, Timeline and Contact Sheet follow the product vocabulary. Singular and plural Trip counts are correct. “Newest first” now uses explicit chronological keys rather than comparing human-readable date strings.
+- Image quality and asset fidelity: All nineteen covers are local Archive photographs, resized to a maximum of 1,200 pixels and cropped with `object-fit: cover`. They remain sharp at both row and tile sizes.
+- Copy and content: Archive, All Trips, Trips, Walks, Timeline and Contact Sheet follow the product vocabulary. “All Trips” names the complete Archive and “Filter by year” makes the year relationship explicit. Singular and plural Trip counts are correct. “Newest first” uses explicit chronological keys rather than comparing human-readable date strings.
 
 **Source visual truth**
 
@@ -22,13 +22,14 @@
 **Implementation evidence**
 
 - Local prototype: `http://127.0.0.1:4173/`.
-- `design-qa/timeline-1440x1024.png` — 1,440 × 1,024 pixels.
-- `design-qa/contact-sheet-1440x1024.png` — 1,440 × 1,024 pixels.
-- `design-qa/compact-820x900.png` — 820 × 900 pixels.
+- `design-qa/all-trips-timeline-1440x1024.png` — 1,440 × 1,024 pixels.
+- `design-qa/all-trips-contact-sheet-1440x1024.png` — 1,440 × 1,024 pixels.
+- `design-qa/year-filter-2024-contact-sheet-1440x1024.png` — 1,440 × 1,024 pixels.
+- `design-qa/all-trips-compact-820x900.png` — 820 × 900 pixels.
 - CSS viewports: 1,440 × 1,024 and 820 × 900.
 - Device scale factor: 1.
 - Density normalization: The full-view comparison canvases place each source and implementation capture in a 700 × 920 pixel panel using aspect-preserving Lanczos downsampling.
-- States: Timeline with the first Trip selected; Contact Sheet with selection preserved; compact Timeline; filtered Contact Sheet; Trip dialog; command palette; Settings.
+- States: All Trips grouped by year in Timeline and Contact Sheet; 2024-filtered Contact Sheet; view continuity from a selected year back to All Trips; compact Timeline; search results; Trip dialog; command palette; Settings.
 
 **Full-view comparison evidence**
 
@@ -44,6 +45,9 @@
 
 - Timeline and Contact Sheet switching preserves the selected Trip.
 - The most recently used view persists through reload.
+- Choosing 2024 keeps Contact Sheet active and shows only the 2024 year band.
+- Switching to Timeline while 2024 is selected keeps the year filter.
+- Returning to All Trips keeps Timeline active and restores all five year bands.
 - Search for “Prague” returns the single matching Trip and keeps the active view.
 - Arrow keys move selection and Return opens the selected Trip.
 - `⌘1` opens Timeline and `⌘⇧P` opens the command palette.
@@ -53,7 +57,10 @@
 
 **Comparison history**
 
-- Earlier P2 finding: “Newest first” compared display-date strings, which produced an visibly incorrect order.
+- Earlier P1 finding: Trips and years looked like separate destinations, and most year choices produced empty mock data.
+  Fix: Renamed the complete Archive view to “All Trips”, labelled years as filters, grouped both views into year bands, and added representative local Archive photographs for five years.
+  Post-fix evidence: `design-qa/all-trips-contact-sheet-1440x1024.png` shows five year bands; `design-qa/year-filter-2024-contact-sheet-1440x1024.png` shows the same Contact Sheet narrowed to 2024.
+- Earlier P2 finding: “Newest first” compared display-date strings, which produced a visibly incorrect order.
   Fix: Added explicit ISO-like sort keys and sorted by those keys.
   Post-fix evidence: `design-qa/timeline-1440x1024.png` and `design-qa/contact-sheet-1440x1024.png` show November through April in descending order.
 - Earlier P2 finding: The status bar displayed “1 Trips” for a one-result search.

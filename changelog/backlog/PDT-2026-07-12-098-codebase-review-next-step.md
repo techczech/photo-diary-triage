@@ -2,7 +2,7 @@
 
 item_id: PDT-2026-07-12-098
 title: Codebase review and next-step recommendation
-status: mockup_ready_waiting_on_user
+status: revised_mockup_waiting_on_user
 target_release_version: 0.7.0
 target_feature_slug: timeline-and-search
 
@@ -95,4 +95,31 @@ selection continuity, keyboard navigation, Trip opening, the command palette,
 Settings, build output, and Sites packaging tests were verified.
 
 Status: mockup ready; waiting for user review. Production implementation remains
+unauthorised until the user locks this design.
+
+## Year-filter revision
+
+User feedback: Trips and years appeared to be distinct destinations. A year should show
+the same Timeline or Contact Sheet, filtered to that year.
+
+Revision intent:
+
+- Rename the complete Archive view to `All Trips`.
+- Label year choices as filters.
+- Group All Trips by year in both Archive views.
+- Preserve the chosen view when a year is selected.
+- Add representative Trips from several years using local Archive photographs, so the
+  filtering relationship can be reviewed directly.
+
+Revision completed:
+
+- All Trips now groups Timeline and Contact Sheet content into year bands.
+- Selecting 2024 keeps the active view and narrows it to the 2024 band.
+- Changing from Contact Sheet to Timeline keeps the 2024 filter.
+- Returning to All Trips keeps Timeline active and restores all year bands.
+- Nineteen local Archive photographs provide representative Trips across five years.
+- Design QA, the production build, Sites packaging tests, responsive layout, search, and
+  browser console checks passed.
+
+Status: revised mockup ready; waiting for user review. Production implementation remains
 unauthorised until the user locks this design.
