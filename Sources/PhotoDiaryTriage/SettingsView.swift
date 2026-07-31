@@ -70,6 +70,27 @@ struct SettingsView: View {
             }
 
             Form {
+                Section("Archive browsing") {
+                    Picker("Default Archive view", selection: Binding(
+                        get: { appState.settings.archiveBrowseViewMode },
+                        set: { appState.setArchiveBrowseViewMode($0) }
+                    )) {
+                        Text("Timeline").tag(ArchiveBrowseViewMode.timeline)
+                        Text("Contact Sheet").tag(ArchiveBrowseViewMode.contactSheet)
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 300)
+
+                    Toggle("Show photo previews in Archive browser", isOn: Binding(
+                        get: { appState.settings.showArchivePreviews },
+                        set: { appState.setShowArchivePreviews($0) }
+                    ))
+
+                    Text("Archive previews use the Archive Index thumbnails and do not download photo originals.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 Section("Review Presentation") {
                     Picker("Default Review Mode", selection: Binding(
                         get: { appState.reviewPresentationMode },

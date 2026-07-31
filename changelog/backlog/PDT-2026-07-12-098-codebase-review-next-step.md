@@ -2,7 +2,7 @@
 
 item_id: PDT-2026-07-12-098
 title: Codebase review and next-step recommendation
-status: archive_design_locked_ready_for_implementation
+status: shipped_pending_user_test
 target_release_version: 0.7.0
 target_feature_slug: timeline-and-search
 
@@ -182,3 +182,32 @@ Production implementation must cite that decision and the locked mockup.
 
 Status: design locked and ready for an implementation plan. No production code or release
 metadata changed as part of the approval record.
+
+## Production implementation
+
+Implementation was authorised by the user on 2026-07-31.
+
+The implementation is governed by:
+
+- `docs/adr/0003-archive-browse-includes-unorganised-folders.md`
+- `design/archive-0.7.0-mockup/`
+- the complete Release D contract in `planning/codex-implementation-plan.md`
+- `planning/archive-0.7.0-implementation-plan.md`
+
+The shipped feature must:
+
+- replace the physical year/month/Walk browser in Archive mode with Timeline and Contact
+  Sheet views over one mixed Archive catalogue;
+- recognise Trips and Walks only through Archive Index records backed by manifests;
+- derive rebuildable Unorganised Folder summaries without changing the folders;
+- keep year and type choices as filters over the current view;
+- preserve selection and the chosen view while filters and presentation change;
+- open Trips through their Walks and open Unorganised Folders directly into the existing
+  photo grid;
+- search indexed filenames, descriptions, titles, notes, locations, and camera information
+  without reading archived photo bytes;
+- keep Archive thumbnail work bounded and safe for the real dataless OneDrive collection;
+- preserve keyboard and visible-control parity from the locked mockup.
+
+Status: shipped in Walkfolio 0.7.0 (build 136); waiting for the user to test the
+installed app against the real Archive.

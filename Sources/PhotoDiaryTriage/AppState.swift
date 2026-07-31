@@ -32,6 +32,7 @@ final class AppState: ObservableObject {
     @Published var settings: AppSettings {
         didSet {
             refreshSidebarState()
+            refreshArchiveBrowserState()
             refreshReviewState()
             refreshInspectorState()
         }
@@ -289,8 +290,10 @@ final class AppState: ObservableObject {
             }
         }
     }
+    @Published private(set) var archiveBackfillIsRunning = false
 
     let sidebarState = SidebarState()
+    let archiveBrowserState = ArchiveBrowserState()
     let reviewState = ReviewState()
     let reviewNavigationState = ReviewNavigationState()
     let inspectorState = InspectorState()
@@ -350,6 +353,24 @@ final class AppState: ObservableObject {
     private var reviewKeyboardTarget: ReviewKeyboardTarget = .items
     private var archiveMediaLoadTask: Task<Void, Never>?
     private var archiveMediaLoadGeneration: Int = 0
+    private var archiveCatalogueLoadTask: Task<Void, Never>?
+    private var archiveCatalogueLoadGeneration: Int = 0
+    private var archiveSearchTask: Task<Void, Never>?
+    private var archiveBackfillTask: Task<Void, Never>?
+    private var archiveCatalogue: ArchiveCatalogue = .empty
+    private var archiveCatalogueIsLoading = false
+    private var archiveCatalogueError: String?
+    private var archiveYearFilter: String?
+    private var archiveKindFilter: ArchiveBrowseKindFilter = .all
+    private var archiveSort: ArchiveBrowseSort = .newest
+    private var archiveSearchQuery = ""
+    private var archiveSearchMatchingPaths: Set<String> = []
+    private var archiveSearchFocusRevision = 0
+    private var archiveNavigationLevel: ArchiveNavigationLevel = .archive
+    private var selectedArchiveEntryID: String?
+    private var selectedArchiveWalkID: String?
+    private var selectedArchiveSearchResultID: String?
+    private var activeArchiveContentNode: BrowserNode?
     private var currentSessionUpdateKind: CurrentSessionUpdateKind = .full
     private var pendingSessionPersistenceWorkItem: DispatchWorkItem?
     private var estimatedVisibleReviewIndexRange: ClosedRange<Int>?
@@ -431,11 +452,15 @@ final class AppState: ObservableObject {
         configurePersistence()
         primePersistedSessionCache()
         startVolumeMonitoring()
+        reloadArchiveCatalogue()
         refreshAllUIState()
     }
 
     deinit {
         archiveMediaLoadTask?.cancel()
+        archiveCatalogueLoadTask?.cancel()
+        archiveSearchTask?.cancel()
+        archiveBackfillTask?.cancel()
         if let volumeMountObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(volumeMountObserver)
         }
@@ -475,10 +500,17 @@ final class AppState: ObservableObject {
     }
 
     var browserNodeMap: [String: BrowserNode] {
-        cachedBrowserNodeMap
+        guard let activeArchiveContentNode else { return cachedBrowserNodeMap }
+        var map = cachedBrowserNodeMap
+        map[activeArchiveContentNode.id] = activeArchiveContentNode
+        return map
     }
 
     var selectedBrowserNode: BrowserNode? {
+        if let activeArchiveContentNode,
+           selectedSidebarNodeID == activeArchiveContentNode.id {
+            return activeArchiveContentNode
+        }
         guard let selectedSidebarNodeID else { return browserRoots.first }
         return browserNodeMap[selectedSidebarNodeID] ?? browserRoots.first
     }
@@ -750,6 +782,9 @@ final class AppState: ObservableObject {
     }
 
     var canOpenCurrentSelection: Bool {
+        if workspaceMode == .archiveView {
+            return canOpenSelectedArchiveItem
+        }
         if activePane == .folders { return selectedFolderNodeIDs.count == 1 }
         if activePane == .sidebar { return canFocusReviewSurface }
         if activePane == .media { return focusedReviewItem != nil }
@@ -757,7 +792,10 @@ final class AppState: ObservableObject {
     }
 
     var canNavigateToParent: Bool {
-        selectedBrowserNode?.parentID != nil
+        if workspaceMode == .archiveView {
+            return archiveNavigationLevel != .archive
+        }
+        return selectedBrowserNode?.parentID != nil
     }
 
     var canClearCurrentSelection: Bool {
@@ -950,6 +988,14 @@ final class AppState: ObservableObject {
         let previousMode = workspaceMode
         let preserveSourceReviewContext = mode == .photoLogs && previousMode == .cameraTriage && !isBrowsingArchive
         workspaceMode = mode
+        if mode == .archiveView {
+            archiveNavigationLevel = .archive
+            activeArchiveContentNode = nil
+            if archiveCatalogue.entries.isEmpty && !archiveCatalogueIsLoading {
+                reloadArchiveCatalogue()
+            }
+            refreshArchiveBrowserState()
+        }
         rebuildBrowserCaches()
         if !preserveSourceReviewContext {
             selectedSidebarNodeID = preferredSidebarNodeID(for: mode)
@@ -965,6 +1011,300 @@ final class AppState: ObservableObject {
         requestVisibleThumbnails()
         statusMessage = statusMessage(for: mode)
         refreshAllUIState()
+    }
+
+    func reloadArchiveCatalogue() {
+        archiveCatalogueLoadTask?.cancel()
+        archiveSearchTask?.cancel()
+        archiveCatalogueLoadGeneration &+= 1
+        let generation = archiveCatalogueLoadGeneration
+        let archiveRoot = settings.archiveRoot
+        let supportedExtensions = settings.supportedExtensions
+        let searchDatabaseURL = supportRoot.appendingPathComponent("archive-search.sqlite")
+
+        archiveCatalogueIsLoading = true
+        archiveCatalogueError = nil
+        refreshArchiveBrowserState()
+
+        archiveCatalogueLoadTask = Task.detached(priority: .userInitiated) {
+            let result: Result<ArchiveCatalogue, Error>
+            do {
+                let builder = ArchiveCatalogueBuilder()
+                let catalogue = try builder.build(
+                    archiveRoot: archiveRoot,
+                    supportedExtensions: supportedExtensions
+                )
+                let indexEntries = try builder.readIndexEntries(archiveRoot: archiveRoot)
+                try ArchiveSearchCache(databaseURL: searchDatabaseURL).rebuild(
+                    indexEntries: indexEntries,
+                    browseEntries: catalogue.entries
+                )
+                result = .success(catalogue)
+            } catch {
+                result = .failure(error)
+            }
+
+            await MainActor.run { [weak self] in
+                guard let self,
+                      generation == self.archiveCatalogueLoadGeneration,
+                      !Task.isCancelled else { return }
+                self.archiveCatalogueLoadTask = nil
+                self.archiveCatalogueIsLoading = false
+
+                switch result {
+                case .success(let catalogue):
+                    self.archiveCatalogue = catalogue
+                    self.archiveCatalogueError = nil
+                    self.reconcileArchiveSelection()
+                    let entryNoun = catalogue.entries.count == 1 ? "entry" : "entries"
+                    self.statusMessage = "Archive catalogue refreshed: \(catalogue.entries.count) \(entryNoun) across \(catalogue.years.count) year(s)."
+                    if !self.archiveSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        self.updateArchiveSearch(self.archiveSearchQuery)
+                    }
+                case .failure(let error):
+                    self.archiveCatalogueError = error.localizedDescription
+                    self.statusMessage = "Archive catalogue could not be refreshed: \(error.localizedDescription)"
+                }
+                self.refreshArchiveBrowserState()
+            }
+        }
+    }
+
+    func setArchiveBrowseViewMode(_ mode: ArchiveBrowseViewMode) {
+        guard settings.archiveBrowseViewMode != mode else { return }
+        settings.archiveBrowseViewMode = mode
+        persistSettings()
+        refreshArchiveBrowserState()
+    }
+
+    func setShowArchivePreviews(_ show: Bool) {
+        guard settings.showArchivePreviews != show else { return }
+        settings.showArchivePreviews = show
+        persistSettings()
+        refreshArchiveBrowserState()
+    }
+
+    func setArchiveYearFilter(_ year: String?) {
+        archiveYearFilter = year
+        archiveNavigationLevel = .archive
+        reconcileArchiveSelection()
+        refreshArchiveBrowserState()
+    }
+
+    func setArchiveKindFilter(_ filter: ArchiveBrowseKindFilter) {
+        archiveKindFilter = filter
+        archiveNavigationLevel = .archive
+        reconcileArchiveSelection()
+        refreshArchiveBrowserState()
+    }
+
+    func setArchiveSort(_ sort: ArchiveBrowseSort) {
+        archiveSort = sort
+        reconcileArchiveSelection()
+        refreshArchiveBrowserState()
+    }
+
+    func updateArchiveSearch(_ query: String) {
+        archiveSearchQuery = query
+        archiveSearchTask?.cancel()
+
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            archiveSearchMatchingPaths = []
+            selectedArchiveSearchResultID = nil
+            reconcileArchiveSelection()
+            refreshArchiveBrowserState()
+            return
+        }
+
+        let databaseURL = supportRoot.appendingPathComponent("archive-search.sqlite")
+        archiveSearchTask = Task.detached(priority: .userInitiated) {
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            guard !Task.isCancelled else { return }
+            let result = Result { try ArchiveSearchCache(databaseURL: databaseURL).matchingPaths(query: trimmed) }
+            await MainActor.run { [weak self] in
+                guard let self,
+                      !Task.isCancelled,
+                      self.archiveSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines) == trimmed else { return }
+                self.archiveSearchTask = nil
+                switch result {
+                case .success(let paths):
+                    self.archiveSearchMatchingPaths = paths
+                    self.archiveCatalogueError = nil
+                case .failure(let error):
+                    self.archiveSearchMatchingPaths = []
+                    self.archiveCatalogueError = "Search unavailable: \(error.localizedDescription)"
+                }
+                self.reconcileArchiveSelection()
+                self.refreshArchiveBrowserState()
+            }
+        }
+        refreshArchiveBrowserState()
+    }
+
+    func requestArchiveSearchFocus() {
+        archiveSearchFocusRevision &+= 1
+        refreshArchiveBrowserState()
+    }
+
+    func selectArchiveEntry(_ entryID: String) {
+        guard filteredArchiveEntries.contains(where: { $0.id == entryID }) else { return }
+        selectedArchiveEntryID = entryID
+        activePane = .media
+        refreshArchiveBrowserState()
+    }
+
+    func selectArchiveWalk(_ walkID: String) {
+        guard currentArchiveWalks.contains(where: { $0.id == walkID }) else { return }
+        selectedArchiveWalkID = walkID
+        activePane = .media
+        refreshArchiveBrowserState()
+    }
+
+    func selectArchiveSearchResult(_ resultID: String) {
+        guard archiveSearchResults.contains(where: { $0.id == resultID }) else { return }
+        selectedArchiveSearchResultID = resultID
+        activePane = .media
+        refreshArchiveBrowserState()
+    }
+
+    func moveArchiveSelection(horizontal: Int, vertical: Int, contactSheetColumns: Int = 4) {
+        if case .trip = archiveNavigationLevel {
+            moveArchiveWalkSelection(horizontal: horizontal, vertical: vertical, columns: contactSheetColumns)
+            return
+        }
+
+        let entries = filteredArchiveEntries
+        guard !entries.isEmpty else { return }
+        let currentIndex = selectedArchiveEntryID.flatMap { id in entries.firstIndex(where: { $0.id == id }) } ?? 0
+        let delta: Int
+        if settings.archiveBrowseViewMode == .timeline {
+            delta = vertical
+        } else {
+            delta = horizontal + (vertical * max(contactSheetColumns, 1))
+        }
+        let target = min(max(currentIndex + delta, 0), entries.count - 1)
+        selectedArchiveEntryID = entries[target].id
+        refreshArchiveBrowserState()
+    }
+
+    func openSelectedArchiveItem() {
+        switch archiveNavigationLevel {
+        case .archive:
+            guard let entry = selectedArchiveEntry else { return }
+            if entry.kind == .trip {
+                archiveNavigationLevel = .trip(path: entry.archiveRelativePath)
+                selectedArchiveWalkID = archiveCatalogue.walksByTripPath[entry.archiveRelativePath]?.first?.id
+                refreshArchiveBrowserState()
+            } else {
+                openArchivePhotoFolder(
+                    relativePath: entry.archiveRelativePath,
+                    title: entry.title,
+                    parentTripPath: nil
+                )
+            }
+        case .trip(let path):
+            guard let walk = currentArchiveWalks.first(where: { $0.id == selectedArchiveWalkID })
+                    ?? currentArchiveWalks.first else { return }
+            openArchivePhotoFolder(
+                relativePath: walk.archiveRelativePath,
+                title: walk.title,
+                parentTripPath: path
+            )
+        case .photos:
+            focusReviewSurface()
+        }
+    }
+
+    func organiseSelectedUnorganisedFolder() {
+        guard let entry = selectedArchiveEntry,
+              entry.kind == .unorganisedFolder else {
+            statusMessage = "Select an Unorganised Folder before choosing Organise as a Trip."
+            return
+        }
+        let folder = archiveURL(for: entry.archiveRelativePath)
+        statusMessage = "Opening \(entry.title) as a Triage source. The Archive folder stays unchanged until you explicitly copy."
+        loadSourceWorkspace(folder: folder, origin: .manualPicker)
+    }
+
+    var canOpenSelectedArchiveItem: Bool {
+        switch archiveNavigationLevel {
+        case .archive:
+            return selectedArchiveEntry != nil
+        case .trip:
+            return !currentArchiveWalks.isEmpty
+        case .photos:
+            return canFocusReviewSurface
+        }
+    }
+
+    var canOrganiseSelectedUnorganisedFolder: Bool {
+        selectedArchiveEntry?.kind == .unorganisedFolder && archiveNavigationLevel == .archive
+    }
+
+    private func openArchiveSearchResult(_ result: ArchivePhotoSummary) {
+        if let walkPath = result.walkPath {
+            let parentTripPath = result.tripPath
+            let walkTitle = archiveCatalogue.walksByTripPath.values
+                .flatMap { $0 }
+                .first { $0.archiveRelativePath == walkPath }?
+                .title ?? URL(fileURLWithPath: walkPath).lastPathComponent
+            openArchivePhotoFolder(
+                relativePath: walkPath,
+                title: walkTitle,
+                parentTripPath: parentTripPath
+            )
+            return
+        }
+
+        let parentFolder = (result.archiveRelativePath as NSString).deletingLastPathComponent
+        openArchivePhotoFolder(
+            relativePath: parentFolder,
+            title: URL(fileURLWithPath: parentFolder).lastPathComponent,
+            parentTripPath: nil
+        )
+    }
+
+    private func openArchivePhotoFolder(relativePath: String, title: String, parentTripPath: String?) {
+        let folderURL = archiveURL(for: relativePath)
+        let nodeID = "archive-content-\(CacheKeyBuilder.key(for: relativePath))"
+        let node = BrowserNode(
+            id: nodeID,
+            title: title,
+            subtitle: relativePath.replacingOccurrences(of: "/", with: " / "),
+            kind: .archiveWalkFolder,
+            parentID: nil,
+            mediaItemIDs: [],
+            children: nil,
+            folderURL: folderURL
+        )
+        activeArchiveContentNode = node
+        archiveNavigationLevel = .photos(path: relativePath, parentTripPath: parentTripPath)
+        selectedSidebarNodeID = nodeID
+        activePane = .media
+        clearDetailSelections()
+        loadArchiveMediaIfNeeded(for: nodeID)
+        refreshArchiveBrowserState()
+    }
+
+    private func moveArchiveWalkSelection(horizontal: Int, vertical: Int, columns: Int) {
+        let walks = currentArchiveWalks
+        guard !walks.isEmpty else { return }
+        let currentIndex = selectedArchiveWalkID.flatMap { id in walks.firstIndex(where: { $0.id == id }) } ?? 0
+        let delta = horizontal + (vertical * max(columns, 1))
+        let target = min(max(currentIndex + delta, 0), walks.count - 1)
+        selectedArchiveWalkID = walks[target].id
+        refreshArchiveBrowserState()
+    }
+
+    private func moveArchiveSearchSelection(horizontal: Int, vertical: Int, columns: Int) {
+        let results = archiveSearchResults
+        guard !results.isEmpty else { return }
+        let currentIndex = selectedArchiveSearchResultID.flatMap { id in results.firstIndex(where: { $0.id == id }) } ?? 0
+        let delta = horizontal + (vertical * max(columns, 1))
+        let target = min(max(currentIndex + delta, 0), results.count - 1)
+        selectedArchiveSearchResultID = results[target].id
+        refreshArchiveBrowserState()
     }
 
     func pickSourceFolder() {
@@ -2228,6 +2568,10 @@ final class AppState: ObservableObject {
         archiveMediaCache.removeAll()
         browserViewModel.invalidateArchiveTreeCache()
         rebuildBrowserCaches()
+        archiveNavigationLevel = .archive
+        activeArchiveContentNode = nil
+        archiveYearFilter = nil
+        reloadArchiveCatalogue()
 
         if var session = currentSession {
             session.archiveRoot = archiveRoot
@@ -2250,7 +2594,7 @@ final class AppState: ObservableObject {
         }
         let alert = NSAlert()
         alert.messageText = "Backfill Archive Index thumbnails?"
-        alert.informativeText = "This scans the Archive and writes missing 512px JPEG thumbnails to _index/thumbs. Existing thumbnails are left untouched."
+        alert.informativeText = "This scans the Archive and writes missing 512px JPEG thumbnails to _index/thumbs. Online-only originals are processed one at a time and evicted again. The backfill stops before free space falls below 15 GB. Existing thumbnails are left untouched."
         alert.addButton(withTitle: "Backfill")
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else {
@@ -2262,7 +2606,9 @@ final class AppState: ObservableObject {
         let supportedExtensions = settings.supportedExtensions
         let policy = archiveIndexWritePolicy
         statusMessage = "Backfilling Archive Index thumbnails…"
-        Task {
+        archiveBackfillTask?.cancel()
+        archiveBackfillIsRunning = true
+        archiveBackfillTask = Task {
             let result = await ArchiveIndexMutationQueue.shared.backfillThumbnails(
                 archiveRoot: archiveRoot,
                 supportedExtensions: supportedExtensions,
@@ -2274,11 +2620,28 @@ final class AppState: ObservableObject {
                 }
             )
             guard let result else {
+                archiveBackfillIsRunning = false
+                archiveBackfillTask = nil
                 statusMessage = policy.disabledHelp
                 return
             }
-            statusMessage = "Archive thumbnail backfill finished: \(result.generatedThumbnails) generated, \(result.existingThumbnails) already present, \(result.failures.count) failed."
+            archiveBackfillIsRunning = false
+            archiveBackfillTask = nil
+            reloadArchiveCatalogue()
+            if result.stoppedForLowSpace {
+                statusMessage = "Archive thumbnail backfill paused before free space fell below 15 GB: \(result.generatedThumbnails) generated and \(result.evictedFiles) originals evicted."
+            } else if result.cancelled {
+                statusMessage = "Archive thumbnail backfill cancelled safely: \(result.generatedThumbnails) generated and \(result.evictedFiles) originals evicted."
+            } else {
+                statusMessage = "Archive thumbnail backfill finished: \(result.generatedThumbnails) generated, \(result.existingThumbnails) already present, \(result.evictedFiles) originals evicted, \(result.failures.count) failed."
+            }
         }
+    }
+
+    func cancelArchiveIndexThumbnailBackfill() {
+        guard archiveBackfillIsRunning else { return }
+        archiveBackfillTask?.cancel()
+        statusMessage = "Cancelling Archive thumbnail backfill after the current file…"
     }
 
     func rebuildArchiveIndexInteractively() {
@@ -2303,6 +2666,7 @@ final class AppState: ObservableObject {
             do {
                 if let result = try await ArchiveIndexMutationQueue.shared.rebuildIndex(archiveRoot: archiveRoot, policy: policy) {
                     self.statusMessage = "Archive Index rebuilt with \(result.entryCount) entries across \(result.years.count) year shard(s)."
+                    self.reloadArchiveCatalogue()
                 } else {
                     self.statusMessage = policy.disabledHelp
                 }
@@ -3270,6 +3634,10 @@ final class AppState: ObservableObject {
     }
 
     func openCurrentSelection() {
+        if workspaceMode == .archiveView {
+            openSelectedArchiveItem()
+            return
+        }
         switch activePane {
         case .folders:
             guard selectedFolderNodeIDs.count == 1, let nodeID = selectedFolderNodeIDs.first else { return }
@@ -3286,6 +3654,31 @@ final class AppState: ObservableObject {
     }
 
     func navigateToParent() {
+        if workspaceMode == .archiveView {
+            switch archiveNavigationLevel {
+            case .archive:
+                return
+            case .trip:
+                archiveNavigationLevel = .archive
+                activeArchiveContentNode = nil
+                selectedSidebarNodeID = preferredSidebarNodeID(for: .archiveView)
+            case .photos(_, let parentTripPath):
+                cancelArchiveMediaLoad()
+                activeArchiveContentNode = nil
+                archiveMediaCache.removeAll()
+                if let parentTripPath {
+                    archiveNavigationLevel = .trip(path: parentTripPath)
+                    selectedArchiveWalkID = archiveCatalogue.walksByTripPath[parentTripPath]?.first?.id
+                } else {
+                    archiveNavigationLevel = .archive
+                }
+                selectedSidebarNodeID = preferredSidebarNodeID(for: .archiveView)
+                clearDetailSelections()
+            }
+            refreshArchiveBrowserState()
+            refreshAllUIState()
+            return
+        }
         guard let parentID = selectedBrowserNode?.parentID else { return }
         selectSidebarNode(parentID)
     }
@@ -4421,6 +4814,118 @@ final class AppState: ObservableObject {
             refreshCompareState()
             refreshPresentationState()
         }
+        refreshArchiveBrowserState()
+    }
+
+    private func refreshArchiveBrowserState() {
+        let entries = filteredArchiveEntries
+        let selectedTrip: ArchiveBrowseEntry?
+        let walks: [ArchiveWalkSummary]
+        if case .trip(let path) = archiveNavigationLevel {
+            selectedTrip = archiveCatalogue.entries.first {
+                $0.kind == .trip && $0.archiveRelativePath == path
+            }
+            walks = archiveCatalogue.walksByTripPath[path] ?? []
+        } else if case .photos(_, let parentTripPath) = archiveNavigationLevel,
+                  let parentTripPath {
+            selectedTrip = archiveCatalogue.entries.first {
+                $0.kind == .trip && $0.archiveRelativePath == parentTripPath
+            }
+            walks = archiveCatalogue.walksByTripPath[parentTripPath] ?? []
+        } else {
+            selectedTrip = nil
+            walks = []
+        }
+
+        let yearFilters = archiveCatalogue.years.map { year in
+            ArchiveYearFilterSnapshot(
+                year: year,
+                count: archiveCatalogue.entries.filter { $0.year == year }.count
+            )
+        }
+        let snapshot = ArchiveBrowserSnapshot(
+            isLoading: archiveCatalogueIsLoading,
+            errorMessage: archiveCatalogueError,
+            viewMode: settings.archiveBrowseViewMode,
+            sort: archiveSort,
+            showPreviews: settings.showArchivePreviews,
+            yearFilter: archiveYearFilter,
+            kindFilter: archiveKindFilter,
+            searchQuery: archiveSearchQuery,
+            searchFocusRevision: archiveSearchFocusRevision,
+            level: archiveNavigationLevel,
+            entries: entries,
+            totalEntryCount: archiveCatalogue.entries.count,
+            tripCount: archiveCatalogue.entries.filter { $0.kind == .trip }.count,
+            unorganisedFolderCount: archiveCatalogue.entries.filter { $0.kind == .unorganisedFolder }.count,
+            yearFilters: yearFilters,
+            selectedEntryID: selectedArchiveEntryID,
+            selectedTrip: selectedTrip,
+            walks: walks,
+            selectedWalkID: selectedArchiveWalkID,
+            searchResults: archiveSearchResults,
+            selectedSearchResultID: selectedArchiveSearchResultID
+        )
+        archiveBrowserState.update(snapshot)
+    }
+
+    private var filteredArchiveEntries: [ArchiveBrowseEntry] {
+        ArchiveBrowseProjection.entries(
+            from: archiveCatalogue,
+            year: archiveYearFilter,
+            kind: archiveKindFilter,
+            searchQuery: archiveSearchQuery,
+            matchingPaths: archiveSearchMatchingPaths,
+            sort: archiveSort
+        )
+    }
+
+    private var archiveSearchResults: [ArchivePhotoSummary] {
+        guard !archiveSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return []
+        }
+        return archiveCatalogue.photos
+            .filter { photo in
+                archiveSearchMatchingPaths.contains(photo.archiveRelativePath)
+                    && (archiveYearFilter == nil
+                        || photo.archiveRelativePath.split(separator: "/").first.map(String.init) == archiveYearFilter)
+            }
+            .sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
+    }
+
+    private var currentArchiveWalks: [ArchiveWalkSummary] {
+        guard case .trip(let path) = archiveNavigationLevel else { return [] }
+        return archiveCatalogue.walksByTripPath[path] ?? []
+    }
+
+    private var selectedArchiveEntry: ArchiveBrowseEntry? {
+        guard let selectedArchiveEntryID else { return nil }
+        return archiveCatalogue.entries.first { $0.id == selectedArchiveEntryID }
+    }
+
+    private func reconcileArchiveSelection() {
+        let entries = filteredArchiveEntries
+        selectedArchiveEntryID = ArchiveBrowseProjection.reconciledSelection(
+            currentID: selectedArchiveEntryID,
+            entries: entries
+        )
+
+        let walks = currentArchiveWalks
+        if selectedArchiveWalkID.flatMap({ id in walks.first(where: { $0.id == id }) }) == nil {
+            selectedArchiveWalkID = walks.first?.id
+        }
+
+        let results = archiveSearchResults
+        if selectedArchiveSearchResultID.flatMap({ id in results.first(where: { $0.id == id }) }) == nil {
+            selectedArchiveSearchResultID = results.first?.id
+        }
+    }
+
+    private func archiveURL(for relativePath: String) -> URL {
+        if relativePath == "." || relativePath.isEmpty {
+            return settings.archiveRoot
+        }
+        return settings.archiveRoot.appendingPathComponent(relativePath, isDirectory: true)
     }
 
     private func refreshSidebarState() {
@@ -5446,6 +5951,16 @@ final class AppState: ObservableObject {
     }
 
     private var selectedBrowserFolderURL: URL? {
+        if workspaceMode == .archiveView {
+            switch archiveNavigationLevel {
+            case .archive:
+                return selectedArchiveEntry.map { archiveURL(for: $0.archiveRelativePath) }
+            case .trip(let path):
+                return archiveURL(for: path)
+            case .photos(let path, _):
+                return archiveURL(for: path)
+            }
+        }
         if activePane == .folders,
            selectedFolderNodeIDs.count == 1,
            let nodeID = selectedFolderNodeIDs.first,
@@ -5528,6 +6043,7 @@ final class AppState: ObservableObject {
                     removingWalkPaths: Set([removingWalkPath].compactMap { $0 }),
                     tripFolders: Array(Set(tripFolders))
                 )
+                reloadArchiveCatalogue()
             } catch {
                 logger.error("Archive Index refresh after Walk move failed: \(error.localizedDescription, privacy: .public)")
                 statusMessage = "Moved Walk, but Archive Index refresh failed: \(error.localizedDescription)"
@@ -5547,6 +6063,7 @@ final class AppState: ObservableObject {
                     policy: policy
                 )
                 statusMessage = "\(statusPrefix)."
+                reloadArchiveCatalogue()
             } catch {
                 logger.error("Archive Index targeted refresh failed: \(error.localizedDescription, privacy: .public)")
                 statusMessage = "\(statusPrefix) failed: \(error.localizedDescription)"
@@ -5562,6 +6079,7 @@ final class AppState: ObservableObject {
             do {
                 try await ArchiveIndexMutationQueue.shared.updateAfterImport(result: result, policy: policy)
                 statusMessage = "Archive Index updated for \(result.fileManifests.count) imported photo(s)."
+                reloadArchiveCatalogue()
             } catch {
                 logger.error("Archive Index update after import failed: \(error.localizedDescription, privacy: .public)")
                 statusMessage = "Copy complete; Archive Index update failed: \(error.localizedDescription)"
@@ -5575,6 +6093,7 @@ final class AppState: ObservableObject {
         Task {
             do {
                 _ = try await ArchiveIndexMutationQueue.shared.rebuildIndex(archiveRoot: archiveRoot, policy: policy)
+                reloadArchiveCatalogue()
             } catch {
                 logger.error("Archive Index rebuild after migration failed: \(error.localizedDescription, privacy: .public)")
                 statusMessage = "Archive migration finished, but Archive Index rebuild failed: \(error.localizedDescription)"

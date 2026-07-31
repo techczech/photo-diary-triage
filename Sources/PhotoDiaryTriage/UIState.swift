@@ -374,6 +374,67 @@ struct SidebarSnapshot: Equatable, Sendable {
     )
 }
 
+enum ArchiveNavigationLevel: Equatable, Sendable {
+    case archive
+    case trip(path: String)
+    case photos(path: String, parentTripPath: String?)
+}
+
+struct ArchiveYearFilterSnapshot: Identifiable, Equatable, Sendable {
+    let year: String
+    let count: Int
+
+    var id: String { year }
+}
+
+struct ArchiveBrowserSnapshot: Equatable, Sendable {
+    let isLoading: Bool
+    let errorMessage: String?
+    let viewMode: ArchiveBrowseViewMode
+    let sort: ArchiveBrowseSort
+    let showPreviews: Bool
+    let yearFilter: String?
+    let kindFilter: ArchiveBrowseKindFilter
+    let searchQuery: String
+    let searchFocusRevision: Int
+    let level: ArchiveNavigationLevel
+    let entries: [ArchiveBrowseEntry]
+    let totalEntryCount: Int
+    let tripCount: Int
+    let unorganisedFolderCount: Int
+    let yearFilters: [ArchiveYearFilterSnapshot]
+    let selectedEntryID: String?
+    let selectedTrip: ArchiveBrowseEntry?
+    let walks: [ArchiveWalkSummary]
+    let selectedWalkID: String?
+    let searchResults: [ArchivePhotoSummary]
+    let selectedSearchResultID: String?
+
+    static let empty = ArchiveBrowserSnapshot(
+        isLoading: false,
+        errorMessage: nil,
+        viewMode: .timeline,
+        sort: .newest,
+        showPreviews: true,
+        yearFilter: nil,
+        kindFilter: .all,
+        searchQuery: "",
+        searchFocusRevision: 0,
+        level: .archive,
+        entries: [],
+        totalEntryCount: 0,
+        tripCount: 0,
+        unorganisedFolderCount: 0,
+        yearFilters: [],
+        selectedEntryID: nil,
+        selectedTrip: nil,
+        walks: [],
+        selectedWalkID: nil,
+        searchResults: [],
+        selectedSearchResultID: nil
+    )
+}
+
 /// O(1)-lookup index of the visible review snapshots, keyed by item id.
 ///
 /// This is derived purely from `ReviewSnapshot.visibleItems` (it is always built as
@@ -575,6 +636,19 @@ final class SidebarState: ObservableObject {
     private(set) var generation: Int = 0
 
     func update(_ snapshot: SidebarSnapshot) {
+        guard self.snapshot != snapshot else { return }
+        generation &+= 1
+        objectWillChange.send()
+        self.snapshot = snapshot
+    }
+}
+
+@MainActor
+final class ArchiveBrowserState: ObservableObject {
+    private(set) var snapshot: ArchiveBrowserSnapshot = .empty
+    private(set) var generation: Int = 0
+
+    func update(_ snapshot: ArchiveBrowserSnapshot) {
         guard self.snapshot != snapshot else { return }
         generation &+= 1
         objectWillChange.send()

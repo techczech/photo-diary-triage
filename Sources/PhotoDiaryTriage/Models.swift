@@ -487,6 +487,8 @@ struct AppSettings: Codable, Hashable, Sendable {
     var weekdayTokenStyle: WeekdayTokenStyle
     var walkDisplayLabel: String
     var tripDisplayLabel: String
+    var archiveBrowseViewMode: ArchiveBrowseViewMode
+    var showArchivePreviews: Bool
 
     static func `default`(fileManager: FileManager = .default) -> AppSettings {
         let libraryRoot = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -510,7 +512,9 @@ struct AppSettings: Codable, Hashable, Sendable {
             reviewGridColumnCount: ReviewGridMetrics.defaultRequestedColumnCount(),
             weekdayTokenStyle: .englishAbbreviated,
             walkDisplayLabel: "walk",
-            tripDisplayLabel: "trip"
+            tripDisplayLabel: "trip",
+            archiveBrowseViewMode: .timeline,
+            showArchivePreviews: true
         )
     }
 
@@ -541,7 +545,9 @@ struct AppSettings: Codable, Hashable, Sendable {
         ,
         weekdayTokenStyle: WeekdayTokenStyle = .englishAbbreviated,
         walkDisplayLabel: String = "walk",
-        tripDisplayLabel: String = "trip"
+        tripDisplayLabel: String = "trip",
+        archiveBrowseViewMode: ArchiveBrowseViewMode = .timeline,
+        showArchivePreviews: Bool = true
     ) {
         self.defaultSourceRoot = defaultSourceRoot
         self.archiveRoot = archiveRoot
@@ -557,6 +563,8 @@ struct AppSettings: Codable, Hashable, Sendable {
         self.weekdayTokenStyle = weekdayTokenStyle
         self.walkDisplayLabel = walkDisplayLabel.nonEmpty ?? "walk"
         self.tripDisplayLabel = tripDisplayLabel.nonEmpty ?? "trip"
+        self.archiveBrowseViewMode = archiveBrowseViewMode
+        self.showArchivePreviews = showArchivePreviews
     }
 
     init(from decoder: Decoder) throws {
@@ -589,6 +597,8 @@ struct AppSettings: Codable, Hashable, Sendable {
         if tripDisplayLabel.nonEmpty == nil {
             tripDisplayLabel = defaults.tripDisplayLabel
         }
+        archiveBrowseViewMode = try container.decodeIfPresent(ArchiveBrowseViewMode.self, forKey: .archiveBrowseViewMode) ?? defaults.archiveBrowseViewMode
+        showArchivePreviews = try container.decodeIfPresent(Bool.self, forKey: .showArchivePreviews) ?? defaults.showArchivePreviews
     }
 
     func encode(to encoder: Encoder) throws {
@@ -607,6 +617,8 @@ struct AppSettings: Codable, Hashable, Sendable {
         try container.encode(weekdayTokenStyle, forKey: .weekdayTokenStyle)
         try container.encode(walkDisplayLabel, forKey: .walkDisplayLabel)
         try container.encode(tripDisplayLabel, forKey: .tripDisplayLabel)
+        try container.encode(archiveBrowseViewMode, forKey: .archiveBrowseViewMode)
+        try container.encode(showArchivePreviews, forKey: .showArchivePreviews)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -624,6 +636,8 @@ struct AppSettings: Codable, Hashable, Sendable {
         case weekdayTokenStyle
         case walkDisplayLabel
         case tripDisplayLabel
+        case archiveBrowseViewMode
+        case showArchivePreviews
     }
 
     private enum LegacyCodingKeys: String, CodingKey {
