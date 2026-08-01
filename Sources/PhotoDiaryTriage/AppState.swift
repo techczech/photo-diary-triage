@@ -27,6 +27,17 @@ private struct CompareSelectionBackup {
     let keyboardTarget: ReviewKeyboardTarget
 }
 
+struct ArchiveThumbnailPreparationProgress: Equatable {
+    var scopeTitle: String
+    var completed: Int
+    var total: Int
+
+    var fractionCompleted: Double {
+        guard total > 0 else { return 0 }
+        return min(max(Double(completed) / Double(total), 0), 1)
+    }
+}
+
 @MainActor
 final class AppState: ObservableObject {
     @Published var settings: AppSettings {
@@ -291,6 +302,7 @@ final class AppState: ObservableObject {
         }
     }
     @Published private(set) var archiveBackfillIsRunning = false
+    @Published private(set) var archiveBackfillProgress: ArchiveThumbnailPreparationProgress?
 
     let sidebarState = SidebarState()
     let archiveBrowserState = ArchiveBrowserState()
@@ -2633,39 +2645,148 @@ final class AppState: ObservableObject {
             return
         }
 
+        startArchiveThumbnailBackfill(scopeTitle: "Archive")
+    }
+
+    var canPrepareCurrentArchiveFolderThumbnails: Bool {
+        guard canWriteArchiveIndex,
+              workspaceMode == .archiveView,
+              case .photos = archiveNavigationLevel else { return false }
+        return !currentArchivePhotoItems.isEmpty
+    }
+
+    func prepareCurrentArchiveFolderThumbnailsInteractively() {
+        guard canPrepareCurrentArchiveFolderThumbnails else {
+            statusMessage = canWriteArchiveIndex
+                ? "Open an Archive photo folder before preparing thumbnails."
+                : archiveIndexWriteHelp
+            return
+        }
+
+        let items = currentArchivePhotoItems
+        let archiveRoot = settings.archiveRoot
+        let fileManager = fileManager
+        let bytePolicy = ArchiveByteReadPolicy(archiveRoot: archiveRoot, machineRole: .mainArchive)
+        var indexReady = 0
+        var localCacheReady = 0
+        var onlineOnly = 0
+        var cachedThumbnailURLsByPhotoPath: [String: URL] = [:]
+
+        for item in items {
+            let indexThumbnailURL = ArchiveIndexStore.thumbnailURL(for: item.sourceURL, archiveRoot: archiveRoot)
+            if fileManager.fileExists(atPath: indexThumbnailURL.path) {
+                indexReady += 1
+                continue
+            }
+
+            let cachedThumbnailURL = previewStore.cachedThumbnailURL(for: item)
+            if fileManager.fileExists(atPath: cachedThumbnailURL.path) {
+                cachedThumbnailURLsByPhotoPath[item.sourceURL.standardizedFileURL.path] = cachedThumbnailURL
+                localCacheReady += 1
+            } else if bytePolicy.isOnlineOnly(item.sourceURL) {
+                onlineOnly += 1
+            }
+        }
+
+        guard indexReady < items.count else {
+            statusMessage = "All \(items.count) photos in \(activeArchiveContentNode?.title ?? "this folder") already have prepared thumbnails."
+            requestInitialArchiveThumbnails(for: items)
+            return
+        }
+
+        let localOriginals = items.count - indexReady - localCacheReady - onlineOnly
+        let folderTitle = activeArchiveContentNode?.title ?? "this folder"
+        let alert = NSAlert()
+        alert.messageText = "Prepare thumbnails for \(folderTitle)?"
+        alert.informativeText = "\(indexReady) already have Archive Index thumbnails. \(localCacheReady) can be copied from the local application cache. \(localOriginals) can be generated from local originals. \(onlineOnly) online-only original(s) will be downloaded one at a time, reduced to 512-pixel JPEGs, and evicted again. You can cancel safely, and preparation stops before free space falls below 15 GB."
+        alert.addButton(withTitle: "Prepare")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else {
+            statusMessage = "Thumbnail preparation cancelled."
+            return
+        }
+
+        startArchiveThumbnailBackfill(
+            scopeTitle: folderTitle,
+            items: items,
+            cachedThumbnailURLsByPhotoPath: cachedThumbnailURLsByPhotoPath
+        )
+    }
+
+    private var currentArchivePhotoItems: [MediaItem] {
+        guard case .photos = archiveNavigationLevel,
+              let nodeID = activeArchiveContentNode?.id else { return [] }
+        return archiveMediaCache[nodeID] ?? []
+    }
+
+    private func startArchiveThumbnailBackfill(
+        scopeTitle: String,
+        items: [MediaItem]? = nil,
+        cachedThumbnailURLsByPhotoPath: [String: URL] = [:]
+    ) {
         let archiveRoot = settings.archiveRoot
         let supportedExtensions = settings.supportedExtensions
         let policy = archiveIndexWritePolicy
-        statusMessage = "Backfilling Archive Index thumbnails…"
+        let photoURLs = items?.map(\.sourceURL)
+        let operationName = items == nil ? "Archive thumbnail backfill" : "Thumbnail preparation for \(scopeTitle)"
+
         archiveBackfillTask?.cancel()
         archiveBackfillIsRunning = true
+        archiveBackfillProgress = ArchiveThumbnailPreparationProgress(
+            scopeTitle: scopeTitle,
+            completed: 0,
+            total: photoURLs?.count ?? 0
+        )
+        statusMessage = "\(operationName) started…"
         archiveBackfillTask = Task {
             let result = await ArchiveIndexMutationQueue.shared.backfillThumbnails(
                 archiveRoot: archiveRoot,
                 supportedExtensions: supportedExtensions,
                 policy: policy,
+                photoURLs: photoURLs,
+                cachedThumbnailURLsByPhotoPath: cachedThumbnailURLsByPhotoPath,
                 progress: { current, total in
                     await MainActor.run { [weak self] in
-                        self?.statusMessage = "Backfilling Archive Index thumbnails \(current)/\(total)…"
+                        self?.archiveBackfillProgress = ArchiveThumbnailPreparationProgress(
+                            scopeTitle: scopeTitle,
+                            completed: current,
+                            total: total
+                        )
+                        self?.statusMessage = "\(operationName) \(current)/\(total)…"
                     }
                 }
             )
             guard let result else {
                 archiveBackfillIsRunning = false
+                archiveBackfillProgress = nil
                 archiveBackfillTask = nil
                 statusMessage = policy.disabledHelp
                 return
             }
             archiveBackfillIsRunning = false
+            archiveBackfillProgress = nil
             archiveBackfillTask = nil
+            if let items {
+                refreshPreparedArchiveThumbnails(for: items)
+            }
             reloadArchiveCatalogue()
             if result.stoppedForLowSpace {
-                statusMessage = "Archive thumbnail backfill paused before free space fell below 15 GB: \(result.generatedThumbnails) generated and \(result.evictedFiles) originals evicted."
+                statusMessage = "\(operationName) paused before free space fell below 15 GB: \(result.generatedThumbnails) generated and \(result.evictedFiles) originals evicted."
             } else if result.cancelled {
-                statusMessage = "Archive thumbnail backfill cancelled safely: \(result.generatedThumbnails) generated and \(result.evictedFiles) originals evicted."
+                statusMessage = "\(operationName) cancelled safely: \(result.generatedThumbnails) generated and \(result.evictedFiles) originals evicted."
             } else {
-                statusMessage = "Archive thumbnail backfill finished: \(result.generatedThumbnails) generated, \(result.existingThumbnails) already present, \(result.evictedFiles) originals evicted, \(result.failures.count) failed."
+                statusMessage = "\(operationName) finished: \(result.generatedThumbnails) generated, \(result.existingThumbnails) already present, \(result.evictedFiles) originals evicted, \(result.failures.count) failed."
             }
+        }
+    }
+
+    private func refreshPreparedArchiveThumbnails(for items: [MediaItem]) {
+        for item in items {
+            let imageURL = thumbnailURL(for: item)
+            thumbnailFailures.remove(item.id)
+            missingThumbnailPaths.remove(imageURL.path)
+            thumbnailImageCache.removeObject(forKey: imageURL as NSURL)
+            decodeThumbnailIfNeeded(from: imageURL, itemID: item.id)
         }
     }
 
@@ -4653,6 +4774,12 @@ final class AppState: ObservableObject {
         }
     }
 
+    private func requestInitialArchiveThumbnails(for items: [MediaItem]) {
+        guard !items.isEmpty else { return }
+        let limit = max(12, estimatedVisibleReviewPageCapacity() * 2)
+        enqueueThumbnailRequests(Array(items.prefix(limit)), priority: .visible)
+    }
+
     private func enqueueThumbnailRequests(_ items: [MediaItem], priority: ThumbnailPriority) {
         Task { [weak self] in
             guard let self else { return }
@@ -6163,7 +6290,7 @@ final class AppState: ObservableObject {
             Task.detached(priority: .utility) {
                 ArchiveByteReadPolicyContext.shared.warmOnlineOnlyVerdicts(for: cachedURLs)
             }
-            requestVisibleThumbnails(prefetching: cachedItems)
+            requestInitialArchiveThumbnails(for: cachedItems)
             DispatchQueue.main.async { [weak self] in
                 self?.latencyRecorder.end("archive.load")
             }
@@ -6198,7 +6325,7 @@ final class AppState: ObservableObject {
                     guard let loadResult else { return }
                     let sortedItems = MediaItemSort.sorted(loadResult.items)
                     self.archiveMediaCache[loadResult.nodeID] = sortedItems
-                    self.requestVisibleThumbnails(prefetching: sortedItems)
+                    self.requestInitialArchiveThumbnails(for: sortedItems)
                     self.preheatDisplayImages(for: sortedItems.map(\.id), limit: 6)
                     self.statusMessage = loadResult.statusMessage
                 case .failure(let error):

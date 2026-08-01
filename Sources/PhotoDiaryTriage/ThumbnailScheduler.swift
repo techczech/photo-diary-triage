@@ -1,6 +1,6 @@
 import Foundation
 
-enum ThumbnailPriority: Sendable {
+enum ThumbnailPriority: Sendable, Equatable {
     case visible
     case background
 }
@@ -17,7 +17,15 @@ actor ThumbnailScheduler {
     }
 
     func enqueue(_ items: [MediaItem], priority: ThumbnailPriority) -> [MediaItem] {
-        for item in items where !inFlightIDs.contains(item.id) && !queuedIDs.contains(item.id) {
+        for item in items where !inFlightIDs.contains(item.id) {
+            if queuedIDs.contains(item.id) {
+                if priority == .visible,
+                   let backgroundIndex = pendingBackground.firstIndex(where: { $0.id == item.id }) {
+                    pendingBackground.remove(at: backgroundIndex)
+                    pendingVisible.append(item)
+                }
+                continue
+            }
             queuedIDs.insert(item.id)
             switch priority {
             case .visible:

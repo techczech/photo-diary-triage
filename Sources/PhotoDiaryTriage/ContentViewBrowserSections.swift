@@ -5,30 +5,62 @@ struct HeaderPaneView: View {
     @ObservedObject var appState: AppState
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Label(appState.workspaceContextTitle, systemImage: appState.workspaceContextSystemImage)
-                    .font(.caption.weight(.semibold))
-                Text(appState.workspaceModeDetail)
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Label(appState.workspaceContextTitle, systemImage: appState.workspaceContextSystemImage)
+                        .font(.caption.weight(.semibold))
+                    Text(appState.workspaceModeDetail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+
+                Text(appState.breadcrumbTitles.joined(separator: " / "))
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                Text(appState.workspaceModeNextAction)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            Text(appState.breadcrumbTitles.joined(separator: " / "))
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(1)
-                .truncationMode(.middle)
+            Spacer(minLength: 8)
 
-            Text(appState.workspaceModeNextAction)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            archiveThumbnailPreparationControl
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.65), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    @ViewBuilder
+    private var archiveThumbnailPreparationControl: some View {
+        if appState.archiveBackfillIsRunning,
+           let progress = appState.archiveBackfillProgress {
+            VStack(alignment: .trailing, spacing: 5) {
+                ProgressView(value: progress.fractionCompleted)
+                    .frame(width: 180)
+                Text("Preparing \(progress.completed) of \(progress.total)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Button("Cancel") {
+                    appState.cancelArchiveIndexThumbnailBackfill()
+                }
+                .controlSize(.small)
+            }
+        } else if appState.canPrepareCurrentArchiveFolderThumbnails {
+            Button {
+                appState.prepareCurrentArchiveFolderThumbnailsInteractively()
+            } label: {
+                Label("Prepare Thumbnails…", systemImage: "photo.stack")
+            }
+            .buttonStyle(.bordered)
+            .help("Prepare persistent thumbnails for this Archive folder")
+        }
     }
 }
 

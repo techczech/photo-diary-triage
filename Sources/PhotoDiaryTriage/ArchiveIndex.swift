@@ -312,13 +312,38 @@ struct ArchiveIndexStore {
         return destination
     }
 
+    func promoteCachedThumbnail(
+        _ cachedThumbnailURL: URL,
+        for archiveFileURL: URL,
+        archiveRoot: URL
+    ) throws -> URL {
+        let destination = Self.thumbnailURL(for: archiveFileURL, archiveRoot: archiveRoot)
+        if fileManager.fileExists(atPath: destination.path) {
+            return destination
+        }
+
+        guard let image = NSImage(contentsOf: cachedThumbnailURL),
+              let data = jpegData(from: image, compressionQuality: 0.82) else {
+            throw NSError(domain: "ArchiveIndexStore", code: 2, userInfo: [
+                NSLocalizedDescriptionKey: "Could not reuse the cached thumbnail for \(archiveFileURL.lastPathComponent)."
+            ])
+        }
+        try AppDirectories.ensureExists(destination.deletingLastPathComponent(), fileManager: fileManager)
+        try data.write(to: destination)
+        return destination
+    }
+
     func backfillThumbnails(
         archiveRoot: URL,
         supportedExtensions: Set<String>,
+        photoURLs: [URL]? = nil,
+        cachedThumbnailURLsByPhotoPath: [String: URL] = [:],
         throttleNanoseconds: UInt64 = 30_000_000,
         progress: (@Sendable (Int, Int) async -> Void)? = nil
     ) async -> ArchiveIndexThumbnailResult {
-        let photos = archivePhotos(in: archiveRoot, supportedExtensions: supportedExtensions)
+        let bytePolicy = ArchiveByteReadPolicy(archiveRoot: archiveRoot, machineRole: .mainArchive)
+        let photos = (photoURLs ?? archivePhotos(in: archiveRoot, supportedExtensions: supportedExtensions))
+            .filter { bytePolicy.isInsideArchive($0) && supportedExtensions.contains($0.pathExtension.lowercased()) }
         var result = ArchiveIndexThumbnailResult(
             scannedPhotos: photos.count,
             generatedThumbnails: 0,
@@ -328,8 +353,6 @@ struct ArchiveIndexStore {
             stoppedForLowSpace: false,
             cancelled: false
         )
-        let bytePolicy = ArchiveByteReadPolicy(archiveRoot: archiveRoot, machineRole: .mainArchive)
-
         for (offset, url) in photos.enumerated() {
             if Task.isCancelled {
                 result.cancelled = true
@@ -339,6 +362,14 @@ struct ArchiveIndexStore {
                 let thumbnailURL = Self.thumbnailURL(for: url, archiveRoot: archiveRoot)
                 if fileManager.fileExists(atPath: thumbnailURL.path) {
                     result.existingThumbnails += 1
+                } else if let cachedThumbnailURL = cachedThumbnailURLsByPhotoPath[url.standardizedFileURL.path],
+                          fileManager.fileExists(atPath: cachedThumbnailURL.path) {
+                    _ = try promoteCachedThumbnail(
+                        cachedThumbnailURL,
+                        for: url,
+                        archiveRoot: archiveRoot
+                    )
+                    result.generatedThumbnails += 1
                 } else {
                     guard backfillSafety.hasSafeCapacity(availableCapacityProvider(archiveRoot)) else {
                         result.stoppedForLowSpace = true
@@ -987,12 +1018,16 @@ actor ArchiveIndexMutationQueue {
         archiveRoot: URL,
         supportedExtensions: Set<String>,
         policy: ArchiveIndexWritePolicy,
+        photoURLs: [URL]? = nil,
+        cachedThumbnailURLsByPhotoPath: [String: URL] = [:],
         progress: (@Sendable (Int, Int) async -> Void)? = nil
     ) async -> ArchiveIndexThumbnailResult? {
         guard policy.canWriteIndex else { return nil }
         return await store.backfillThumbnails(
             archiveRoot: archiveRoot,
             supportedExtensions: supportedExtensions,
+            photoURLs: photoURLs,
+            cachedThumbnailURLsByPhotoPath: cachedThumbnailURLsByPhotoPath,
             progress: progress
         )
     }
