@@ -21,7 +21,7 @@ struct PhotoDiaryCommands: Commands {
             Button("Backfill Archive Index Thumbnails…") {
                 appState.backfillArchiveIndexThumbnailsInteractively()
             }
-            .disabled(!appState.canWriteArchiveIndex)
+            .disabled(!appState.canWriteArchiveIndex || appState.archiveBackfillIsRunning)
             .help(appState.canWriteArchiveIndex ? "Generate missing Archive Index thumbnails." : appState.archiveIndexWriteHelp)
 
             Button("Rebuild Archive Index…") {
@@ -68,6 +68,11 @@ struct PhotoDiaryCommands: Commands {
                 appState.organiseSelectedUnorganisedFolder()
             }
             .disabled(appState.workspaceMode != .archiveView || !appState.canOrganiseSelectedUnorganisedFolder)
+
+            Button("Prepare Thumbnails for Current Folder…") {
+                appState.prepareCurrentArchiveFolderThumbnailsInteractively()
+            }
+            .disabled(!appState.canPrepareCurrentArchiveFolderThumbnails || appState.archiveBackfillIsRunning)
 
             Divider()
 

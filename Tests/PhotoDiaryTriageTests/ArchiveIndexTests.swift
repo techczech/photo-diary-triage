@@ -277,6 +277,73 @@ import Testing
     #expect(safety.shouldEvict(wasOnlineOnly: true, generatedThumbnail: false) == false)
 }
 
+@Test func archiveThumbnailBackfillUsesOnlyExplicitPhotosAndPromotesLocalCache() async throws {
+    let root = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let archiveRoot = root.appendingPathComponent("archive", isDirectory: true)
+    let firstPhoto = archiveRoot.appendingPathComponent("2025/06/first.jpg")
+    let secondPhoto = archiveRoot.appendingPathComponent("2025/06/second.jpg")
+    let cachedThumbnail = root.appendingPathComponent("cache/first.png")
+    try writeTestFile(firstPhoto, contents: "first original")
+    try writeTestFile(secondPhoto, contents: "second original")
+    try AppDirectories.ensureExists(cachedThumbnail.deletingLastPathComponent())
+    try writeTestJPEGImage(cachedThumbnail)
+    var evictionCalls = 0
+    let store = ArchiveIndexStore(
+        availableCapacityProvider: { _ in Int64.max },
+        evictor: { _ in evictionCalls += 1 }
+    )
+
+    let result = await store.backfillThumbnails(
+        archiveRoot: archiveRoot,
+        supportedExtensions: ["jpg"],
+        photoURLs: [firstPhoto],
+        cachedThumbnailURLsByPhotoPath: [firstPhoto.standardizedFileURL.path: cachedThumbnail],
+        throttleNanoseconds: 0
+    )
+
+    #expect(result.scannedPhotos == 1)
+    #expect(result.generatedThumbnails == 1)
+    #expect(result.existingThumbnails == 0)
+    #expect(result.failures.isEmpty)
+    #expect(evictionCalls == 0)
+    #expect(FileManager.default.fileExists(
+        atPath: ArchiveIndexStore.thumbnailURL(for: firstPhoto, archiveRoot: archiveRoot).path
+    ))
+    #expect(FileManager.default.fileExists(
+        atPath: ArchiveIndexStore.thumbnailURL(for: secondPhoto, archiveRoot: archiveRoot).path
+    ) == false)
+}
+
+@Test func archiveThumbnailBackfillHonoursCancellationBeforeSchedulingWork() async throws {
+    let root = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let archiveRoot = root.appendingPathComponent("archive", isDirectory: true)
+    let photo = archiveRoot.appendingPathComponent("2025/06/photo.jpg")
+    let cachedThumbnail = root.appendingPathComponent("cache/photo.png")
+    try writeTestFile(photo, contents: "original")
+    try AppDirectories.ensureExists(cachedThumbnail.deletingLastPathComponent())
+    try writeTestJPEGImage(cachedThumbnail)
+    let store = ArchiveIndexStore(availableCapacityProvider: { _ in Int64.max })
+
+    let result = await Task {
+        withUnsafeCurrentTask { $0?.cancel() }
+        return await store.backfillThumbnails(
+            archiveRoot: archiveRoot,
+            supportedExtensions: ["jpg"],
+            photoURLs: [photo],
+            cachedThumbnailURLsByPhotoPath: [photo.standardizedFileURL.path: cachedThumbnail],
+            throttleNanoseconds: 0
+        )
+    }.value
+
+    #expect(result.cancelled)
+    #expect(result.generatedThumbnails == 0)
+    #expect(FileManager.default.fileExists(
+        atPath: ArchiveIndexStore.thumbnailURL(for: photo, archiveRoot: archiveRoot).path
+    ) == false)
+}
+
 private func readIndexEntries(archiveRoot: URL, year: String) throws -> [ArchiveIndexEntry] {
     let url = ArchiveIndexStore.indexRoot(for: archiveRoot).appendingPathComponent("index-\(year).jsonl")
     let text = try String(contentsOf: url, encoding: .utf8)

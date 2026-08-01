@@ -32,6 +32,19 @@ import Testing
     #expect(afterCompletion == [items[1]])
 }
 
+@Test func thumbnailSchedulerPromotesQueuedBackgroundItemWhenItBecomesVisible() async {
+    let scheduler = ThumbnailScheduler(maxConcurrent: 1)
+    let items = makeThumbnailItems(count: 3)
+
+    let firstBatch = await scheduler.enqueue(items, priority: .background)
+    let promotionBatch = await scheduler.enqueue([items[2]], priority: .visible)
+    let afterCompletion = await scheduler.complete(items[0].id)
+
+    #expect(firstBatch == [items[0]])
+    #expect(promotionBatch.isEmpty)
+    #expect(afterCompletion == [items[2]])
+}
+
 private func makeThumbnailItems(count: Int) -> [MediaItem] {
     let sourceRoot = URL(fileURLWithPath: "/tmp/thumbnail-items", isDirectory: true)
     let base = Date(timeIntervalSince1970: 30_000)

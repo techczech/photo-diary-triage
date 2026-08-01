@@ -2,7 +2,7 @@
 
 item_id: PDT-2026-07-31-099
 title: Fast cached thumbnails for Archive folders
-status: design_recommendation_waiting_on_user
+status: shipped_pending_user_test
 target_release_version: 0.7.3
 target_feature_slug: archive-thumbnail-cache-speed
 
@@ -81,5 +81,9 @@ photos whose originals are already available.
 
 ## Current status
 
-The cause is confirmed and the recommendation is waiting for user approval.
-No implementation has started.
+Dominik approved the folder-scoped preparation design on 2026-08-01. Walkfolio
+0.7.3 implements and installs the approved interaction: the open Archive photo
+folder can be prepared explicitly, progress can be cancelled, completed
+thumbnails persist in the Archive Index, and actual visible cells overtake
+queued background thumbnail work. The release is waiting for a short check
+against the real Archive.
