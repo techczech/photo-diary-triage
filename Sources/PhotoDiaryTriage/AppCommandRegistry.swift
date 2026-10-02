@@ -109,6 +109,7 @@ struct AppCommandBinding: Hashable, Sendable {
 
 enum AppCommandID: String, CaseIterable, Codable, Hashable, Sendable {
     case chooseSource
+    case chooseDefaultSourceRoot
     case chooseArchiveRoot
     case migrateLayout
     case backfillThumbnails
@@ -280,12 +281,13 @@ struct AppCommandRegistry {
         let mainScopes = Self.mainScopes, imageScopes = Self.imageScopes, allScopes = Self.allScopes
         var result: [AppCommandDefinition] = [
             .init(id: .chooseSource, title: "Choose source folder…", task: "Sources", scopes: mainScopes, defaults: [.init(.init(key: "o", modifiers: [.command]), scopes: mainScopes)], enabled: { _ in true }, run: { s in s.pickSourceFolder() }, needsSurfaceHandler: false),
-            .init(id: .chooseArchiveRoot, title: "Set Archive root…", task: "Archive", scopes: mainScopes, defaults: [], enabled: { _ in true }, run: { s in s.pickArchiveRoot() }, needsSurfaceHandler: false),
+            .init(id: .chooseDefaultSourceRoot, title: "Choose default SSD source root…", task: "Sources", scopes: mainScopes.union([.settings, .settingsEditor]), defaults: [], enabled: { _ in true }, run: { s in s.pickDefaultSourceRoot() }),
+            .init(id: .chooseArchiveRoot, title: "Set Archive root…", task: "Archive", scopes: mainScopes.union([.settings, .settingsEditor]), defaults: [], enabled: { _ in true }, run: { s in s.pickArchiveRoot() }, needsSurfaceHandler: false),
             .init(id: .migrateLayout, title: "Migrate Archive layout…", task: "Archive", scopes: mainScopes, defaults: [], enabled: { _ in true }, run: { s in s.migrateArchiveLayoutInteractively() }, needsSurfaceHandler: false),
             .init(id: .backfillThumbnails, title: "Backfill Archive thumbnails…", task: "Archive", scopes: mainScopes, defaults: [], enabled: { s in s.canWriteArchiveIndex && !s.archiveBackfillIsRunning }, run: { s in s.backfillArchiveIndexThumbnailsInteractively() }, needsSurfaceHandler: false),
             .init(id: .rebuildIndex, title: "Rebuild Archive index…", task: "Archive", scopes: mainScopes, defaults: [], enabled: { s in s.canWriteArchiveIndex }, run: { s in s.rebuildArchiveIndexInteractively() }, needsSurfaceHandler: false),
-            .init(id: .exportBackup, title: "Export app-state backup…", task: "Recovery", scopes: mainScopes, defaults: [], enabled: { _ in true }, run: { s in s.exportBackup() }, needsSurfaceHandler: false),
-            .init(id: .importBackup, title: "Import app-state backup…", task: "Recovery", scopes: mainScopes, defaults: [], enabled: { _ in true }, run: { s in s.importBackup() }, needsSurfaceHandler: false),
+            .init(id: .exportBackup, title: "Export app-state backup…", task: "Recovery", scopes: mainScopes.union([.settings, .settingsEditor]), defaults: [], enabled: { _ in true }, run: { s in s.exportBackup() }, needsSurfaceHandler: false),
+            .init(id: .importBackup, title: "Import app-state backup…", task: "Recovery", scopes: mainScopes.union([.settings, .settingsEditor]), defaults: [], enabled: { _ in true }, run: { s in s.importBackup() }, needsSurfaceHandler: false),
             .init(id: .timeline, title: "Show Archive Timeline", task: "Archive", scopes: mainScopes, defaults: [.init(.init(key: "1", modifiers: [.command]), scopes: mainScopes)], enabled: { s in s.workspaceMode == .archiveView }, run: { s in s.setArchiveBrowseViewMode(.timeline) }, needsSurfaceHandler: false),
             .init(id: .contactSheet, title: "Show Archive Contact Sheet", task: "Archive", scopes: mainScopes, defaults: [.init(.init(key: "2", modifiers: [.command]), scopes: mainScopes)], enabled: { s in s.workspaceMode == .archiveView }, run: { s in s.setArchiveBrowseViewMode(.contactSheet) }, needsSurfaceHandler: false),
             .init(id: .searchArchive, title: "Search the Archive", task: "Find", scopes: mainScopes, defaults: [.init(.init(key: "f", modifiers: [.command, .shift]), scopes: mainScopes)], enabled: { _ in true }, run: { s in s.setWorkspaceMode(.archiveView); s.requestArchiveSearchFocus() }, needsSurfaceHandler: false),
@@ -343,19 +345,19 @@ struct AppCommandRegistry {
             .init(id: .contextActions, title: "Actions for current selection", task: "Commands", scopes: allScopes, defaults: [.init(.init(key: "k", modifiers: [.command]), scopes: allScopes)], enabled: { _ in true }, run: { _ in }, needsSurfaceHandler: true),
             .init(id: .keyboardHelp, title: "Keyboard shortcuts", task: "Commands", scopes: allScopes, defaults: [.init(.init(key: "/", modifiers: [.command]), scopes: allScopes)], enabled: { _ in true }, run: { _ in }, needsSurfaceHandler: true),
             .init(id: .rebindCommand, title: "Rebind highlighted command", task: "Commands", scopes: [.commandPanel], defaults: [.init(.init(key: ",", modifiers: [.command, .shift]), scopes: [.commandPanel])], enabled: { _ in true }, run: { _ in }, needsSurfaceHandler: true),
-            .init(id: .describeSelection, title: "Describe selected material", task: "Descriptions", scopes: mainScopes, defaults: [], enabled: { s in !s.contextualDescriptionTargets.isEmpty && !s.isDescribing }, run: { s in Task { await s.describeCurrentMaterial() } }, needsSurfaceHandler: false),
-            .init(id: .regenerateDescriptions, title: "Regenerate selected descriptions", task: "Descriptions", scopes: mainScopes, defaults: [], enabled: { s in !s.contextualDescriptionTargets.isEmpty && !s.isDescribing }, run: { s in Task { await s.describeCurrentMaterial(regenerate: true) } }, needsSurfaceHandler: false),
-            .init(id: .describeTrip, title: "Describe this Trip", task: "Descriptions", scopes: mainScopes, defaults: [], enabled: { s in s.descriptionTripPath != nil && !s.isDescribing }, run: { s in Task { await s.describeCurrentTrip() } }, needsSurfaceHandler: false),
-            .init(id: .describeYear, title: "Describe current Archive year", task: "Descriptions", scopes: mainScopes, defaults: [], enabled: { s in s.workspaceMode == .archiveView && s.descriptionYear != nil && !s.isDescribing }, run: { s in Task { await s.describeCurrentYear() } }, needsSurfaceHandler: false),
-            .init(id: .descriptionQueue, title: "Open description queue", task: "Descriptions", scopes: mainScopes, defaults: [], enabled: { _ in true }, run: { s in Task { await s.loadDescriptionQueue() } }, needsSurfaceHandler: false),
+            .init(id: .describeSelection, title: "Describe selected material", task: "Descriptions", scopes: mainScopes, defaults: [], enabled: { s in !s.contextualDescriptionTargets.isEmpty && !s.isDescribing }, run: { s in s.startDescriptionCommand(.targets(s.contextualDescriptionTargets, regenerate: false)) }, needsSurfaceHandler: false),
+            .init(id: .regenerateDescriptions, title: "Regenerate selected descriptions", task: "Descriptions", scopes: mainScopes, defaults: [], enabled: { s in !s.contextualDescriptionTargets.isEmpty && !s.isDescribing }, run: { s in s.startDescriptionCommand(.targets(s.contextualDescriptionTargets, regenerate: true)) }, needsSurfaceHandler: false),
+            .init(id: .describeTrip, title: "Describe this Trip", task: "Descriptions", scopes: mainScopes, defaults: [], enabled: { s in s.descriptionTripPath != nil && !s.isDescribing }, run: { s in if let path = s.descriptionTripPath { s.startDescriptionCommand(.targets([(.trip, path)], regenerate: false)) } }, needsSurfaceHandler: false),
+            .init(id: .describeYear, title: "Describe current Archive year", task: "Descriptions", scopes: mainScopes, defaults: [], enabled: { s in s.workspaceMode == .archiveView && s.descriptionYear != nil && !s.isDescribing }, run: { s in if let year = s.descriptionYear { s.startDescriptionCommand(.year(year)) } }, needsSurfaceHandler: false),
+            .init(id: .descriptionQueue, title: "Open description queue", task: "Descriptions", scopes: mainScopes.union([.settings, .settingsEditor]), defaults: [], enabled: { _ in true }, run: { s in Self.prepare(s) { state in await state.loadDescriptionQueue() } }, needsSurfaceHandler: false),
             .init(id: .resumeDescriptions, title: "Resume or retry descriptions", task: "Descriptions", scopes: mainScopes.union([.information]), defaults: [], enabled: { s in !s.isDescribing }, run: { s in s.startDescriptionResume() }, needsSurfaceHandler: false),
             .init(id: .cancelDescriptions, title: "Cancel descriptions", task: "Descriptions", scopes: mainScopes.union([.information]), defaults: [], enabled: { s in s.isDescribing }, run: { s in s.cancelDescriptions() }, needsSurfaceHandler: false),
-            .init(id: .discardDescriptions, title: "Discard failed description batches", task: "Descriptions", scopes: mainScopes.union([.information]), defaults: [], enabled: { s in !s.isDescribing }, run: { s in Task { await s.discardFailedDescriptions() } }, needsSurfaceHandler: false),
-            .init(id: .deliverTrip, title: "Review sending this Trip to Google Photos…", task: "Google Photos", scopes: mainScopes, defaults: [], enabled: { s in s.descriptionTripPath != nil && !s.isDeliveringGooglePhotos }, run: { s in Task { await s.reviewGoogleTrip() } }, needsSurfaceHandler: false),
-            .init(id: .deliverPhotoLog, title: "Review sending this Photo Log to Google Photos…", task: "Google Photos", scopes: mainScopes, defaults: [], enabled: { s in s.canDeliverGooglePhotoLog && !s.isDeliveringGooglePhotos }, run: { s in Task { await s.reviewGooglePhotoLog() } }, needsSurfaceHandler: false),
-            .init(id: .markPreviousUpload, title: "Mark selection previously uploaded", task: "Google Photos", scopes: mainScopes, defaults: [], enabled: { s in s.canMarkGoogleMaterial }, run: { s in Task { await s.markGoogleMaterial(clear: false) } }, needsSurfaceHandler: false),
-            .init(id: .clearPreviousUpload, title: "Clear previous-upload marks", task: "Google Photos", scopes: mainScopes, defaults: [], enabled: { s in s.canMarkGoogleMaterial }, run: { s in Task { await s.markGoogleMaterial(clear: true) } }, needsSurfaceHandler: false),
-            .init(id: .googleQueue, title: "Open Google Photos delivery queue", task: "Google Photos", scopes: mainScopes.union([.googleAccount, .googleAccountEditor]), defaults: [], enabled: { _ in true }, run: { s in Task { await s.loadGoogleDeliveryQueue() } }, needsSurfaceHandler: false),
+            .init(id: .discardDescriptions, title: "Discard failed description batches", task: "Descriptions", scopes: mainScopes.union([.information]), defaults: [], enabled: { s in !s.isDescribing }, run: { s in s.startDescriptionDiscard() }, needsSurfaceHandler: false),
+            .init(id: .deliverTrip, title: "Review sending this Trip to Google Photos…", task: "Google Photos", scopes: mainScopes, defaults: [], enabled: { s in s.descriptionTripPath != nil && !s.isDeliveringGooglePhotos }, run: { s in Self.prepare(s) { state in await state.reviewGoogleTrip() } }, needsSurfaceHandler: false),
+            .init(id: .deliverPhotoLog, title: "Review sending this Photo Log to Google Photos…", task: "Google Photos", scopes: mainScopes, defaults: [], enabled: { s in s.canDeliverGooglePhotoLog && !s.isDeliveringGooglePhotos }, run: { s in Self.prepare(s) { state in await state.reviewGooglePhotoLog() } }, needsSurfaceHandler: false),
+            .init(id: .markPreviousUpload, title: "Mark selection previously uploaded", task: "Google Photos", scopes: mainScopes, defaults: [], enabled: { s in s.canMarkGoogleMaterial }, run: { s in Self.prepare(s) { state in await state.markGoogleMaterial(clear: false) } }, needsSurfaceHandler: false),
+            .init(id: .clearPreviousUpload, title: "Clear previous-upload marks", task: "Google Photos", scopes: mainScopes, defaults: [], enabled: { s in s.canMarkGoogleMaterial }, run: { s in Self.prepare(s) { state in await state.markGoogleMaterial(clear: true) } }, needsSurfaceHandler: false),
+            .init(id: .googleQueue, title: "Open Google Photos delivery queue", task: "Google Photos", scopes: mainScopes.union([.googleAccount, .googleAccountEditor]), defaults: [], enabled: { _ in true }, run: { s in Self.prepare(s) { state in await state.loadGoogleDeliveryQueue() } }, needsSurfaceHandler: false),
             .init(id: .moveLeft, title: "Move left", task: "Keyboard context", scopes: imageScopes.union([.archiveCards]), defaults: [.init(.init(key: "left", modifiers: []), scopes: imageScopes.union([.archiveCards]))], enabled: { _ in true }, run: { _ in }, needsSurfaceHandler: true),
             .init(id: .moveRight, title: "Move right", task: "Keyboard context", scopes: imageScopes.union([.archiveCards]), defaults: [.init(.init(key: "right", modifiers: []), scopes: imageScopes.union([.archiveCards]))], enabled: { _ in true }, run: { _ in }, needsSurfaceHandler: true),
             .init(id: .moveUp, title: "Move up", task: "Keyboard context", scopes: imageScopes.union([.archiveCards]), defaults: [.init(.init(key: "up", modifiers: []), scopes: imageScopes.union([.archiveCards]))], enabled: { _ in true }, run: { _ in }, needsSurfaceHandler: true),
@@ -394,7 +396,7 @@ struct AppCommandRegistry {
             .init(id: .openDefaultSource, title: "Open default source folder", task: "Sources", scopes: mainScopes, defaults: [], enabled: { _ in true }, run: { s in s.openDefaultSourceWorkspace() }),
             .init(id: .reloadSource, title: "Reload current source folder", task: "Sources", scopes: mainScopes, defaults: [], enabled: { s in s.sidebarState.snapshot.canReloadSourceWorkspace }, run: { s in s.reloadCurrentSourceWorkspace() }),
             .init(id: .importSyncedPhotoLogs, title: "Import synced Photo Log state", task: "Recovery", scopes: [.settings, .settingsEditor], defaults: [], enabled: { _ in true }, run: { s in s.importOneDrivePhotoLogState() }),
-            .init(id: .refreshDescriptionModels, title: "Refresh local description models", task: "Descriptions", scopes: [.settings, .settingsEditor], defaults: [], enabled: { s in !s.isRefreshingLMStudioModels }, run: { s in Task { await s.refreshLMStudioModels() } }),
+            .init(id: .refreshDescriptionModels, title: "Refresh local description models", task: "Descriptions", scopes: [.settings, .settingsEditor], defaults: [], enabled: { s in !s.isRefreshingLMStudioModels }, run: { s in Self.prepare(s) { state in await state.refreshLMStudioModels() } }),
             .init(id: .showCamera, title: "Show Camera and source triage", task: "Navigation", scopes: mainScopes, defaults: [], enabled: { _ in true }, run: { s in s.setWorkspaceMode(.cameraTriage) }),
             .init(id: .showPhotoLogs, title: "Show Photo Logs", task: "Navigation", scopes: mainScopes, defaults: [], enabled: { _ in true }, run: { s in s.openPhotoLogLibrary() }),
             .init(id: .showArchive, title: "Show Archive", task: "Navigation", scopes: mainScopes, defaults: [], enabled: { _ in true }, run: { s in s.setWorkspaceMode(.archiveView) }),
@@ -454,6 +456,17 @@ struct AppCommandRegistry {
         alias(.zoomIn,"=",[.shift],scopes:imageScopes); alias(.zoomOut,"-",[.shift],scopes:imageScopes)
         return result
     }()
+
+    /// Capture before scheduling: a later Task must never borrow another selection,
+    /// archive, account or local-model configuration from the shared AppState.
+    private static func prepare(_ state: AppState, operation: @escaping @MainActor (AppState) async -> Void) {
+        let selection = CommandSelectionFingerprint(state), configuration = state.settings.lmStudioConfiguration, revision = state.lmStudioConfigurationRevision
+        Task { [weak state] in
+            guard let state, selection == CommandSelectionFingerprint(state),
+                  configuration == state.settings.lmStudioConfiguration, revision == state.lmStudioConfigurationRevision, !Task.isCancelled else { return }
+            await operation(state)
+        }
+    }
 
     static func definition(_ id: AppCommandID) -> AppCommandDefinition { commands.first { $0.id == id }! }
     func bindings(_ id: AppCommandID) -> [AppCommandBinding] {

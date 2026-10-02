@@ -2,7 +2,6 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var appState: AppState
-    @State private var showLocalDescriptionQueue = false
 
     var body: some View {
         TabView {
@@ -12,9 +11,7 @@ struct SettingsView: View {
                     Text(appState.settings.defaultSourceRootDisplayPath)
                         .textSelection(.enabled)
 
-                    Button("Choose Default SSD Root") {
-                        appState.pickDefaultSourceRoot()
-                    }
+                    RegisteredWindowControl(id: .chooseDefaultSourceRoot, title: "Choose Default SSD Root", appState: appState)
                 }
 
                 Section("Archive Library") {
@@ -31,9 +28,7 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                     }
 
-                    Button("Choose Archive Root") {
-                        appState.pickArchiveRoot()
-                    }
+                    RegisteredWindowControl(id: .chooseArchiveRoot, title: "Choose Archive Root", appState: appState)
                 }
 
                 Section("Travel Sync") {
@@ -156,23 +151,7 @@ struct SettingsView: View {
                 Label("Review", systemImage: "square.grid.3x3")
             }
 
-            Form {
-                Section("LM Studio") {
-                    TextField("Base URL", text: Binding(get: { appState.settings.lmStudioConfiguration.baseURL }, set: { appState.setLMStudio(baseURL: $0) }))
-                    TextField("Model identifier", text: Binding(get: { appState.settings.lmStudioConfiguration.model }, set: { appState.setLMStudio(model: $0) }))
-                    if !appState.lmStudioModels.isEmpty {
-                        Picker("Available model", selection: Binding(get: { appState.settings.lmStudioConfiguration.model }, set: { appState.setLMStudio(model: $0) })) {
-                            Text("Choose a model").tag("")
-                            ForEach(appState.lmStudioModels, id: \.self) { Text($0).tag($0) }
-                        }
-                    }
-                    RegisteredWindowControl(id: .refreshDescriptionModels, title: appState.isRefreshingLMStudioModels ? "Refreshing…" : "Refresh models", appState: appState).disabled(appState.isRefreshingLMStudioModels)
-                    Text("Start LM Studio's local server and choose a vision-capable model for photographs. Describe runs only when requested in Archive; summaries use recorded child descriptions. Results retain model/date provenance separately from your notes.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Text("Travel descriptions use prepared thumbnails; originals are never downloaded for this action.").font(.caption).foregroundStyle(.secondary)
-                    Button("Description queue…") { Task { await appState.loadDescriptionQueue(show: false); showLocalDescriptionQueue = true } }
-                }
-            }.formStyle(.grouped).tabItem { Label("Local AI", systemImage: "text.bubble") }
+            DescriptionSettingsView(appState: appState).tabItem { Label("Local AI", systemImage: "text.bubble") }
 
             GooglePhotosSettingsView(appState: appState).tabItem { Label("Google Photos", systemImage: "cloud") }
 
@@ -182,13 +161,9 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
 
                     HStack {
-                        Button("Export Backup") {
-                            appState.exportBackup()
-                        }
+                        RegisteredWindowControl(id: .exportBackup, title: "Export Backup", appState: appState)
 
-                        Button("Import Backup") {
-                            appState.importBackup()
-                        }
+                        RegisteredWindowControl(id: .importBackup, title: "Import Backup", appState: appState)
                     }
                 }
             }
@@ -197,7 +172,6 @@ struct SettingsView: View {
                 Label("Backup", systemImage: "externaldrive.badge.timemachine")
             }
         }
-        .sheet(isPresented: $showLocalDescriptionQueue) { DescriptionQueueView(appState: appState, onClose: { showLocalDescriptionQueue = false }) }
         .scenePadding()
         .frame(width: 620, height: 430)
         .background(CommandWindowAnchor(coordinator: appState.commandCoordinator, scope: .settings))

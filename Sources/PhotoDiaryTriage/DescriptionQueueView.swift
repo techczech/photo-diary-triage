@@ -4,16 +4,20 @@ struct DescriptionQueueView: View {
     @ObservedObject var appState: AppState
     var onClose: (() -> Void)? = nil
     var body: some View {
+        let context = appState.commandDescriptionContextKey
+        return CommandLocalSurface(coordinator: appState.commandCoordinator, scope: .information, contextKey: context,
+            actions: descriptionQueueCommandActions(appState: appState, onClose: { if let onClose { onClose() } else { appState.showDescriptionQueue = false } }),
+            ownsWindow: true, fillsAvailableHeight: true) { commands in
         VStack(alignment: .leading, spacing: 12) {
             Text("Local descriptions").font(.title2)
             Text("Archived keepers first, then Walk and Trip summaries. Successful regeneration replaces the active search description and preserves earlier machine revisions.")
                 .foregroundStyle(.secondary)
             HStack {
-                Button(appState.isDescribing ? "Describing…" : "Resume / retry") { appState.commandCoordinator.execute(.resumeDescriptions) }.disabled(appState.isDescribing)
-                Button("Cancel") { appState.commandCoordinator.execute(.cancelDescriptions) }.disabled(!appState.isDescribing)
-                Button("Discard failed batches") { appState.commandCoordinator.execute(.discardDescriptions) }.disabled(appState.isDescribing)
+                Button(appState.isDescribing ? "Describing…" : "Resume / retry") { commands.run(.resumeDescriptions) }.disabled(appState.isDescribing)
+                Button("Cancel") { commands.run(.cancelDescriptions) }.disabled(!appState.isDescribing)
+                Button("Discard failed batches") { commands.run(.discardDescriptions) }.disabled(appState.isDescribing)
                 Spacer()
-                Button("Close") { appState.commandCoordinator.execute(.closeSheet) }
+                Button("Close") { commands.run(.closeSheet) }
                     .commandShortcutHint(.closeSheet, appState: appState, scope: .information, help: "Close the queue")
             }
             List(appState.descriptionJobs.filter { $0.state != .discarded }.reversed()) { job in
@@ -35,30 +39,56 @@ struct DescriptionQueueView: View {
             }
             if appState.descriptionJobs.isEmpty { Text("Choose archived photos, a Walk, a Trip or a year from Describe in Archive.").foregroundStyle(.secondary) }
         }.padding(20).frame(minWidth: 700, minHeight: 450)
-        .background(CommandSheetAnchor(coordinator: appState.commandCoordinator, scope: .information, actions: [
-            .closeSheet: .init(run: { if let onClose { onClose() } else { appState.showDescriptionQueue = false } })
-        ]))
+        }
     }
 }
 
 struct ArchiveDescriptionControls: View {
     @ObservedObject var appState: AppState
     var body: some View {
-                Menu {
-                    Button("Describe selected material") { Task { await appState.describeCurrentMaterial() } }
-                        .disabled(appState.contextualDescriptionTargets.isEmpty || appState.isDescribing)
-                    Button("Regenerate selected material") { Task { await appState.describeCurrentMaterial(regenerate: true) } }
-                        .disabled(appState.contextualDescriptionTargets.isEmpty || appState.isDescribing)
-                    Button("Describe this Trip") { Task { await appState.describeCurrentTrip() } }
-                        .disabled(appState.descriptionTripPath == nil || appState.isDescribing)
-                    if let year = appState.descriptionYear {
-                        Button("Describe archived material in \(year)") { Task { await appState.describeCurrentYear() } }.disabled(appState.isDescribing)
-                    }
-                    Divider()
-                    Button("Description queue…") { Task { await appState.loadDescriptionQueue() } }
-                } label: { Label(appState.isDescribing ? "Describing…" : "Describe", systemImage: "text.bubble") }
-                .help("Describe canonical archived keepers with your selected local model")
-
+        Menu {
+            RegisteredWindowControl(id: .describeSelection, title: "Describe selected material", appState: appState)
+            RegisteredWindowControl(id: .regenerateDescriptions, title: "Regenerate selected material", appState: appState)
+            RegisteredWindowControl(id: .describeTrip, title: "Describe this Trip", appState: appState)
+            if let year = appState.descriptionYear {
+                RegisteredWindowControl(id: .describeYear, title: "Describe archived material in \(year)", appState: appState)
+            }
+            Divider()
+            RegisteredWindowControl(id: .descriptionQueue, title: "Description queue…", appState: appState)
+        } label: { Label(appState.isDescribing ? "Describing…" : "Describe", systemImage: "text.bubble") }
+        .help("Describe canonical archived keepers with your selected local model")
         .sheet(isPresented: $appState.showDescriptionQueue) { DescriptionQueueView(appState: appState) }
+    }
+}
+
+struct DescriptionSettingsView: View {
+    @ObservedObject var appState: AppState
+    @State private var showLocalDescriptionQueue = false
+    var body: some View {
+        let configuration = appState.settings.lmStudioConfiguration
+        let key = localCommandContextKey([appState.commandDescriptionContextKey, configuration.baseURL, configuration.model, String(appState.lmStudioConfigurationRevision)])
+        return CommandLocalSurface(coordinator: appState.commandCoordinator, scope: .settings, contextKey: key,
+            actions: descriptionSettingsCommandActions(appState: appState, showQueue: { showLocalDescriptionQueue = true }),
+            fillsAvailableHeight: true) { commands in
+            Form {
+                Section("LM Studio") {
+                    TextField("Base URL", text: Binding(get: { appState.settings.lmStudioConfiguration.baseURL }, set: { appState.setLMStudio(baseURL: $0) }))
+                    TextField("Model identifier", text: Binding(get: { appState.settings.lmStudioConfiguration.model }, set: { appState.setLMStudio(model: $0) }))
+                    if !appState.lmStudioModels.isEmpty {
+                        Picker("Available model", selection: Binding(get: { appState.settings.lmStudioConfiguration.model }, set: { appState.setLMStudio(model: $0) })) {
+                            Text("Choose a model").tag("")
+                            ForEach(appState.lmStudioModels, id: \.self) { Text($0).tag($0) }
+                        }
+                    }
+                    Button(appState.isRefreshingLMStudioModels ? "Refreshing…" : "Refresh models") { commands.run(.refreshDescriptionModels) }.disabled(appState.isRefreshingLMStudioModels)
+                    Text("Start LM Studio's local server and choose a vision-capable model for photographs. Describe runs only when requested in Archive; summaries use recorded child descriptions. Results retain model/date provenance separately from your notes.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text("Travel descriptions use prepared thumbnails; originals are never downloaded for this action.").font(.caption).foregroundStyle(.secondary)
+                    Button("Description queue…") { commands.run(.descriptionQueue) }
+                }
+            }
+            .formStyle(.grouped)
+        }
+        .sheet(isPresented: $showLocalDescriptionQueue) { DescriptionQueueView(appState: appState, onClose: { showLocalDescriptionQueue = false }) }
     }
 }

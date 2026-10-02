@@ -856,3 +856,69 @@ private actor GoogleJourneyDescriptionClient: DescriptionGenerating {
     await gate.release(); await review.value
     #expect(app.googleDeliveryReview == nil)
 }
+
+@Test @MainActor func deferredGoogleMarksCannotBorrowAChangedArchiveSelection() async throws {
+    let root = try makeTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+    let archive = root.appendingPathComponent("archive")
+    for name in ["A", "B"] {
+        let folder = archive.appendingPathComponent("2020/" + name)
+        try AppDirectories.ensureExists(folder); try writeTestJPEGImage(folder.appendingPathComponent("photo.jpg"))
+        try ("Human note for " + name).write(to: folder.appendingPathComponent(name + ".md"), atomically: true, encoding: .utf8)
+    }
+    try ArchiveIndexStore().rebuildIndex(archiveRoot: archive)
+    var settings = AppSettings.default(); settings.archiveRoot = archive; settings.oneDrivePicturesRoot = archive; settings.archiveMachineRole = .travel
+    let app = AppState(testing: true, testingSettings: settings, testingSupportRoot: root.appendingPathComponent("support"))
+    let catalogue = try ArchiveCatalogueBuilder().build(archiveRoot: archive, supportedExtensions: ["jpg"], machineRole: .travel)
+    let a = try #require(catalogue.entries.first { $0.title == "A" }), b = try #require(catalogue.entries.first { $0.title == "B" })
+    app.testingInstallArchiveCatalogue(catalogue); app.setWorkspaceMode(.archiveView); app.selectArchiveEntry(a.id)
+    AppCommandRegistry.definition(.markPreviousUpload).run(app)
+    app.selectArchiveEntry(b.id) // No suspension between dispatch and changed selection.
+    try await Task.sleep(for: .milliseconds(80))
+    let store = ArchiveIndexStore(), folderB = archive.appendingPathComponent(b.archiveRelativePath)
+    #expect(try store.historicalGoogleRecord(folder: folderB)?.manualMarks.isEmpty != false)
+    #expect(app.archiveBrowserState.snapshot.entries.first { $0.id == b.id }?.googlePhotos?.badge == nil)
+    // A fresh request proves the same route can perform the explicitly chosen action.
+    AppCommandRegistry.definition(.markPreviousUpload).run(app)
+    for _ in 0..<50 where try store.historicalGoogleRecord(folder: folderB)?.manualMarks.isEmpty != false { try await Task.sleep(for: .milliseconds(10)) }
+    #expect(try store.historicalGoogleRecord(folder: folderB)?.manualMarks.count == 1)
+    app.selectArchiveEntry(a.id); AppCommandRegistry.definition(.clearPreviousUpload).run(app); app.selectArchiveEntry(b.id)
+    try await Task.sleep(for: .milliseconds(80))
+    #expect(try store.historicalGoogleRecord(folder: folderB)?.manualMarks.count == 1)
+    #expect(try String(contentsOf: folderB.appendingPathComponent("B.md"), encoding: .utf8).contains("Human note for B"))
+}
+
+@Test @MainActor func deferredGooglePhotoLogReviewCannotBorrowAnotherLog() async throws {
+    let root = try makeTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+    let a = try await googleFixture(root, title: "A"), b = try await googleFixture(root, title: "B")
+    var settings = AppSettings.default(); settings.archiveRoot = a.session.archiveRoot; settings.oneDrivePicturesRoot = settings.archiveRoot; settings.googlePhotosClientID = googleTestAccount.clientID
+    let client = GoogleTestClient()
+    let app = AppState(testing: true, testingSettings: settings, testingSupportRoot: root.appendingPathComponent("support"), testingGoogleCredentials: GoogleTestCredentials(), testingGoogleClient: client, testingGoogleSecrets: GoogleTestSecrets())
+    app.currentSession = a.session; AppCommandRegistry.definition(.deliverPhotoLog).run(app); app.currentSession = b.session
+    try await Task.sleep(for: .milliseconds(80))
+    #expect(app.googleDeliveryReview == nil)
+    AppCommandRegistry.definition(.deliverPhotoLog).run(app)
+    for _ in 0..<50 where app.googleDeliveryReview == nil { try await Task.sleep(for: .milliseconds(10)) }
+    let review = try #require(app.googleDeliveryReview)
+    #expect(review.scope.id == b.session.id)
+    #expect(await client.count("createAlbum") == 0)
+}
+
+@Test @MainActor func deferredGoogleMarksCannotBorrowChangedMapWalkSelection() async throws {
+    let root = try makeTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+    let a = try await googleFixture(root, title: "A"); _ = try await googleFixture(root, title: "B")
+    var settings = AppSettings.default(); settings.archiveRoot = a.session.archiveRoot; settings.oneDrivePicturesRoot = settings.archiveRoot; settings.archiveMachineRole = .travel
+    let app = AppState(testing: true, testingSettings: settings, testingSupportRoot: root.appendingPathComponent("support"))
+    let catalogue = try ArchiveCatalogueBuilder().build(archiveRoot: settings.archiveRoot, supportedExtensions: ["jpg"], machineRole: .travel)
+    app.testingInstallArchiveCatalogue(catalogue); app.setWorkspaceMode(.archiveView); app.setArchiveBrowseViewMode(.map)
+    let originalPath = try #require(app.contextualDescriptionTargets.first?.1), tripPath = app.descriptionTripPath
+    AppCommandRegistry.definition(.markPreviousUpload).run(app)
+    app.moveArchiveSelection(horizontal: 0, vertical: 1, contactSheetColumns: 4)
+    let nextPath = try #require(app.contextualDescriptionTargets.first?.1)
+    #expect(nextPath != originalPath); #expect(app.descriptionTripPath == tripPath)
+    try await Task.sleep(for: .milliseconds(80))
+    let folder = settings.archiveRoot.appendingPathComponent(nextPath), store = ArchiveIndexStore()
+    #expect(try store.loadWalkManifest(folder: folder, archiveRoot: settings.archiveRoot)?.googlePhotos?.manualMarks.isEmpty != false)
+    AppCommandRegistry.definition(.markPreviousUpload).run(app)
+    for _ in 0..<50 where try store.loadWalkManifest(folder: folder, archiveRoot: settings.archiveRoot)?.googlePhotos?.manualMarks.isEmpty != false { try await Task.sleep(for: .milliseconds(10)) }
+    #expect(try store.loadWalkManifest(folder: folder, archiveRoot: settings.archiveRoot)?.googlePhotos?.manualMarks.count == 1)
+}

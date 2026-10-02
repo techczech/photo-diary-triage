@@ -143,7 +143,7 @@ final class AppState: ObservableObject {
     }
     var commandArchiveSelectionFingerprint: String {
         [String(describing: workspaceMode), String(describing: archiveNavigationLevel), String(describing: settings.archiveBrowseViewMode), String(describing: archiveSort), String(describing: archiveKindFilter), archiveYearFilter ?? "", archiveSearchQuery,
-         selectedArchiveEntryID ?? "", selectedArchiveWalkID ?? "", selectedArchiveSearchResultID ?? "", activePhotoLogEditor?.id.uuidString ?? "", activeWalkCommitEditor?.id.uuidString ?? ""].joined(separator: "\0")
+         selectedArchiveEntryID ?? "", selectedArchiveWalkID ?? "", String(describing: selectedArchiveMapItemID), selectedArchiveSearchResultID ?? "", activePhotoLogEditor?.id.uuidString ?? "", activeWalkCommitEditor?.id.uuidString ?? ""].joined(separator: "\0")
     }
 
     @discardableResult
@@ -1696,7 +1696,11 @@ final class AppState: ObservableObject {
             }
             try refreshGoogleDisplayedFacts(targets: targets)
             statusMessage = clear ? "Previous-upload marks cleared; verified receipts retained." : "Marked previously uploaded. This is your record, not API verification or cleanup proof."
-        } catch { statusMessage = "Could not save previous-upload marks: " + error.localizedDescription }
+        } catch {
+            if generation == ArchiveByteReadPolicyContext.shared.generation, repository.archiveRoot == settings.archiveRoot, !Task.isCancelled {
+                statusMessage = "Could not save previous-upload marks: " + error.localizedDescription
+            }
+        }
     }
 
     private func setGoogleFactsOverlay(_ record: GooglePhotosRecord, path: String) {
@@ -1766,35 +1770,37 @@ final class AppState: ObservableObject {
     @Published var isDescribing = false
     @Published var lmStudioModels: [String] = []
     @Published var isRefreshingLMStudioModels = false
+    var lmStudioConfigurationRevision = 0
     @Published var showDescriptionQueue = false
-    private let descriptionClient: any DescriptionGenerating
-    private var descriptionQueue: ArchiveDescriptionQueue?
-    private var descriptionQueueGeneration: Int?
-    private var descriptionTask: Task<Void, Never>?
+    let descriptionClient: any DescriptionGenerating
+    var descriptionQueue: (any ArchiveDescriptionQueuing)?
+    var testingDescriptionQueue: (any ArchiveDescriptionQueuing)?
+    var descriptionQueueGeneration: Int?
+    var descriptionTask: Task<Void, Never>?
+    var descriptionCancellationTask: Task<Void, Never>?
+    var descriptionOperationID: UUID?
+    var descriptionCancellationRevision = 0
+    var descriptionQueueReadRequestID: UUID?
+    var testingDescriptionYearReader: (@Sendable (URL) async throws -> [ArchiveIndexEntry])?
 
     func setLMStudio(baseURL: String? = nil, model: String? = nil) {
+        let previous = settings.lmStudioConfiguration
         if let baseURL { settings.lmStudioConfiguration.baseURL = baseURL }
         if let model { settings.lmStudioConfiguration.model = model }
+        if previous != settings.lmStudioConfiguration { lmStudioConfigurationRevision &+= 1 }
         persistSettings()
     }
     func refreshLMStudioModels() async {
         guard !isRefreshingLMStudioModels else { return }
         isRefreshingLMStudioModels = true; defer { isRefreshingLMStudioModels = false }
-        let configuration = settings.lmStudioConfiguration
+        let configuration = settings.lmStudioConfiguration, revision = lmStudioConfigurationRevision, context = commandDescriptionContextKey
+        func current() -> Bool { context == commandDescriptionContextKey && revision == lmStudioConfigurationRevision && configuration == settings.lmStudioConfiguration && !Task.isCancelled }
         do {
             let models = try await descriptionClient.models(configuration: configuration)
-            guard settings.lmStudioConfiguration.baseURL == configuration.baseURL else { return }
+            guard current() else { return }
             lmStudioModels = models
             statusMessage = models.isEmpty ? "LM Studio has no available models." : "Found \(models.count) LM Studio models. Choose a vision-capable model for photographs."
-        } catch { statusMessage = "LM Studio model refresh failed: " + error.localizedDescription }
-    }
-    private func currentDescriptionQueue() -> ArchiveDescriptionQueue {
-        let generation = ArchiveByteReadPolicyContext.shared.generation
-        if let descriptionQueue, descriptionQueueGeneration == generation { return descriptionQueue }
-        let queue = ArchiveDescriptionQueue(archiveRoot: settings.archiveRoot, machineRole: settings.archiveMachineRole,
-            client: descriptionClient, oneDrivePicturesRoot: settings.oneDrivePicturesRoot,
-            contextIsCurrent: { ArchiveByteReadPolicyContext.shared.generation == generation })
-        descriptionQueue = queue; descriptionQueueGeneration = generation; return queue
+        } catch { if current() { statusMessage = "LM Studio model refresh failed: " + error.localizedDescription } }
     }
     var contextualDescriptionTargets: [(DescriptionTargetKind, String)] {
         guard workspaceMode == .archiveView else { return [] }
@@ -1830,79 +1836,6 @@ final class AppState: ObservableObject {
         }
     }
     var descriptionYear: String? { archiveYearFilter ?? selectedArchiveEntry?.year }
-    func describeCurrentMaterial(regenerate: Bool = false) async { await enqueueDescriptions(targets: contextualDescriptionTargets, regenerate: regenerate) }
-    func describeCurrentTrip(regenerate: Bool = false) async {
-        guard let path = descriptionTripPath else { return }
-        await enqueueDescriptions(targets: [(.trip, path)], regenerate: regenerate)
-    }
-    func describeCurrentYear() async {
-        guard workspaceMode == .archiveView, let year = descriptionYear else { return }
-        let root = settings.archiveRoot, generation = ArchiveByteReadPolicyContext.shared.generation
-        do {
-            let rows = try await Task.detached { try ArchiveCatalogueBuilder().readIndexEntries(archiveRoot: root) }.value
-            guard generation == ArchiveByteReadPolicyContext.shared.generation else { return }
-            let targets = rows.filter { $0.year == year && (($0.kind == .trip && $0.tripID != nil) || ($0.kind == .walk && $0.sessionID != nil)) }
-                .map { ($0.kind == .trip ? DescriptionTargetKind.trip : .walk, $0.archiveRelativePath) }
-            await enqueueDescriptions(targets: targets, regenerate: false)
-        } catch { statusMessage = "Description year queue failed: " + error.localizedDescription }
-    }
-    func enqueueDescriptions(targets: [(DescriptionTargetKind, String)], regenerate: Bool = false) async {
-        guard !isDescribing, !targets.isEmpty, workspaceMode == .archiveView else { return }
-        let queue = currentDescriptionQueue(), generation = ArchiveByteReadPolicyContext.shared.generation
-        isDescribing = true
-        do {
-            let created = try await queue.enqueue(targets: targets, configuration: settings.lmStudioConfiguration, regenerate: regenerate)
-            guard generation == ArchiveByteReadPolicyContext.shared.generation else { isDescribing = false; return }
-            descriptionJobs = try await queue.jobs(); showDescriptionQueue = true
-            isDescribing = false
-            if created.isEmpty { statusMessage = "The selected material already has descriptions. Use Regenerate to replace the active result." }
-            else { await resumeDescriptions(jobIDs: Set(created.map(\.id))) }
-        } catch { isDescribing = false; statusMessage = "Could not queue descriptions: " + error.localizedDescription }
-    }
-    func loadDescriptionQueue(show: Bool = true) async {
-        guard !isDescribing else { if show { showDescriptionQueue = true }; return }
-        let queue = currentDescriptionQueue(), generation = ArchiveByteReadPolicyContext.shared.generation
-        do {
-            let jobs = try await queue.jobs()
-            guard generation == ArchiveByteReadPolicyContext.shared.generation else { return }
-            descriptionJobs = jobs; if show { showDescriptionQueue = true }
-        } catch { statusMessage = "Description queue unavailable: " + error.localizedDescription }
-    }
-    func resumeDescriptions(jobIDs: Set<UUID>? = nil) async {
-        guard !isDescribing else { return }
-        let queue = currentDescriptionQueue(), generation = ArchiveByteReadPolicyContext.shared.generation
-        isDescribing = true
-        defer { isDescribing = false }
-        do {
-            try await queue.run(jobIDs: jobIDs) { [weak self] jobs in
-                await MainActor.run {
-                    guard let self, generation == ArchiveByteReadPolicyContext.shared.generation else { return }
-                    self.descriptionJobs = jobs
-                }
-            }
-            guard generation == ArchiveByteReadPolicyContext.shared.generation else { return }
-            descriptionJobs = try await queue.jobs()
-            let failed = descriptionJobs.filter { $0.state == .failed || $0.state == .cancelled }.count
-            statusMessage = failed == 0 ? "Description queue completed." : "Description queue has \(failed) requests needing retry or a fresh request."
-            if settings.archiveMachineRole == .mainArchive { reloadArchiveCatalogue() }
-            else { statusMessage += " Canonical results are saved; the main Mac publishes the searchable index." }
-        } catch { statusMessage = "Description queue stopped: " + error.localizedDescription }
-    }
-    func startDescriptionResume() {
-        guard !isDescribing else { return }
-        descriptionTask = Task { await resumeDescriptions(); descriptionTask = nil }
-    }
-    func cancelDescriptions() {
-        descriptionTask?.cancel()
-        let queue = descriptionQueue
-        Task { await queue?.cancel() }
-    }
-    func discardFailedDescriptions() async {
-        guard !isDescribing else { return }
-        do { let queue = currentDescriptionQueue(); try await queue.discardFailed(); descriptionJobs = try await queue.jobs() }
-        catch { statusMessage = "Could not discard failed requests: " + error.localizedDescription }
-    }
-
     @Published var isSavingTripLocation = false
 
     func tripLocationTarget(for trip: ArchiveBrowseEntry) -> TripLocationTarget? {
