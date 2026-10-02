@@ -9,6 +9,7 @@ enum ArchiveIndexEntryKind: String, Codable, Sendable {
     case photo
     case walk
     case trip
+    case unorganisedFolder
 }
 
 struct ArchiveIndexEntry: Codable, Hashable, Sendable {
@@ -26,6 +27,17 @@ struct ArchiveIndexEntry: Codable, Hashable, Sendable {
     var tripPath: String?
     var latitude: Double?
     var longitude: Double?
+    var folderPath: String?
+    var endDate: String?
+    var photoCount: Int?
+    var mediaItemID: UUID?
+    var pixelWidth: Int?
+    var pixelHeight: Int?
+    var cameraModel: String?
+    var lensModel: String?
+    var fileSizeBytes: Int64?
+    var companionPaths: [String]?
+    var cropRelationship: CropRelationship?
 
     init(
         kind: ArchiveIndexEntryKind,
@@ -41,7 +53,18 @@ struct ArchiveIndexEntry: Codable, Hashable, Sendable {
         walkPath: String?,
         tripPath: String?,
         latitude: Double? = nil,
-        longitude: Double? = nil
+        longitude: Double? = nil,
+        folderPath: String? = nil,
+        endDate: String? = nil,
+        photoCount: Int? = nil,
+        mediaItemID: UUID? = nil,
+        pixelWidth: Int? = nil,
+        pixelHeight: Int? = nil,
+        cameraModel: String? = nil,
+        lensModel: String? = nil,
+        fileSizeBytes: Int64? = nil,
+        companionPaths: [String]? = nil,
+        cropRelationship: CropRelationship? = nil
     ) {
         self.kind = kind
         self.year = year
@@ -57,6 +80,17 @@ struct ArchiveIndexEntry: Codable, Hashable, Sendable {
         self.tripPath = tripPath
         self.latitude = latitude
         self.longitude = longitude
+        self.folderPath = folderPath
+        self.endDate = endDate
+        self.photoCount = photoCount
+        self.mediaItemID = mediaItemID
+        self.pixelWidth = pixelWidth
+        self.pixelHeight = pixelHeight
+        self.cameraModel = cameraModel
+        self.lensModel = lensModel
+        self.fileSizeBytes = fileSizeBytes
+        self.companionPaths = companionPaths
+        self.cropRelationship = cropRelationship
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -74,6 +108,17 @@ struct ArchiveIndexEntry: Codable, Hashable, Sendable {
         case tripPath = "trip_path"
         case latitude
         case longitude
+        case folderPath = "folder_path"
+        case endDate = "end_date"
+        case photoCount = "photo_count"
+        case mediaItemID = "media_item_id"
+        case pixelWidth = "pixel_width"
+        case pixelHeight = "pixel_height"
+        case cameraModel = "camera_model"
+        case lensModel = "lens_model"
+        case fileSizeBytes = "file_size_bytes"
+        case companionPaths = "companion_paths"
+        case cropRelationship = "crop_relationship"
     }
 }
 
@@ -131,13 +176,16 @@ struct ArchiveByteReadPolicy: Sendable {
     }
 
     func canReadBytes(at url: URL, explicitDownload: Bool = false) -> Bool {
+        guard !escapesArchive(url) else { return false }
         guard machineRole == .travel, explicitDownload == false else { return true }
         guard isInsideArchive(url) else { return true }
         return isOnlineOnly(url) == false
     }
 
     func canGenerateImplicitThumbnail(at url: URL) -> Bool {
+        guard !escapesArchive(url) else { return false }
         guard isInsideArchive(url) else { return true }
+        guard machineRole != .travel else { return false }
         return isOnlineOnly(url) == false
     }
 
@@ -154,8 +202,18 @@ struct ArchiveByteReadPolicy: Sendable {
     }
 
     func isInsideArchive(_ url: URL) -> Bool {
-        let filePath = url.resolvingSymlinksInPath().standardizedFileURL.path
-        return filePath == resolvedArchiveRootPath || filePath.hasPrefix(resolvedArchiveRootPath + "/")
+        let lexical = url.standardizedFileURL.path
+        let resolved = ArchivePathSafety.resolvedForWrite(url).path
+        return contains(lexical, in: archiveRoot.path) || contains(lexical, in: resolvedArchiveRootPath) || contains(resolved, in: resolvedArchiveRootPath)
+    }
+
+    func escapesArchive(_ url: URL) -> Bool {
+        (contains(url.standardizedFileURL.path, in: archiveRoot.path) || contains(url.standardizedFileURL.path, in: resolvedArchiveRootPath))
+            && !contains(ArchivePathSafety.resolvedForWrite(url).path, in: resolvedArchiveRootPath)
+    }
+
+    private func contains(_ path: String, in root: String) -> Bool {
+        root == "/" || path == root || path.hasPrefix(root + "/")
     }
 }
 
@@ -174,6 +232,7 @@ final class ArchiveByteReadPolicyContext: @unchecked Sendable {
     }
 
     func canReadBytes(at url: URL, explicitDownload: Bool = false) -> Bool {
+        guard !snapshot().escapesArchive(url) else { return false }
         if explicitDownload { return true }
         return isOnlineOnlyArchiveFile(url) == false
     }
@@ -184,9 +243,18 @@ final class ArchiveByteReadPolicyContext: @unchecked Sendable {
         return cachedOnlineOnlyVerdict(for: url, policy: current)
     }
 
+    func canPreheatOriginal(at url: URL) -> Bool {
+        let current = snapshot()
+        guard !current.escapesArchive(url) else { return false }
+        guard current.machineRole != .travel || !current.isInsideArchive(url) else { return false }
+        return canReadBytes(at: url)
+    }
+
     func canGenerateImplicitThumbnail(at url: URL) -> Bool {
         let current = snapshot()
+        guard !current.escapesArchive(url) else { return false }
         guard current.isInsideArchive(url) else { return true }
+        guard current.machineRole != .travel else { return false }
         return cachedOnlineOnlyVerdict(for: url, policy: current) == false
     }
 
@@ -210,7 +278,9 @@ final class ArchiveByteReadPolicyContext: @unchecked Sendable {
     func indexThumbnailURLIfAvailable(for archiveFileURL: URL) -> URL? {
         let current = snapshot()
         guard current.isInsideArchive(archiveFileURL) else { return nil }
+        guard !current.escapesArchive(archiveFileURL) else { return nil }
         let url = ArchiveIndexStore.thumbnailURL(for: archiveFileURL, archiveRoot: current.archiveRoot)
+        guard !current.escapesArchive(url) else { return nil }
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
@@ -479,6 +549,14 @@ struct ArchiveIndexStore {
         guard !entries.isEmpty || !removingArchiveRelativePaths.isEmpty || !replacingWalkPaths.isEmpty || !replacingTripPaths.isEmpty else { return }
         let mutationLock = try ArchiveMutationLock(archiveRoot: archiveRoot)
         defer { withExtendedLifetime(mutationLock) {} }
+        try updateIndexWhileLocked(with: entries, archiveRoot: archiveRoot,
+            removingArchiveRelativePaths: removingArchiveRelativePaths,
+            replacingWalkPaths: replacingWalkPaths, replacingTripPaths: replacingTripPaths)
+    }
+
+    private func updateIndexWhileLocked(with entries: [ArchiveIndexEntry], archiveRoot: URL,
+        removingArchiveRelativePaths: Set<String> = [], replacingWalkPaths: Set<String> = [],
+        replacingTripPaths: Set<String> = []) throws {
         try AppDirectories.ensureExists(Self.indexRoot(for: archiveRoot), fileManager: fileManager)
         let activeRoot = try Self.shardRoot(for: archiveRoot)
         let shards = try fileManager.contentsOfDirectory(at: activeRoot, includingPropertiesForKeys: nil)
@@ -557,13 +635,32 @@ struct ArchiveIndexStore {
         return entries
     }
 
+    func replaceWalkFolders(_ walkFolders: [URL], archiveRoot: URL,
+        removingWalkPaths: Set<String> = [], tripFolders: [URL] = []) throws {
+        let mutationLock = try ArchiveMutationLock(archiveRoot: archiveRoot)
+        defer { withExtendedLifetime(mutationLock) {} }
+        var entries: [ArchiveIndexEntry] = []
+        for walkFolder in walkFolders {
+            entries.append(contentsOf: try entriesForWalkFolder(walkFolder, archiveRoot: archiveRoot))
+        }
+        entries.append(contentsOf: tripFolders.map { entryForTripFolder($0, archiveRoot: archiveRoot) })
+        let walkPaths = removingWalkPaths.union(Set(entries.compactMap(\.walkPath)))
+        let tripPaths = Set(entries.filter { $0.kind == .trip }.compactMap(\.tripPath))
+        try updateIndexWhileLocked(
+            with: entries,
+            archiveRoot: archiveRoot,
+            replacingWalkPaths: walkPaths,
+            replacingTripPaths: tripPaths
+        )
+    }
+
     func entriesForWalkFolder(_ walkFolder: URL, archiveRoot: URL) throws -> [ArchiveIndexEntry] {
         guard let walkManifest = try loadWalkManifest(folder: walkFolder, archiveRoot: archiveRoot) else { return [] }
         var entries = [entry(from: walkManifest, archiveRoot: archiveRoot)]
         for file in try loadFileManifests(folder: walkFolder, archiveRoot: archiveRoot) {
             entries.append(photoEntry(from: file, walk: walkManifest, archiveRoot: archiveRoot))
         }
-        return entries
+        return try includingCropRelationships(entries, archiveRoot: archiveRoot)
     }
 
     func entryForTripFolder(_ tripFolder: URL, archiveRoot: URL) -> ArchiveIndexEntry {
@@ -664,7 +761,11 @@ struct ArchiveIndexStore {
                 tripPath: tripPath
             ))
         }
-        return entries
+        let recognised = Set(entries.filter { $0.kind == .trip || $0.kind == .walk }.map(\.archiveRelativePath))
+        let discovery = try ArchiveCatalogueBuilder(fileManager: fileManager).discoverHistoricalFolders(
+            archiveRoot: archiveRoot, recognisedRoots: recognised, supportedExtensions: AppSettings.default().supportedExtensions)
+        entries.append(contentsOf: try historicalEntries(discovery, archiveRoot: archiveRoot))
+        return try includingCropRelationships(entries, archiveRoot: archiveRoot)
     }
 
     private func structuralManifestURLs(archiveRoot: URL) throws -> [URL] {
@@ -761,7 +862,12 @@ struct ArchiveIndexStore {
             notes: manifest.notes,
             thumbnailPath: existingThumbnailRelativePath(for: fileURL, archiveRoot: archiveRoot),
             walkPath: walk.archiveFolderRelativePath,
-            tripPath: walk.tripFolderRelativePath
+            tripPath: walk.tripFolderRelativePath,
+            latitude: manifest.latitude ?? walk.latitude,
+            longitude: manifest.longitude ?? walk.longitude,
+            mediaItemID: manifest.mediaItemID, pixelWidth: manifest.pixelWidth, pixelHeight: manifest.pixelHeight,
+            cameraModel: manifest.cameraModel, lensModel: manifest.lensModel,
+            companionPaths: manifest.companionArchivePaths.compactMap { Self.archiveRelativePath(for: URL(fileURLWithPath: $0), archiveRoot: archiveRoot) }
         )
     }
 
@@ -1079,27 +1185,11 @@ actor ArchiveIndexMutationQueue {
         try replaceWalkFolders(walkFolders, archiveRoot: archiveRoot, policy: policy, tripFolders: tripFolders)
     }
 
-    func replaceWalkFolders(
-        _ walkFolders: [URL],
-        archiveRoot: URL,
-        policy: ArchiveIndexWritePolicy,
-        removingWalkPaths: Set<String> = [],
-        tripFolders: [URL] = []
-    ) throws {
+    func replaceWalkFolders(_ walkFolders: [URL], archiveRoot: URL, policy: ArchiveIndexWritePolicy,
+        removingWalkPaths: Set<String> = [], tripFolders: [URL] = []) throws {
         guard policy.canWriteIndex else { return }
-        var entries: [ArchiveIndexEntry] = []
-        for walkFolder in walkFolders {
-            entries.append(contentsOf: try store.entriesForWalkFolder(walkFolder, archiveRoot: archiveRoot))
-        }
-        entries.append(contentsOf: tripFolders.map { store.entryForTripFolder($0, archiveRoot: archiveRoot) })
-        let walkPaths = removingWalkPaths.union(Set(entries.compactMap(\.walkPath)))
-        let tripPaths = Set(entries.filter { $0.kind == .trip }.compactMap(\.tripPath))
-        try store.updateIndex(
-            with: entries,
-            archiveRoot: archiveRoot,
-            replacingWalkPaths: walkPaths,
-            replacingTripPaths: tripPaths
-        )
+        try store.replaceWalkFolders(walkFolders, archiveRoot: archiveRoot,
+            removingWalkPaths: removingWalkPaths, tripFolders: tripFolders)
     }
 
     func backfillThumbnails(

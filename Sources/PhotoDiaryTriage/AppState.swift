@@ -434,14 +434,14 @@ final class AppState: ObservableObject {
         static let presentation = PendingRefreshKinds(rawValue: 1 << 5)
     }
 
-    init(testing: Bool = false) {
+    init(testing: Bool = false, testingSettings: AppSettings? = nil, testingSupportRoot: URL? = nil) {
         self.fileManager = .default
         thumbnailImageCache.countLimit = 512
         thumbnailImageCache.totalCostLimit = 256 * 1024 * 1024
         self.sourceWorkspaceFolderResolver = SourceWorkspaceFolderResolver(fileManager: self.fileManager)
-        self.supportRoot = AppPaths.supportRoot()
+        self.supportRoot = testingSupportRoot ?? AppPaths.supportRoot()
         let settingsStore = SettingsStore(fileURL: self.supportRoot.appendingPathComponent("settings.json"))
-        let settings = settingsStore.load(defaults: AppSettings.default())
+        let settings = testingSettings ?? settingsStore.load(defaults: AppSettings.default())
         self.settings = settings
         ArchiveByteReadPolicyContext.shared.update(settings: settings)
         self.settingsStore = settingsStore
@@ -1045,6 +1045,7 @@ final class AppState: ObservableObject {
         let archiveRoot = settings.archiveRoot
         let supportedExtensions = settings.supportedExtensions
         let searchDatabaseURL = supportRoot.appendingPathComponent("archive-search.sqlite")
+        let machineRole = settings.archiveMachineRole
 
         archiveCatalogueIsLoading = true
         archiveCatalogueError = nil
@@ -1056,7 +1057,7 @@ final class AppState: ObservableObject {
                 let builder = ArchiveCatalogueBuilder()
                 let catalogue = try builder.build(
                     archiveRoot: archiveRoot,
-                    supportedExtensions: supportedExtensions
+                    supportedExtensions: supportedExtensions, machineRole: machineRole
                 )
                 let indexEntries = try builder.readIndexEntries(archiveRoot: archiveRoot)
                 try ArchiveSearchCache(databaseURL: searchDatabaseURL).rebuild(
@@ -3559,6 +3560,7 @@ final class AppState: ObservableObject {
                 } else {
                     statusMessage = "Saved crop \(result.outputURL.lastPathComponent). Reload the folder if it is not visible."
                 }
+                refreshArchiveIndexAfterCrop(at: item.sourceURL)
             } catch {
                 statusMessage = "Crop failed: \(error.localizedDescription)"
             }
@@ -4841,7 +4843,7 @@ final class AppState: ObservableObject {
     private func finishThumbnail(itemID: UUID, success: Bool) async {
         if success {
             thumbnailFailures.remove(itemID)
-            if let item = sessionMediaByID[itemID] {
+            if let item = mediaItem(for: itemID) {
                 missingThumbnailPaths.remove(thumbnailURL(for: item).path)
                 thumbnailImageCache.removeObject(forKey: thumbnailURL(for: item) as NSURL)
                 await DecodedImagePipeline.shared.removeCachedImage(for: Self.thumbnailDecodeCacheKey(for: thumbnailURL(for: item)))
@@ -5885,31 +5887,19 @@ final class AppState: ObservableObject {
     }
 
     private func mediaItem(for id: UUID) -> MediaItem? {
-        if let sessionItem = sessionMediaByID[id] {
-            return sessionItem
+        if workspaceMode == .archiveView || isBrowsingArchive {
+            guard let nodeID = selectedBrowserNode?.id else { return nil }
+            return archiveMediaCache[nodeID]?.first { $0.id == id }
         }
-
-        for cachedItems in archiveMediaCache.values {
-            if let archiveItem = cachedItems.first(where: { $0.id == id }) {
-                return archiveItem
-            }
-        }
-
-        return nil
+        return sessionMediaByID[id]
     }
 
     private func mediaItem(relativePath: String) -> MediaItem? {
-        if let sessionItem = sessionMediaByID.values.first(where: { $0.relativePath == relativePath }) {
-            return sessionItem
+        if workspaceMode == .archiveView || isBrowsingArchive {
+            guard let nodeID = selectedBrowserNode?.id else { return nil }
+            return archiveMediaCache[nodeID]?.first { $0.relativePath == relativePath }
         }
-
-        for cachedItems in archiveMediaCache.values {
-            if let archiveItem = cachedItems.first(where: { $0.relativePath == relativePath }) {
-                return archiveItem
-            }
-        }
-
-        return contextMediaItems.first(where: { $0.relativePath == relativePath })
+        return sessionMediaByID.values.first { $0.relativePath == relativePath }
     }
 
     @discardableResult
@@ -5959,7 +5949,7 @@ final class AppState: ObservableObject {
         }
 
         if var session = currentSession,
-           let index = session.mediaItems.firstIndex(where: { $0.id == original.id }) {
+           let index = session.mediaItems.firstIndex(where: { $0.id == original.id && canonicalPath($0.sourceURL) == canonicalPath(original.sourceURL) }) {
             let updatedOriginalItem = updatedOriginal(session.mediaItems[index])
             session.mediaItems[index] = updatedOriginalItem
             guard let originalRelationship = updatedOriginalItem.cropRelationship else { return nil }
@@ -5995,9 +5985,15 @@ final class AppState: ObservableObject {
         var updatedArchiveCache = archiveMediaCache
         var didUpdate = false
         var outputCropItem: MediaItem?
-        for key in updatedArchiveCache.keys {
+        for key in Array(updatedArchiveCache.keys) {
+            if key != selectedBrowserNode?.id {
+                if updatedArchiveCache[key]?.contains(where: { canonicalPath($0.sourceURL) == canonicalPath(original.sourceURL) }) == true {
+                    updatedArchiveCache.removeValue(forKey: key)
+                }
+                continue
+            }
             guard var items = updatedArchiveCache[key],
-                  let index = items.firstIndex(where: { $0.id == original.id }) else { continue }
+                  let index = items.firstIndex(where: { $0.id == original.id && canonicalPath($0.sourceURL) == canonicalPath(original.sourceURL) }) else { continue }
             let updatedOriginalItem = updatedOriginal(items[index])
             items[index] = updatedOriginalItem
             guard let originalRelationship = updatedOriginalItem.cropRelationship else { continue }
@@ -6209,13 +6205,33 @@ final class AppState: ObservableObject {
         let requests = itemIDs
             .prefix(max(limit, 0))
             .compactMap { mediaItem(for: $0) }
-            .filter { ArchiveByteReadPolicyContext.shared.canReadBytes(at: $0.sourceURL) }
+            .filter { ArchiveByteReadPolicyContext.shared.canPreheatOriginal(at: $0.sourceURL) }
             .filter { fileManager.fileExists(atPath: $0.sourceURL.path) }
             .map { DecodedImageRequest.interactiveDisplay($0.sourceURL, priority: .userInitiated) }
 
         guard !requests.isEmpty else { return }
         Task {
             await DecodedImagePipeline.shared.preheat(requests)
+        }
+    }
+
+    private func refreshArchiveIndexAfterCrop(at url: URL) {
+        guard canWriteArchiveIndex,
+              ArchiveIndexStore.archiveRelativePath(for: url, archiveRoot: settings.archiveRoot) != nil else { return }
+        let folder = url.deletingLastPathComponent()
+        let archiveRoot = settings.archiveRoot
+        let policy = archiveIndexWritePolicy
+        Task {
+            do {
+                if try ArchiveIndexStore().loadWalkManifest(folder: folder, archiveRoot: archiveRoot) != nil {
+                    try await ArchiveIndexMutationQueue.shared.replaceWalkFolders([folder], archiveRoot: archiveRoot, policy: policy)
+                } else {
+                    _ = try await ArchiveIndexMutationQueue.shared.rebuildIndex(archiveRoot: archiveRoot, policy: policy)
+                }
+                reloadArchiveCatalogue()
+            } catch {
+                statusMessage = "Crop saved, but Archive Index refresh failed: \(error.localizedDescription)"
+            }
         }
     }
 
@@ -6327,8 +6343,10 @@ final class AppState: ObservableObject {
 
         if let cachedItems = archiveMediaCache[nodeID] {
             let cachedURLs = cachedItems.map(\.sourceURL)
-            Task.detached(priority: .utility) {
-                ArchiveByteReadPolicyContext.shared.warmOnlineOnlyVerdicts(for: cachedURLs)
+            if settings.archiveMachineRole != .travel {
+                Task.detached(priority: .utility) {
+                    ArchiveByteReadPolicyContext.shared.warmOnlineOnlyVerdicts(for: cachedURLs)
+                }
             }
             requestInitialArchiveThumbnails(for: cachedItems)
             DispatchQueue.main.async { [weak self] in
@@ -6347,7 +6365,7 @@ final class AppState: ObservableObject {
             do {
                 let loader = BrowserViewModel(scanner: FileScanner())
                 let loadResult = try loader.loadArchiveMedia(for: node, settings: settings)
-                if let loadResult {
+                if let loadResult, settings.archiveMachineRole != .travel {
                     ArchiveByteReadPolicyContext.shared.warmOnlineOnlyVerdicts(for: loadResult.items.map(\.sourceURL))
                 }
                 result = .success(loadResult)

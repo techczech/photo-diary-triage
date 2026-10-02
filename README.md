@@ -9,9 +9,13 @@ updated: 2026-10-02
 
 ## Current release
 
-Version **0.7.4, build 140** strengthens import, cleanup, metadata, move and index recovery. Copies are verified by SHA-256; interrupted imports reuse recorded destinations; cleanup checks every selected original and RAW companion before deleting a source. Existing Walk notes and membership survive appended imports, and metadata edits update canonical manifests.
+Version **0.7.5, build 141** adds index-only travel browsing to the archive recovery improvements. Copies are verified by SHA-256; interrupted imports reuse recorded destinations; cleanup checks every selected original and RAW companion before deleting a source. Existing Walk notes and membership survive appended imports, and metadata edits update canonical manifests.
 
 Archive moves and layout migration record their plans before changing files. Canonical paths are rewritten without changing human notes or source provenance. Historical folders and hidden material are retained. The derived index publishes complete generations and detects incomplete synchronisation.
+
+On a travel Mac, catalogue, historical folders, photo grids and search read the pinned `_index`. Prepared thumbnails display without original files or folders. RAW companions and crop links are preserved. Routine travel browsing does not preheat originals or generate thumbnails from them; a missing prepared thumbnail stays a placeholder. Local full-image inspection and explicit Download to view remain available.
+
+Rebuild the index on the Main Archive machine to add historical folder records. Machines sharing this index should use 0.7.5 or later; older releases do not recognise the new historical-folder record kind.
 
 ## Working features
 
@@ -25,7 +29,7 @@ Archive moves and layout migration record their plans before changing files. Can
 
 ## Completion goals
 
-The approved 1.0 scope remains open. Fully index-only travel browsing, archive-wide Map and complete location overrides, on-demand LM Studio descriptions, Google Photos delivery, and historical title/date harvesting still require work. The description integration is currently a stub.
+The approved 1.0 scope remains open. Archive-wide Map and complete location overrides, on-demand LM Studio descriptions, Google Photos delivery, and historical title/date harvesting still require work. The description integration is currently a stub.
 
 The [development goals and acceptance tests](planning/development-plan-walkfolio-reliability.md) explain the intended complete workflow, current evidence and the order of independent development. [CONTEXT.md](CONTEXT.md), [PRD.md](PRD.md) and [DESIGN.md](DESIGN.md) hold the domain and product rules.
 
