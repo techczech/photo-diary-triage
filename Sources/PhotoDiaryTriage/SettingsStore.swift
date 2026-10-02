@@ -22,11 +22,16 @@ final class SettingsStore: SettingsPersisting {
         }
     }
 
+    func loadBackupSnapshot(defaults: AppSettings) throws -> AppSettings {
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return defaults }
+        return try decoder.decode(AppSettings.self, from: Data(contentsOf: fileURL))
+    }
+
     func save(_ settings: AppSettings) throws {
         try AppDirectories.ensureExists(fileURL.deletingLastPathComponent())
         let data = try encoder.encode(settings)
         do {
-            try data.write(to: fileURL, options: .atomic)
+            try BackupDurableFile.write(data, to: fileURL)
         } catch {
             logger.error("Failed to save settings to \(self.fileURL.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
             throw error

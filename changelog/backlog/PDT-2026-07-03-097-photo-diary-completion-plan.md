@@ -42,13 +42,18 @@ and [docs/adr/0002](../../docs/adr/0002-archive-index-derived-jsonl-in-pinned-fo
   items (-076, -079) superseded by the 0.2.44–0.2.48 crop rework; dead-path fixes (done
   2026-07-03).
 - GATE: user tests 0.2.51 map render fix (item -096) before map work resumes.
+  Passed: the append-only backlog receipt for PDT-2026-05-30-096 records user_approved /
+  approved_done on 2026-07-03 at 19:10 UTC (line 555). Current-release native Map
+  acceptance remains a separate check.
 
 ### WP1 Domain model rework (code)
 - Introduce Trip and Walk models; migrate the legacy `ImportSession`/walk-metadata concepts;
   Triage becomes the working-state concept (SessionKind/UI naming updated).
 - Multi-source Triage (camera + phone in one sitting); day/time-cluster grouping proposes
-  Walk boundaries; commit targets: new Trip (default: each Walk becomes its own single-Walk
-  Trip named after itself) or an existing Trip.
+  Walk boundaries; commit targets: the plain month default Trip for ordinary Sources,
+  a new named Trip or an existing Trip. Historical folder title hints may propose a named
+  Trip for review. This corrects a contradictory summary against the settled domain model
+  above and ADR 0001; it changes no behaviour.
 - Archive layout v2 migration tool for the existing archive: dry-run report → folder
   renames/moves → manifest path rewrites → verification. Moving a Walk between Trips as a
   first-class operation (sibling folder move + manifest rewrite; OneDrive syncs moves as
@@ -163,6 +168,6 @@ and [docs/adr/0002](../../docs/adr/0002-archive-index-derived-jsonl-in-pinned-fo
 
 Approved by user 2026-07-03 (scope + name: Walkfolio). The whole scope remains committed.
 
-As of 2026-10-02, Walkfolio 0.7.11 build 147 covers the implementation work packages with 350 passing fixture tests. Reports 100–107 and planning/development-plan-walkfolio-reliability.md record the recovery, Travel, Map, canonical locations, historical triage, Trip labels, descriptions and Google Photos evidence. The full synthetic camera/phone journey passes.
+As of 2026-10-02, Walkfolio 0.7.12 build 148 covers the implementation work packages and app-state backup recovery with 384 passing fixture tests. Reports 100–108 and planning/development-plan-walkfolio-reliability.md record the recovery, Travel, Map, canonical locations, historical triage, Trip labels, descriptions and Google Photos evidence. The full synthetic camera/phone journey passes.
 
-The earlier map test was not silently treated as user acceptance. Current native Map/navigation and the original real-copy historical/migration, real Google test-account and whole-app acceptance criteria remain open in the consolidated 0.7.11 return check. No package or success condition has been dropped; 1.0 is not declared accepted from fixtures alone.
+The earlier Map gate has a recorded user approval; it does not accept the new archive-wide Map or current native navigation. Current native Map/navigation and the original real-copy historical/migration, real Google test-account and whole-app acceptance criteria remain open in the consolidated 0.7.12 return check. The requirements audit records evidence and remaining gates for each package. No package or success condition has been dropped; 1.0 is not declared accepted from fixtures alone.

@@ -96,6 +96,11 @@ struct ContentView: View {
             get: { presentationState.snapshot.startupAlert },
             set: { _ in appState.dismissStartupAlert() }
         )) { alert in
+            if alert.recoveryAction == .retryBackupRecovery {
+                return Alert(title: Text(alert.title), message: Text(alert.message),
+                    primaryButton: .default(Text("Retry Recovery")) { appState.performStartupRecovery() },
+                    secondaryButton: .cancel { appState.dismissStartupAlert() })
+            }
             if alert.recoveryAction == .resetSupportData {
                 return Alert(
                     title: Text(alert.title),

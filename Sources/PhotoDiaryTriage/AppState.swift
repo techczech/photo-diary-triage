@@ -332,6 +332,7 @@ final class AppState: ObservableObject {
     private let sessionLifecycleCoordinator: SessionLifecycleCoordinator
     private let sessionMutationCoordinator: SessionMutationCoordinator
     private var sessionStore: SessionPersisting
+    private var hasDurableSessionPersistence = true
     private var previewStore: PreviewCaching
     private let settingsStore: SettingsPersisting
     private var sessionManager: SessionManager
@@ -339,6 +340,8 @@ final class AppState: ObservableObject {
     private var browserViewModel: BrowserViewModel
     private let selectionManager = SelectionManager()
     private let backupStore = BackupStore()
+    private let backupPersistenceGate: BackupPersistenceGate
+    let backupRestoreCoordinator: BackupRestoreCoordinator
     private let photoLogSyncStore = PhotoLogSyncStore()
     private let persistedSessionNormalizer = PersistedSessionNormalizer()
     private let photoLogCreationResolver = PhotoLogCreationResolver()
@@ -391,6 +394,7 @@ final class AppState: ObservableObject {
     private var archiveCatalogueLoadGeneration: Int = 0
     private var archiveSearchTask: Task<Void, Never>?
     private var archiveBackfillTask: Task<Void, Never>?
+    private var archiveMaintenanceIsRunning = false
     private var archiveLocationPhotosByPath: [String: ArchivePhotoSummary] = [:]
     private var archiveLocationWalksByPath: [String: ArchiveWalkSummary] = [:]
     private var archiveCatalogue: ArchiveCatalogue = .empty {
@@ -413,7 +417,14 @@ final class AppState: ObservableObject {
     private var selectedArchiveSearchResultID: String?
     private var activeArchiveContentNode: BrowserNode?
     private var currentSessionUpdateKind: CurrentSessionUpdateKind = .full
-    private var pendingSessionPersistenceWorkItem: DispatchWorkItem?
+    private struct PendingSessionPersistence {
+        let owners: Set<UUID>
+        let workItem: DispatchWorkItem
+        let outcome: SessionPersistenceOutcome
+    }
+    private var pendingSessionPersistence: [PendingSessionPersistence] = []
+    private var sourceCleanupIsRunning = false
+    private var restoredStateGeneration = 0
     private var estimatedVisibleReviewIndexRange: ClosedRange<Int>?
     private var inlineSectionCacheGeneration: Int = 0
     private var cachedInlineDaySectionsGeneration: Int = -1
@@ -455,7 +466,7 @@ final class AppState: ObservableObject {
         static let presentation = PendingRefreshKinds(rawValue: 1 << 5)
     }
 
-    init(testing: Bool = false, testingSettings: AppSettings? = nil, testingSupportRoot: URL? = nil, testingImportCoordinator: (any ImportCoordinating)? = nil, testingSessionStore: (any SessionPersisting)? = nil, testingDescriptionClient: (any DescriptionGenerating)? = nil, testingGoogleCredentials: (any GooglePhotosCredentials)? = nil, testingGoogleClient: (any GooglePhotosDelivering)? = nil, testingGoogleSecrets: (any GooglePhotosSecretStoring)? = nil) {
+    init(testing: Bool = false, testingSettings: AppSettings? = nil, testingSupportRoot: URL? = nil, testingImportCoordinator: (any ImportCoordinating)? = nil, testingSessionStore: (any SessionPersisting)? = nil, testingDescriptionClient: (any DescriptionGenerating)? = nil, testingGoogleCredentials: (any GooglePhotosCredentials)? = nil, testingGoogleClient: (any GooglePhotosDelivering)? = nil, testingGoogleSecrets: (any GooglePhotosSecretStoring)? = nil, testingSettingsStore: (any SettingsPersisting)? = nil) {
         self.fileManager = .default
         self.descriptionClient = testingDescriptionClient ?? LMStudioDescriptionClient()
         let googleSecrets = testingGoogleSecrets ?? GooglePhotosKeychain()
@@ -467,8 +478,23 @@ final class AppState: ObservableObject {
         thumbnailImageCache.totalCostLimit = 256 * 1024 * 1024
         self.sourceWorkspaceFolderResolver = SourceWorkspaceFolderResolver(fileManager: self.fileManager)
         self.supportRoot = testingSupportRoot ?? AppPaths.supportRoot()
-        let settingsStore = SettingsStore(fileURL: self.supportRoot.appendingPathComponent("settings.json"))
-        let settings = testingSettings ?? settingsStore.load(defaults: AppSettings.default())
+        let gate = BackupPersistenceGate()
+        self.backupPersistenceGate = gate
+        let restore = BackupRestoreCoordinator(supportRoot: self.supportRoot, gate: gate)
+        self.backupRestoreCoordinator = restore
+        let rawSettingsStore: SettingsPersisting = testingSettingsStore ?? SettingsStore(fileURL: self.supportRoot.appendingPathComponent("settings.json"))
+        var recoveryFailure: Error?
+        var recoveredSessionStore: SessionPersisting?
+        let recovering = restore.hasRecoveryRecord
+        if recovering {
+            do {
+                let recoverySessions = try testingSessionStore ?? SessionStore(databaseURL: self.supportRoot.appendingPathComponent("sessions.sqlite"))
+                try restore.recover(sessions: recoverySessions, settings: rawSettingsStore)
+                recoveredSessionStore = recoverySessions
+            } catch { recoveryFailure = error; gate.block(error.localizedDescription) }
+        }
+        let settingsStore = BackupGuardedSettingsStore(rawSettingsStore, gate: gate)
+        let settings = recovering ? rawSettingsStore.load(defaults: testingSettings ?? AppSettings.default()) : (testingSettings ?? settingsStore.load(defaults: AppSettings.default()))
         self.settings = settings
         ArchiveByteReadPolicyContext.shared.update(settings: settings)
         self.settingsStore = settingsStore
@@ -483,7 +509,7 @@ final class AppState: ObservableObject {
             supportRoot: self.supportRoot
         )
         self.sessionMutationCoordinator = SessionMutationCoordinator()
-        self.sessionStore = testingSessionStore ?? InMemorySessionStore()
+        self.sessionStore = BackupGuardedSessionStore(testingSessionStore ?? InMemorySessionStore(), gate: gate)
         self.previewStore = NoCachePreviewStore(cacheRoot: settings.cacheRoot)
         self.sessionManager = SessionManager(scanner: self.scanner, groupingService: self.groupingService)
         self.importWorkflow = ImportWorkflow(coordinator: testingImportCoordinator ?? self.importCoordinator)
@@ -493,11 +519,13 @@ final class AppState: ObservableObject {
         refreshAllUIState()
 
         if testing {
-            if testingSessionStore != nil { primePersistedSessionCache() }
+            if let recoveryFailure { showBackupRecoveryFailure(recoveryFailure) }
+            else if testingSessionStore != nil { primePersistedSessionCache() }
             return
         }
 
-        configurePersistence()
+        configurePersistence(reusing: recoveredSessionStore)
+        if let recoveryFailure { showBackupRecoveryFailure(recoveryFailure); return }
         primePersistedSessionCache()
         startVolumeMonitoring()
         reloadArchiveCatalogue()
@@ -516,6 +544,25 @@ final class AppState: ObservableObject {
     }
 
     func performStartupRecovery() {
+        if startupAlert?.recoveryAction == .retryBackupRecovery {
+            do {
+                let rawSessions = try SessionStore(databaseURL: supportRoot.appendingPathComponent("sessions.sqlite"))
+                let rawSettings = (settingsStore as? BackupGuardedSettingsStore)?.base ?? settingsStore
+                try backupRestoreCoordinator.recover(sessions: rawSessions, settings: rawSettings)
+                let restoredSettings = try rawSettings.loadBackupSnapshot(defaults: settings)
+                let restoredSessions = try rawSessions.loadBackupSnapshot()
+                let restored = AppBackupDocument(exportedAt: Date(), settings: restoredSettings,
+                    sessions: restoredSessions.map { .init(session: $0.0, bursts: $0.1, timeClusters: $0.2) })
+                try restored.validate()
+                configurePersistence(reusing: rawSessions)
+                publishRestoredBackup(restored)
+                if volumeMountObserver == nil { startVolumeMonitoring() }
+                startupAlert = nil
+                statusMessage = "Recovered app state. Saved sessions and settings are available again."
+            } catch { showBackupRecoveryFailure(error) }
+            return
+        }
+        guard backupPersistenceGate.blockedReason == nil else { return }
         guard startupAlert?.recoveryAction == .resetSupportData else {
             startupAlert = nil
             return
@@ -1010,7 +1057,7 @@ final class AppState: ObservableObject {
     }
 
     var canMutateImportSelection: Bool {
-        workspaceMode.allowsImportSelectionMutation && !isBrowsingArchive && !importOperation.isRunning && !(currentSession.map(hasRecordedCopy) ?? false)
+        backupPersistenceGate.blockedReason == nil && workspaceMode.allowsImportSelectionMutation && !isBrowsingArchive && !importOperation.isRunning && !(currentSession.map(hasRecordedCopy) ?? false)
     }
 
     var sidebarSnapshotGeneration: Int {
@@ -2056,6 +2103,7 @@ final class AppState: ObservableObject {
             let regrouped = groupingService.group(items: rebuiltInbox.mediaItems, settings: settings)
             rebuiltInbox.mediaItems = regrouped.items
             let inboxRecord = (rebuiltInbox, regrouped.burstGroups, regrouped.timeClusters)
+            try flushPendingSessionPersistenceOrThrow()
             try sessionManager.save(inboxRecord.0, bursts: inboxRecord.1, clusters: inboxRecord.2, to: sessionStore)
             storePersistedSession(inboxRecord.0, bursts: inboxRecord.1, clusters: inboxRecord.2)
 
@@ -2132,6 +2180,7 @@ final class AppState: ObservableObject {
 
             let grouped = groupingService.group(items: merged.mediaItems, settings: settings)
             merged.mediaItems = grouped.items
+            try flushPendingSessionPersistenceOrThrow()
             try sessionManager.save(merged, bursts: grouped.burstGroups, clusters: grouped.timeClusters, to: sessionStore)
             storePersistedSession(merged, bursts: grouped.burstGroups, clusters: grouped.timeClusters)
             sourceWorkspaceState = .loaded(itemCount: merged.mediaItems.count, sourcePath: merged.workspaceSourceFolder.path)
@@ -2198,6 +2247,7 @@ final class AppState: ObservableObject {
 
         var editableSession = logRecord.0
         editableSession.mediaItems = grouped.items
+        editableSession.sourceProvenances = mergedSourceProvenances(logRecord.0.sourceProvenances, inboxRecord?.0.sourceProvenances ?? [])
         editableSession.lastUpdatedAt = Date()
         editableSession.status = "draft"
 
@@ -2339,8 +2389,9 @@ final class AppState: ObservableObject {
         updatedInbox.status = updatedInbox.mediaItems.isEmpty ? "inbox_empty" : "draft"
 
         do {
-            try sessionManager.save(draftSession, bursts: draftGrouped.burstGroups, clusters: draftGrouped.timeClusters, to: sessionStore)
-            try sessionManager.save(updatedInbox, bursts: inboxGrouped.burstGroups, clusters: inboxGrouped.timeClusters, to: sessionStore)
+            try flushPendingSessionPersistenceOrThrow()
+            try sessionStore.saveSessions([(draftSession, draftGrouped.burstGroups, draftGrouped.timeClusters),
+                                          (updatedInbox, inboxGrouped.burstGroups, inboxGrouped.timeClusters)])
             storePersistedSession(draftSession, bursts: draftGrouped.burstGroups, clusters: draftGrouped.timeClusters)
             storePersistedSession(updatedInbox, bursts: inboxGrouped.burstGroups, clusters: inboxGrouped.timeClusters)
             invalidateInFlightSourceLoad()
@@ -2406,6 +2457,7 @@ final class AppState: ObservableObject {
 
             var updatedLog = appendPlan.target
             updatedLog.mediaItems = logGrouped.items
+            updatedLog.sourceProvenances = mergedSourceProvenances(appendPlan.target.sourceProvenances, appendPlan.inbox.sourceProvenances)
             updatedLog.lastUpdatedAt = Date()
             updatedLog.status = appendPlan.target.status
 
@@ -2418,8 +2470,9 @@ final class AppState: ObservableObject {
             updatedInbox.sessionKindWasExplicit = true
             updatedInbox.status = inboxGrouped.items.isEmpty ? "inbox_empty" : "draft"
 
-            try sessionManager.save(updatedLog, bursts: logGrouped.burstGroups, clusters: logGrouped.timeClusters, to: sessionStore)
-            try sessionManager.save(updatedInbox, bursts: inboxGrouped.burstGroups, clusters: inboxGrouped.timeClusters, to: sessionStore)
+            try flushPendingSessionPersistenceOrThrow()
+            try sessionStore.saveSessions([(updatedLog, logGrouped.burstGroups, logGrouped.timeClusters),
+                                          (updatedInbox, inboxGrouped.burstGroups, inboxGrouped.timeClusters)])
             storePersistedSession(updatedLog, bursts: logGrouped.burstGroups, clusters: logGrouped.timeClusters)
             storePersistedSession(updatedInbox, bursts: inboxGrouped.burstGroups, clusters: inboxGrouped.timeClusters)
             invalidateInFlightSourceLoad()
@@ -2598,8 +2651,9 @@ final class AppState: ObservableObject {
         updatedInbox.sessionKindWasExplicit = true
         updatedInbox.status = updatedInbox.mediaItems.isEmpty ? "inbox_empty" : "draft"
 
-        try sessionManager.save(draftSession, bursts: draftGrouped.burstGroups, clusters: draftGrouped.timeClusters, to: sessionStore)
-        try sessionManager.save(updatedInbox, bursts: inboxGrouped.burstGroups, clusters: inboxGrouped.timeClusters, to: sessionStore)
+        try flushPendingSessionPersistenceOrThrow()
+        try sessionStore.saveSessions([(draftSession, draftGrouped.burstGroups, draftGrouped.timeClusters),
+                                      (updatedInbox, inboxGrouped.burstGroups, inboxGrouped.timeClusters)])
         storePersistedSession(draftSession, bursts: draftGrouped.burstGroups, clusters: draftGrouped.timeClusters)
         storePersistedSession(updatedInbox, bursts: inboxGrouped.burstGroups, clusters: inboxGrouped.timeClusters)
         invalidateInFlightSourceLoad()
@@ -2634,6 +2688,7 @@ final class AppState: ObservableObject {
         updatedSession.photoLogScope = photoLogScope(from: editor, fallback: defaultPhotoLogScope(for: updatedSession))
 
         do {
+            try flushPendingSessionPersistenceOrThrow()
             try sessionManager.save(updatedSession, bursts: record.1, clusters: record.2, to: sessionStore)
             storePersistedSession(updatedSession, bursts: record.1, clusters: record.2)
             if currentSession?.id == sessionID {
@@ -2661,6 +2716,7 @@ final class AppState: ObservableObject {
         updatedRecords.sort { $0.0.lastUpdatedAt > $1.0.lastUpdatedAt }
 
         do {
+            try flushPendingSessionPersistenceOrThrow()
             try sessionStore.replaceAllSessions(with: updatedRecords)
             persistedSessions = updatedRecords
             activePhotoLogEditor = nil
@@ -2968,8 +3024,7 @@ final class AppState: ObservableObject {
             guard importProgress == nil else {
                 statusMessage = "Finish importing before moving an archived Walk."; return
             }
-            pendingSessionPersistenceWorkItem?.cancel()
-            sessionPersistenceQueue.sync {}
+            try flushPendingSessionPersistenceOrThrow()
             let result = try walkMover.moveWalk(at: walkFolder, to: targetTripFolder, oneDrivePicturesRoot: settings.oneDrivePicturesRoot, archiveRoot: settings.archiveRoot)
             try reconcileSavedArchivePaths(syncChangedLogs: true)
             refreshArchiveIndexAfterWalkMove(
@@ -3067,6 +3122,7 @@ final class AppState: ObservableObject {
         // The confirmed plan must be durable before the importer can copy its first file.
         do {
             flushPendingSessionPersistence()
+            try flushPendingSessionPersistenceOrThrow()
             try sessionManager.save(session, bursts: burstGroups, clusters: timeClusters, to: sessionStore)
             storePersistedSession(session, bursts: burstGroups, clusters: timeClusters)
         } catch { statusMessage = "Could not save the confirmed Copy plan: \(error.localizedDescription)"; return }
@@ -3219,16 +3275,29 @@ final class AppState: ObservableObject {
         alert.addButton(withTitle: "Remove copied sources")
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
+        startConfirmedSourceCleanup(session)
+    }
+
+    func startConfirmedSourceCleanup(_ session: ImportSession) {
+        guard !sourceCleanupIsRunning, backupPersistenceGate.blockedReason == nil else { return }
+        sourceCleanupIsRunning = true
+        let generation = restoredStateGeneration
         Task {
+            defer { sourceCleanupIsRunning = false }
             do {
                 statusMessage = "Verifying and cleaning imported source files..."
                 let cleaned = try await importWorkflow.cleanupImportedSources(in: session)
-                setCurrentSession(cleaned, updateKind: .sessionOnly)
-                persistCurrentSession(immediately: true)
+                guard generation == restoredStateGeneration else { return }
+                if currentSession?.id == session.id {
+                    setCurrentSession(cleaned, updateKind: .sessionOnly)
+                    persistCurrentSession(immediately: true)
+                } else {
+                    try flushPendingSessionPersistenceOrThrow()
+                    try sessionStore.save(session: cleaned, bursts: [], clusters: [])
+                    storePersistedSession(cleaned, bursts: [], clusters: [])
+                }
                 statusMessage = "Removed verified imported source files."
-            } catch {
-                statusMessage = error.localizedDescription
-            }
+            } catch { statusMessage = error.localizedDescription }
         }
     }
 
@@ -3573,8 +3642,10 @@ final class AppState: ObservableObject {
 
         let archiveRoot = settings.archiveRoot
         let policy = archiveIndexWritePolicy
+        archiveMaintenanceIsRunning = true
         statusMessage = "Rebuilding Archive Index…"
         Task {
+            defer { archiveMaintenanceIsRunning = false }
             do {
                 if let result = try await ArchiveIndexMutationQueue.shared.rebuildIndex(archiveRoot: archiveRoot, policy: policy) {
                     self.statusMessage = "Archive Index rebuilt with \(result.entryCount) entries across \(result.years.count) year shard(s)."
@@ -3589,7 +3660,7 @@ final class AppState: ObservableObject {
     }
 
     var canWriteArchiveIndex: Bool {
-        archiveIndexWritePolicy.canWriteIndex
+        backupPersistenceGate.blockedReason == nil && !archiveMaintenanceIsRunning && archiveIndexWritePolicy.canWriteIndex
     }
 
     var archiveIndexWriteHelp: String {
@@ -3601,6 +3672,8 @@ final class AppState: ObservableObject {
     }
 
     func migrateArchiveLayoutInteractively() {
+        guard backupPersistenceGate.blockedReason == nil, !archiveMaintenanceIsRunning else { return }
+        archiveMaintenanceIsRunning = true
         let archiveRoot = settings.archiveRoot
         let migrator = ArchiveLayoutMigrator()
         statusMessage = "Scanning archive for layout v2 migration…"
@@ -3635,6 +3708,7 @@ final class AppState: ObservableObject {
             alert.informativeText = "No legacy walk folders found. \(plan.skipped.count) folder(s) were skipped as pre-app material (see \(reportURL.lastPathComponent))."
             alert.runModal()
             statusMessage = "Archive layout migration: nothing to migrate."
+            archiveMaintenanceIsRunning = false
             return
         }
 
@@ -3645,6 +3719,7 @@ final class AppState: ObservableObject {
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else {
             statusMessage = "Archive layout migration cancelled; dry run saved to \(reportURL.lastPathComponent)."
+            archiveMaintenanceIsRunning = false
             return
         }
 
@@ -3659,6 +3734,7 @@ final class AppState: ObservableObject {
     }
 
     private func finishArchiveMigration(result: ArchiveLayoutMigrator.ExecutionResult, problems: [String], archiveRoot: URL) {
+        defer { archiveMaintenanceIsRunning = false }
         var problems = problems
         if result.failures.isEmpty && problems.isEmpty {
             do { try reconcileSavedArchivePaths(syncChangedLogs: true) }
@@ -4749,6 +4825,92 @@ final class AppState: ObservableObject {
         statusMessage = item.importRawCompanions ? "RAW companion import cleared for this photo." : "RAW companion import enabled for this photo."
     }
 
+    private func showBackupRecoveryFailure(_ error: Error) {
+        backupPersistenceGate.block(error.localizedDescription)
+        startupAlert = AppStartupAlert(title: "App Backup Recovery Required",
+            message: "Saved state is protected until recovery succeeds. The recovery record has been retained. Retry after resolving the storage problem.\n\n" + error.localizedDescription,
+            recoveryAction: .retryBackupRecovery)
+        statusMessage = "Backup recovery required: " + error.localizedDescription
+    }
+
+    private func checkBackupIdle() throws {
+        try backupPersistenceGate.check()
+        guard hasDurableSessionPersistence else {
+            throw BackupRecoveryError.invalid("Persistent session storage is unavailable. Recover local storage before exporting or restoring an app backup.")
+        }
+        guard !importOperation.isRunning, !isDescribing, !isDeliveringGooglePhotos, !isConnectingGooglePhotos,
+              !isSavingLocation, !isSavingTripLocation, !sourceCleanupIsRunning, !archiveBackfillIsRunning, !archiveMaintenanceIsRunning, cropOperationItemIDs.isEmpty else {
+            throw BackupRecoveryError.invalid("Finish the active Copy, description, delivery or Archive operation before using an app backup.")
+        }
+    }
+
+    func exportBackup(to url: URL) throws {
+        try checkBackupIdle()
+        try flushPendingSessionPersistenceOrThrow()
+        let sessions = try sessionStore.loadBackupSnapshot()
+        _ = try settingsStore.loadBackupSnapshot(defaults: settings)
+        try backupStore.exportBackup(settings: settings, sessions: sessions, to: url)
+        statusMessage = "Exported app backup to \(url.path)."
+    }
+
+    func restoreBackup(from url: URL) throws {
+        try checkBackupIdle()
+        let backup = try backupStore.importBackup(from: url)
+        try flushPendingSessionPersistenceOrThrow()
+        guard !(currentSession.map(hasRecordedCopy) ?? false),
+              !(try sessionStore.loadBackupSnapshot()).contains(where: { hasRecordedCopy($0.0) }) else {
+            throw BackupRecoveryError.invalid("Finish recorded Copies before restoring a backup.")
+        }
+        let rawSessions = (sessionStore as? BackupGuardedSessionStore)?.base ?? sessionStore
+        let rawSettings = (settingsStore as? BackupGuardedSettingsStore)?.base ?? settingsStore
+        if backupRestoreCoordinator.hasRecoveryRecord {
+            try backupRestoreCoordinator.recover(sessions: rawSessions, settings: rawSettings)
+        }
+        let warning: String?
+        do {
+            warning = try backupRestoreCoordinator.restore(backup, currentSettings: settings, sessions: rawSessions, settings: rawSettings)
+        } catch {
+            if backupPersistenceGate.blockedReason != nil { showBackupRecoveryFailure(error) }
+            throw error
+        }
+        publishRestoredBackup(backup)
+        statusMessage = "Imported app backup from \(url.lastPathComponent)." + (warning.map { " " + $0 } ?? "")
+    }
+
+    private func publishRestoredBackup(_ backup: AppBackupDocument) {
+        pendingSessionPersistence.forEach { $0.workItem.cancel() }; pendingSessionPersistence = []
+        restoredStateGeneration &+= 1
+        invalidateInFlightSourceLoad()
+        cancelArchiveMediaLoad()
+        archiveCatalogueLoadTask?.cancel(); archiveCatalogueLoadTask = nil; archiveCatalogueLoadGeneration &+= 1
+        archiveSearchTask?.cancel(); archiveSearchTask = nil
+        googleContext.invalidate(); cancelGoogleDelivery(); cancelGoogleSignIn(); googleDeliveryReview = nil
+        googleAccount = nil; googleDeliveryJobs = []; googleQueue = nil
+        cancelDescriptions(); descriptionQueue = nil; descriptionJobs = []
+        originalViewingTasks.values.forEach { $0.cancel() }; originalViewingTasks.removeAll(); originalViewingOperationIDs.removeAll()
+        originalViewingRevision &+= 1
+        thumbnailDecodeTasks.values.forEach { $0.cancel() }; thumbnailDecodeTasks.removeAll()
+        thumbnailTasks.values.forEach { $0.cancel() }; thumbnailTasks.removeAll()
+        archiveMediaCache.removeAll(); archiveCatalogue = .empty; archiveSearchMatchingPaths = []
+        activeArchiveContentNode = nil; selectedArchiveEntryID = nil; selectedArchiveWalkID = nil; selectedArchiveSearchResultID = nil
+        clearDetailSelections(); selectedSidebarNodeID = nil
+        previewingMediaItemID = nil; comparingMediaItemIDs = []
+        activePhotoLogMembershipEditID = nil; compareSelectionBackup = nil
+        activePhotoLogEditor = nil; activeWalkCommitEditor = nil
+        currentSession = nil; burstGroups = []; timeClusters = []
+        sourceWorkspaceState = .idle
+        settings = backup.settings
+        ArchiveByteReadPolicyContext.shared.update(settings: settings)
+        persistedSessions = backup.records.sorted { $0.0.lastUpdatedAt > $1.0.lastUpdatedAt }
+        persistedSessionsGeneration &+= 1; invalidateSourceLogOwnershipCache()
+        previewStore = (try? PreviewStore(cacheRoot: settings.cacheRoot)) ?? NoCachePreviewStore(cacheRoot: settings.cacheRoot)
+        archiveYearFolders = ArchiveLibraryInspector.existingYearFolders(in: settings.archiveRoot)
+        browserViewModel.invalidateArchiveTreeCache()
+        if let latest = persistedSessions.first { openPersistedSessionRecord(latest, status: "Restored saved session.") }
+        refreshAllUIState()
+        reloadArchiveCatalogue()
+    }
+
     func exportBackup() {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.json]
@@ -4758,39 +4920,21 @@ final class AppState: ObservableObject {
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
         do {
-            let sessions = try sessionStore.loadSessions()
-            try backupStore.exportBackup(settings: settings, sessions: sessions, to: url)
-            statusMessage = "Exported app backup to \(url.path)."
+            try exportBackup(to: url)
         } catch {
             statusMessage = "Backup export failed: \(error.localizedDescription)"
         }
     }
 
     func importBackup() {
-        do {
-            guard !(try sessionStore.loadSessions()).contains(where: { hasRecordedCopy($0.0) }) else {
-                statusMessage = "Finish recorded Copies before restoring a backup."; return
-            }
-        } catch { statusMessage = "Copy recovery could not be checked: \(error.localizedDescription)"; return }
+        do { try checkBackupIdle() }
+        catch { statusMessage = "Backup import failed: " + error.localizedDescription; return }
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.json]
         panel.allowsMultipleSelection = false
-
         guard panel.runModal() == .OK, let url = panel.urls.first else { return }
-
-        do {
-            let backup = try backupStore.importBackup(from: url)
-            settings = backup.settings
-            try sessionStore.replaceAllSessions(with: backup.sessions.map { ($0.session, $0.bursts, $0.timeClusters) })
-            try reloadPersistedSessionsFromStore()
-            persistSettings()
-            archiveYearFolders = ArchiveLibraryInspector.existingYearFolders(in: settings.archiveRoot)
-            browserViewModel.invalidateArchiveTreeCache()
-            loadMostRecentSession()
-            statusMessage = "Imported app backup from \(url.lastPathComponent)."
-        } catch {
-            statusMessage = "Backup import failed: \(error.localizedDescription)"
-        }
+        do { try restoreBackup(from: url) }
+        catch { statusMessage = "Backup import failed: " + error.localizedDescription }
     }
 
     func importOneDrivePhotoLogState() {
@@ -4806,6 +4950,7 @@ final class AppState: ObservableObject {
                 return
             }
 
+            try flushPendingSessionPersistenceOrThrow()
             let existing = try sessionStore.loadSessions()
             var existingByID = Dictionary(uniqueKeysWithValues: existing.map { ($0.0.id, $0) })
             var importedCount = 0
@@ -4818,6 +4963,7 @@ final class AppState: ObservableObject {
                 }
                 let replacement = (incoming, record.document.bursts, record.document.timeClusters)
                 existingByID[incoming.id] = replacement
+                try flushPendingSessionPersistenceOrThrow()
                 try sessionManager.save(incoming, bursts: record.document.bursts, clusters: record.document.timeClusters, to: sessionStore)
                 importedCount += 1
             }
@@ -5208,7 +5354,7 @@ final class AppState: ObservableObject {
     }
 
     private func persistCurrentSession(immediately: Bool = false) {
-        guard let currentSession else { return }
+        guard backupPersistenceGate.blockedReason == nil, let currentSession else { return }
         if activePhotoLogMembershipEditID == currentSession.id {
             persistPhotoLogMembershipEdit(currentSession, immediately: immediately)
             return
@@ -5221,10 +5367,13 @@ final class AppState: ObservableObject {
         let logger = self.logger
         storePersistedSession(session, bursts: bursts, clusters: clusters)
 
-        pendingSessionPersistenceWorkItem?.cancel()
+        supersedePendingSessionPersistence(owners: [session.id])
+        let outcome = SessionPersistenceOutcome()
         let workItem = DispatchWorkItem { [weak self] in
             do {
-                try sessionManager.save(session, bursts: bursts, clusters: clusters, to: sessionStore)
+                try outcome.perform {
+                    try sessionManager.save(session, bursts: bursts, clusters: clusters, to: sessionStore)
+                }
             } catch {
                 logger.error("Failed to persist current session: \(error.localizedDescription, privacy: .public)")
                 DispatchQueue.main.async {
@@ -5232,10 +5381,15 @@ final class AppState: ObservableObject {
                 }
             }
         }
-        pendingSessionPersistenceWorkItem = workItem
+        pendingSessionPersistence.append(.init(owners: [session.id], workItem: workItem, outcome: outcome))
 
         let deadline: DispatchTime = immediately ? .now() : .now() + .milliseconds(160)
         sessionPersistenceQueue.asyncAfter(deadline: deadline, execute: workItem)
+    }
+
+    private func mergedSourceProvenances(_ first: [SourceProvenance], _ second: [SourceProvenance]) -> [SourceProvenance] {
+        var seen = Set<UUID>()
+        return (first + second).filter { seen.insert($0.id).inserted }
     }
 
     private func persistPhotoLogMembershipEdit(_ editingSession: ImportSession, immediately: Bool = false) {
@@ -5276,8 +5430,10 @@ final class AppState: ObservableObject {
             oneDrivePicturesRoot: editingSession.oneDrivePicturesRoot,
             archiveMachineRole: editingSession.archiveMachineRole,
             sessionKind: .inbox,
-            status: "draft"
+            status: "draft",
+            sourceProvenances: editingSession.sourceProvenances
         )
+        updatedInbox.sourceProvenances = mergedSourceProvenances(updatedInbox.sourceProvenances, editingSession.sourceProvenances)
         updatedInbox.mediaItems = inboxGrouped.items
         updatedInbox.lastUpdatedAt = Date()
         updatedInbox.walkMetadata = .empty
@@ -5289,14 +5445,16 @@ final class AppState: ObservableObject {
         storePersistedSession(updatedLog, bursts: memberGrouped.burstGroups, clusters: memberGrouped.timeClusters)
         storePersistedSession(updatedInbox, bursts: inboxGrouped.burstGroups, clusters: inboxGrouped.timeClusters)
 
-        pendingSessionPersistenceWorkItem?.cancel()
-        let sessionManager = self.sessionManager
+        supersedePendingSessionPersistence(owners: [updatedLog.id, updatedInbox.id])
         let sessionStore = self.sessionStore
         let logger = self.logger
+        let outcome = SessionPersistenceOutcome()
         let workItem = DispatchWorkItem { [weak self] in
             do {
-                try sessionManager.save(updatedLog, bursts: memberGrouped.burstGroups, clusters: memberGrouped.timeClusters, to: sessionStore)
-                try sessionManager.save(updatedInbox, bursts: inboxGrouped.burstGroups, clusters: inboxGrouped.timeClusters, to: sessionStore)
+                try outcome.perform {
+                    try sessionStore.saveSessions([(updatedLog, memberGrouped.burstGroups, memberGrouped.timeClusters),
+                                                   (updatedInbox, inboxGrouped.burstGroups, inboxGrouped.timeClusters)])
+                }
             } catch {
                 logger.error("Failed to persist photo log membership edit: \(error.localizedDescription, privacy: .public)")
                 DispatchQueue.main.async {
@@ -5304,19 +5462,35 @@ final class AppState: ObservableObject {
                 }
             }
         }
-        pendingSessionPersistenceWorkItem = workItem
+        pendingSessionPersistence.append(.init(owners: [updatedLog.id, updatedInbox.id], workItem: workItem, outcome: outcome))
 
         let deadline: DispatchTime = immediately ? .now() : .now() + .milliseconds(160)
         sessionPersistenceQueue.asyncAfter(deadline: deadline, execute: workItem)
     }
 
+    private func supersedePendingSessionPersistence(owners: Set<UUID>) {
+        // A fresh snapshot may replace only the same complete set of owners.
+        // Editing B must never cancel or conceal a failed save for A.
+        pendingSessionPersistence.filter { $0.owners == owners }.forEach { $0.workItem.cancel() }
+        pendingSessionPersistence.removeAll { $0.owners == owners }
+    }
+
     private func flushPendingSessionPersistence() {
-        guard let workItem = pendingSessionPersistenceWorkItem else { return }
-        pendingSessionPersistenceWorkItem = nil
-        sessionPersistenceQueue.sync {
-            workItem.perform()
+        let jobs = pendingSessionPersistence
+        sessionPersistenceQueue.sync { jobs.forEach { $0.workItem.perform() } }
+        pendingSessionPersistence.removeAll { job in
+            do { try job.outcome.check(); job.workItem.cancel(); return true }
+            catch { return false }
         }
-        workItem.cancel()
+    }
+
+    private func flushPendingSessionPersistenceOrThrow() throws {
+        try backupPersistenceGate.check()
+        let jobs = pendingSessionPersistence
+        sessionPersistenceQueue.sync { jobs.forEach { $0.workItem.perform() } }
+        for job in jobs { try job.outcome.check() }
+        jobs.forEach { $0.workItem.cancel() }
+        pendingSessionPersistence = []
     }
 
     private func persistSettings() {
@@ -5329,6 +5503,7 @@ final class AppState: ObservableObject {
     }
 
     private func reconcileSavedArchivePaths(syncChangedLogs: Bool) throws {
+        try flushPendingSessionPersistenceOrThrow()
         let records = try sessionStore.loadSessions()
         let changed = try records.map { (try ArchiveSessionPathReconciler().reconcile($0.0), $0.1, $0.2) }
         try sessionStore.replaceAllSessions(with: changed)
@@ -5345,6 +5520,7 @@ final class AppState: ObservableObject {
     }
 
     private func reloadPersistedSessionsFromStore() throws {
+        try flushPendingSessionPersistenceOrThrow()
         let rawSessions = try sessionStore.loadSessions()
         let loadedSessions = try rawSessions.map { (try ArchiveSessionPathReconciler().reconcile($0.0), $0.1, $0.2) }
         if loadedSessions.map({ $0.0 }) != rawSessions.map({ $0.0 }) { try sessionStore.replaceAllSessions(with: loadedSessions) }
@@ -5577,6 +5753,10 @@ final class AppState: ObservableObject {
 
     @discardableResult
     private func save(_ session: ImportSession, updateKind: CurrentSessionUpdateKind = .sessionOnly) -> Bool {
+        guard backupPersistenceGate.blockedReason == nil else {
+            statusMessage = "Recover the app backup before changing saved decisions."
+            return false
+        }
         if let previous = currentSession?.id == session.id ? currentSession : persistedSessions.first(where: { $0.0.id == session.id })?.0 {
             guard allowEditingCopyInputs(previous) else { return false }
         }
@@ -7115,10 +7295,11 @@ final class AppState: ObservableObject {
         }
     }
 
-    private func configurePersistence() {
+    private func configurePersistence(reusing recoveredStore: SessionPersisting? = nil) {
         ArchiveByteReadPolicyContext.shared.update(settings: settings)
-        let configuration = sessionLifecycleCoordinator.configurePersistence(settings: settings)
-        sessionStore = configuration.sessionStore
+        let configuration = sessionLifecycleCoordinator.configurePersistence(settings: settings, existingSessionStore: recoveredStore)
+        hasDurableSessionPersistence = !(configuration.sessionStore is InMemorySessionStore)
+        sessionStore = BackupGuardedSessionStore(configuration.sessionStore, gate: backupPersistenceGate)
         previewStore = configuration.previewStore
         sessionManager = configuration.sessionManager
         importWorkflow = configuration.importWorkflow

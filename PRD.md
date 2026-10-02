@@ -88,8 +88,9 @@ See CONTEXT.md for the full glossary. The load-bearing terms:
 1. Open a Source (or several: camera + phone) — scan, extract metadata, group by burst and
    time cluster.
 2. Grouping proposes Walk boundaries; review in the grid, keep/discard, crop if needed.
-3. Each Walk commits to a Trip: by default its own new single-Walk Trip named after itself,
-   or an existing Trip chosen at commit.
+3. Each Walk commits to a Trip: ordinary Sources default to the plain month Trip,
+   as settled in CONTEXT.md and ADR 0001. Choose a new named or existing Trip at commit;
+   historical title hints may propose a named Trip for review.
 4. Copy, verify, write manifests + thumbnails, update the Archive Index.
 5. After backup confirmation, explicit Cleanup removes imported files from the Source.
 

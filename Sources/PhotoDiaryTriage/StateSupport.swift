@@ -4,6 +4,8 @@ import OSLog
 protocol SessionPersisting: AnyObject {
     func save(session: ImportSession, bursts: [BurstGroup], clusters: [TimeCluster]) throws
     func loadSessions() throws -> [(ImportSession, [BurstGroup], [TimeCluster])]
+    func loadBackupSnapshot() throws -> [(ImportSession, [BurstGroup], [TimeCluster])]
+    func saveSessions(_ sessions: [(ImportSession, [BurstGroup], [TimeCluster])]) throws
     func replaceAllSessions(with sessions: [(ImportSession, [BurstGroup], [TimeCluster])]) throws
 }
 
@@ -16,6 +18,7 @@ protocol PreviewCaching: AnyObject {
 protocol SettingsPersisting: AnyObject {
     func load(defaults: @autoclosure () -> AppSettings) -> AppSettings
     func save(_ settings: AppSettings) throws
+    func loadBackupSnapshot(defaults: AppSettings) throws -> AppSettings
 }
 
 protocol ImportCoordinating {
@@ -48,6 +51,7 @@ struct ImportProgress: Equatable, Sendable {
 struct AppStartupAlert: Identifiable, Equatable {
     enum RecoveryAction: Equatable {
         case resetSupportData
+        case retryBackupRecovery
     }
 
     let id = UUID()
@@ -643,4 +647,18 @@ final class SelectionManager {
         state.selectedMediaItemIDs = Set(visibleItems[lower...upper].map(\.id))
         state.reviewSelectionAnchorID = anchorID
     }
+}
+
+
+extension SessionPersisting {
+    func saveSessions(_ sessions: [(ImportSession, [BurstGroup], [TimeCluster])]) throws {
+        let replacing = Set(sessions.map { $0.0.id })
+        let existing = try loadBackupSnapshot().filter { !replacing.contains($0.0.id) }
+        try replaceAllSessions(with: existing + sessions)
+    }
+    func loadBackupSnapshot() throws -> [(ImportSession, [BurstGroup], [TimeCluster])] { try loadSessions() }
+}
+
+extension SettingsPersisting {
+    func loadBackupSnapshot(defaults: AppSettings) throws -> AppSettings { load(defaults: defaults) }
 }
