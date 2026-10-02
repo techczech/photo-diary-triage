@@ -18,6 +18,7 @@ enum ArchiveBrowseEntryKind: String, Codable, Hashable, Sendable {
 enum ArchiveBrowseViewMode: String, Codable, CaseIterable, Hashable, Sendable {
     case timeline
     case contactSheet
+    case map
 
     var title: String {
         switch self {
@@ -25,6 +26,8 @@ enum ArchiveBrowseViewMode: String, Codable, CaseIterable, Hashable, Sendable {
             return "Timeline"
         case .contactSheet:
             return "Contact Sheet"
+        case .map:
+            return "Map"
         }
     }
 }
@@ -96,6 +99,9 @@ struct ArchiveWalkSummary: Identifiable, Hashable, Sendable {
     let location: String?
     let photoCount: Int
     let coverThumbnailPath: String?
+    var latitude: Double? = nil
+    var longitude: Double? = nil
+    var coordinateSource: ArchiveCoordinateSource? = nil
 }
 
 struct ArchivePhotoSummary: Identifiable, Hashable, Sendable {
@@ -110,6 +116,11 @@ struct ArchivePhotoSummary: Identifiable, Hashable, Sendable {
     let thumbnailPath: String?
     let walkPath: String?
     let tripPath: String?
+    var latitude: Double? = nil
+    var longitude: Double? = nil
+    var coordinateSource: ArchiveCoordinateSource? = nil
+    var cropRole: CropRelationshipRole? = nil
+    var isDerivedPhoto: Bool = false
 }
 
 struct ArchiveCatalogue: Equatable, Sendable {
@@ -203,7 +214,8 @@ struct ArchiveCatalogueBuilder {
                 notes: $0.notes?.nonEmpty,
                 thumbnailPath: $0.thumbnailPath,
                 walkPath: $0.walkPath,
-                tripPath: $0.tripPath
+                tripPath: $0.tripPath, latitude: $0.latitude, longitude: $0.longitude,
+                coordinateSource: $0.coordinateSource, cropRole: $0.cropRelationship?.role, isDerivedPhoto: $0.isDerivedPhoto == true
             )
         }
         let photosByTripPath = Dictionary(grouping: photos.compactMap { photo -> ArchivePhotoSummary? in
@@ -224,7 +236,8 @@ struct ArchiveCatalogueBuilder {
                 date: parseDate(row.date),
                 location: row.location?.nonEmpty,
                 photoCount: memberPhotos.count,
-                coverThumbnailPath: row.thumbnailPath ?? memberPhotos.compactMap(\.thumbnailPath).first
+                coverThumbnailPath: row.thumbnailPath ?? memberPhotos.compactMap(\.thumbnailPath).first,
+                latitude: row.latitude, longitude: row.longitude, coordinateSource: row.coordinateSource
             )
         }) { $0.tripPath }
             .mapValues { $0.sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) } }

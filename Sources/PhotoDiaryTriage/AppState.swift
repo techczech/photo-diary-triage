@@ -42,6 +42,13 @@ struct ArchiveThumbnailPreparationProgress: Equatable {
 final class AppState: ObservableObject {
     @Published var settings: AppSettings {
         didSet {
+            if oldValue.archiveRoot != settings.archiveRoot || oldValue.archiveMachineRole != settings.archiveMachineRole {
+                ArchiveByteReadPolicyContext.shared.update(settings: settings)
+                originalViewingTasks.values.forEach { $0.cancel() }
+                originalViewingTasks.removeAll()
+                originalViewingOperationIDs.removeAll()
+                originalViewingRevision &+= 1
+            }
             refreshSidebarState()
             refreshArchiveBrowserState()
             refreshReviewState()
@@ -301,6 +308,11 @@ final class AppState: ObservableObject {
             }
         }
     }
+    @Published private(set) var originalViewingRevision = 0
+    var testingOriginalViewingService: ArchiveOriginalViewingService?
+    private var originalViewingTasks: [UUID: Task<Void, Never>] = [:]
+    private var originalViewingOperationIDs: [UUID: UUID] = [:]
+
     @Published private(set) var archiveBackfillIsRunning = false
     @Published private(set) var archiveBackfillProgress: ArchiveThumbnailPreparationProgress?
 
@@ -481,6 +493,7 @@ final class AppState: ObservableObject {
         archiveCatalogueLoadTask?.cancel()
         archiveSearchTask?.cancel()
         archiveBackfillTask?.cancel()
+        originalViewingTasks.values.forEach { $0.cancel() }
         if let volumeMountObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(volumeMountObserver)
         }
@@ -1258,6 +1271,16 @@ final class AppState: ObservableObject {
         case .photos:
             focusReviewSurface()
         }
+    }
+
+    func openArchiveMapWalk(_ walk: ArchiveMapWalk) {
+        guard archiveCatalogue.walksByTripPath[walk.tripPath]?.contains(where: { $0.archiveRelativePath == walk.archiveRelativePath }) == true else { return }
+        openArchivePhotoFolder(relativePath: walk.archiveRelativePath, title: walk.title, parentTripPath: walk.tripPath)
+    }
+
+    func openArchiveMapFolder(_ entry: ArchiveBrowseEntry) {
+        selectArchiveEntry(entry.id)
+        openSelectedArchiveItem()
     }
 
     func organiseSelectedUnorganisedFolder() {
@@ -2565,19 +2588,42 @@ final class AppState: ObservableObject {
     }
 
     func isArchiveByteReadBlocked(for item: MediaItem) -> Bool {
-        ArchiveByteReadPolicyContext.shared.isOnlineOnlyArchiveFile(item.sourceURL)
+        ArchiveByteReadPolicyContext.shared.canReadBytes(at: item.sourceURL) == false
     }
 
     func downloadArchiveItemForViewing(_ item: MediaItem) {
-        guard isArchiveByteReadBlocked(for: item) else {
-            openCurrentSelection()
-            return
-        }
-        ArchiveByteReadPolicyContext.shared.invalidateOnlineOnlyVerdict(for: item.sourceURL)
-        if NSWorkspace.shared.open(item.sourceURL) {
-            statusMessage = "Requested download/view for \(item.fileName). OneDrive may need a moment before the full preview is available."
-        } else {
-            statusMessage = "Could not request download for \(item.fileName)."
+        guard originalViewingTasks[item.id] == nil else { return }
+        let service = testingOriginalViewingService ?? ArchiveOriginalViewingService()
+        let policy = ArchiveByteReadPolicyContext.shared
+        let generation = policy.generation
+        let operationID = UUID()
+        let nodeID = selectedBrowserNode?.id
+        originalViewingOperationIDs[item.id] = operationID
+        statusMessage = "Preparing \(item.fileName) for viewing…"
+        originalViewingTasks[item.id] = Task { [weak self] in
+            guard let self else { return }
+            defer {
+                if self.originalViewingOperationIDs[item.id] == operationID {
+                    self.originalViewingTasks[item.id] = nil
+                    self.originalViewingOperationIDs[item.id] = nil
+                }
+            }
+            guard policy.generation == generation, self.originalViewingOperationIDs[item.id] == operationID else { return }
+            do {
+                try await service.prepare(item.sourceURL, policy: policy)
+                guard policy.generation == generation, self.originalViewingOperationIDs[item.id] == operationID else { return }
+                self.originalViewingRevision &+= 1
+                if self.selectedBrowserNode?.id == nodeID { self.previewingMediaItemID = item.id }
+                self.refreshPresentationState()
+                self.refreshCompareState()
+                self.statusMessage = "Original ready to view: \(item.fileName)."
+            } catch is CancellationError {
+                guard policy.generation == generation else { return }
+                self.statusMessage = "Original viewing cancelled."
+            } catch {
+                guard policy.generation == generation else { return }
+                self.statusMessage = "Could not prepare original: \(error.localizedDescription)"
+            }
         }
     }
 
@@ -2587,7 +2633,7 @@ final class AppState: ObservableObject {
 
     func downloadBlockedArchiveSelectionToView() {
         guard let item = blockedArchiveSelectionItem else {
-            statusMessage = "Select an online-only archive photo before requesting a download."
+            statusMessage = "Select an archive photo before requesting Download to view."
             return
         }
         downloadArchiveItemForViewing(item)
@@ -5064,7 +5110,9 @@ final class AppState: ObservableObject {
             walks: walks,
             selectedWalkID: selectedArchiveWalkID,
             searchResults: archiveSearchResults,
-            selectedSearchResultID: selectedArchiveSearchResultID
+            selectedSearchResultID: selectedArchiveSearchResultID,
+            map: ArchiveMapProjection.snapshot(catalogue: archiveCatalogue, visibleEntries: entries,
+                searchQuery: archiveSearchQuery, matchingPaths: archiveSearchMatchingPaths)
         )
         archiveBrowserState.update(snapshot)
     }

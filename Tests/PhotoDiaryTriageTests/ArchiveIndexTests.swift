@@ -148,7 +148,8 @@ import Testing
     let policy = ArchiveByteReadPolicy(archiveRoot: archiveRoot, machineRole: .travel)
 
     #expect(policy.isOnlineOnly(tiny) == false)
-    #expect(policy.canReadBytes(at: tiny))
+    #expect(policy.canReadBytes(at: tiny) == false)
+    #expect(policy.canReadBytes(at: tiny, explicitDownload: true))
 }
 
 @Test func archiveThumbnailPolicyReadsLocalPhotosButNotOnlineOnlyOriginals() throws {

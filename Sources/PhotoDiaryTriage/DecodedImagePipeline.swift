@@ -39,12 +39,18 @@ actor DecodedImagePipeline {
     private struct InFlightDecode {
         let id: UUID
         let task: Task<NSImage?, Never>
+        let generation: Int
     }
 
+    private let policyContext: ArchiveByteReadPolicyContext
+    private let testingDecoder: (@Sendable (URL, Int?) async -> NSImage?)?
     private let cache = NSCache<NSString, NSImage>()
     private var inFlightTasks: [String: InFlightDecode] = [:]
 
-    init() {
+    init(policyContext: ArchiveByteReadPolicyContext = .shared,
+         testingDecoder: (@Sendable (URL, Int?) async -> NSImage?)? = nil) {
+        self.policyContext = policyContext
+        self.testingDecoder = testingDecoder
         cache.countLimit = 96
         cache.totalCostLimit = 512 * 1024 * 1024
     }
@@ -55,15 +61,19 @@ actor DecodedImagePipeline {
         maxPixelSize: Int? = nil,
         priority: TaskPriority = .userInitiated
     ) async -> NSImage? {
+        let generation = policyContext.generation
+        guard policyContext.canReadBytes(at: url) else { return nil }
         let key = cacheKey as NSString
         if let cached = cache.object(forKey: key) {
-            return cached
+            return policyContext.generation == generation && policyContext.canReadBytes(at: url) ? cached : nil
         }
 
-        if let inFlight = inFlightTasks[cacheKey] {
-            return await inFlight.task.value
+        if let inFlight = inFlightTasks[cacheKey], inFlight.generation == generation {
+            let image = await inFlight.task.value
+            return policyContext.generation == generation && policyContext.canReadBytes(at: url) ? image : nil
         }
 
+        if let stale = inFlightTasks.removeValue(forKey: cacheKey) { stale.task.cancel() }
         let inFlight = beginDecode(
             request: DecodedImageRequest(
                 url: url,
@@ -73,7 +83,8 @@ actor DecodedImagePipeline {
             ),
             key: key
         )
-        return await inFlight.task.value
+        let image = await inFlight.task.value
+        return policyContext.generation == generation && policyContext.canReadBytes(at: url) ? image : nil
     }
 
     func image(_ request: DecodedImageRequest) async -> NSImage? {
@@ -102,25 +113,30 @@ actor DecodedImagePipeline {
 
     private func beginDecode(request: DecodedImageRequest, key: NSString) -> InFlightDecode {
         let decodeID = UUID()
+        let generation = policyContext.generation
+        let policy = policyContext
+        let decoder = testingDecoder
         let task = Task.detached(priority: request.priority) {
-            Self.decodeImage(at: request.url, maxPixelSize: request.maxPixelSize)
+            guard policy.canReadBytes(at: request.url) else { return nil as NSImage? }
+            if let decoder { return await decoder(request.url, request.maxPixelSize) }
+            return Self.decodeImage(at: request.url, maxPixelSize: request.maxPixelSize, policy: policy)
         }
-        let inFlight = InFlightDecode(id: decodeID, task: task)
+        let inFlight = InFlightDecode(id: decodeID, task: task, generation: generation)
         inFlightTasks[request.cacheKey] = inFlight
 
         Task {
             let image = await task.value
-            self.finishDecode(cacheKey: request.cacheKey, key: key, decodeID: decodeID, image: image)
+            self.finishDecode(cacheKey: request.cacheKey, key: key, decodeID: decodeID, image: image, url: request.url, generation: generation)
         }
 
         return inFlight
     }
 
-    private func finishDecode(cacheKey: String, key: NSString, decodeID: UUID, image: NSImage?) {
+    private func finishDecode(cacheKey: String, key: NSString, decodeID: UUID, image: NSImage?, url: URL, generation: Int) {
         guard inFlightTasks[cacheKey]?.id == decodeID else { return }
         inFlightTasks[cacheKey] = nil
 
-        if let image {
+        if let image, policyContext.generation == generation, policyContext.canReadBytes(at: url) {
             cache.setObject(image, forKey: key, cost: Self.cacheCost(for: image))
         }
     }
@@ -132,8 +148,8 @@ actor DecodedImagePipeline {
         return max(width, 1) * max(height, 1) * 4
     }
 
-    private static func decodeImage(at url: URL, maxPixelSize: Int?) -> NSImage? {
-        guard ArchiveByteReadPolicyContext.shared.canReadBytes(at: url) else {
+    private static func decodeImage(at url: URL, maxPixelSize: Int?, policy: ArchiveByteReadPolicyContext) -> NSImage? {
+        guard policy.canReadBytes(at: url) else {
             return nil
         }
 

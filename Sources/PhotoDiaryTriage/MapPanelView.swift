@@ -45,6 +45,14 @@ struct MapPanelView: View {
                 .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
         }
         .onAppear { syncFromWalkIfNeeded() }
+        .onChange(of: appState.selectedBrowserNode?.id) { _, _ in
+            didSync = false
+            syncFromWalkIfNeeded()
+        }
+        .onChange(of: appState.canAssignWalkLocation) { _, _ in
+            didSync = false
+            syncFromWalkIfNeeded()
+        }
         .onChange(of: appState.currentSession?.id) { _, _ in
             didSync = false
             syncFromWalkIfNeeded()
@@ -136,7 +144,7 @@ struct MapPanelView: View {
     // MARK: State sync + persistence
 
     private var savedCoordinate: CLLocationCoordinate2D? {
-        guard let coordinate = appState.currentWalkCoordinate else { return nil }
+        guard appState.canAssignWalkLocation, let coordinate = appState.currentWalkCoordinate else { return nil }
         return CLLocationCoordinate2D(latitude: coordinate.latitude, longitude: coordinate.longitude)
     }
 

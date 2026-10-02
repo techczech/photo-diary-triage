@@ -38,6 +38,8 @@ struct ArchiveIndexEntry: Codable, Hashable, Sendable {
     var fileSizeBytes: Int64?
     var companionPaths: [String]?
     var cropRelationship: CropRelationship?
+    var coordinateSource: ArchiveCoordinateSource?
+    var isDerivedPhoto: Bool?
 
     init(
         kind: ArchiveIndexEntryKind,
@@ -64,7 +66,9 @@ struct ArchiveIndexEntry: Codable, Hashable, Sendable {
         lensModel: String? = nil,
         fileSizeBytes: Int64? = nil,
         companionPaths: [String]? = nil,
-        cropRelationship: CropRelationship? = nil
+        cropRelationship: CropRelationship? = nil,
+        coordinateSource: ArchiveCoordinateSource? = nil,
+        isDerivedPhoto: Bool? = nil
     ) {
         self.kind = kind
         self.year = year
@@ -91,6 +95,8 @@ struct ArchiveIndexEntry: Codable, Hashable, Sendable {
         self.fileSizeBytes = fileSizeBytes
         self.companionPaths = companionPaths
         self.cropRelationship = cropRelationship
+        self.coordinateSource = coordinateSource
+        self.isDerivedPhoto = isDerivedPhoto
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -119,6 +125,8 @@ struct ArchiveIndexEntry: Codable, Hashable, Sendable {
         case fileSizeBytes = "file_size_bytes"
         case companionPaths = "companion_paths"
         case cropRelationship = "crop_relationship"
+        case coordinateSource = "coordinate_source"
+        case isDerivedPhoto = "is_derived_photo"
     }
 }
 
@@ -178,8 +186,13 @@ struct ArchiveByteReadPolicy: Sendable {
     func canReadBytes(at url: URL, explicitDownload: Bool = false) -> Bool {
         guard !escapesArchive(url) else { return false }
         guard machineRole == .travel, explicitDownload == false else { return true }
-        guard isInsideArchive(url) else { return true }
-        return isOnlineOnly(url) == false
+        return !isOriginalArchiveFile(url)
+    }
+
+    func isOriginalArchiveFile(_ url: URL) -> Bool {
+        guard isInsideArchive(url) else { return false }
+        let relative = ArchiveIndexStore.archiveRelativePath(for: url, archiveRoot: archiveRoot)
+        return relative?.hasPrefix("_index/thumbs/") != true
     }
 
     func canGenerateImplicitThumbnail(at url: URL) -> Bool {
@@ -223,18 +236,58 @@ final class ArchiveByteReadPolicyContext: @unchecked Sendable {
     private let lock = NSLock()
     private var policy = ArchiveByteReadPolicy(archiveRoot: URL(fileURLWithPath: "/", isDirectory: true), machineRole: .mainArchive)
     private var onlineOnlyVerdicts: [String: Bool] = [:]
+    private var explicitViewPaths = Set<String>()
+    private var policyGeneration = 0
+
+    var generation: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return policyGeneration
+    }
 
     func update(settings: AppSettings) {
         lock.lock()
         policy = ArchiveByteReadPolicy(archiveRoot: settings.archiveRoot, machineRole: settings.archiveMachineRole)
         onlineOnlyVerdicts.removeAll()
+        explicitViewPaths.removeAll()
+        policyGeneration += 1
         lock.unlock()
     }
 
     func canReadBytes(at url: URL, explicitDownload: Bool = false) -> Bool {
-        guard !snapshot().escapesArchive(url) else { return false }
-        if explicitDownload { return true }
-        return isOnlineOnlyArchiveFile(url) == false
+        let path = url.resolvingSymlinksInPath().standardizedFileURL.path
+        lock.lock()
+        let current = policy
+        let currentGeneration = policyGeneration
+        let granted = explicitViewPaths.contains(path)
+        lock.unlock()
+        guard !current.escapesArchive(url) else { return false }
+        let allowed = current.machineRole != .travel || !current.isOriginalArchiveFile(url)
+            || ((explicitDownload || granted) && !current.isOnlineOnly(url))
+        lock.lock()
+        defer { lock.unlock() }
+        return allowed && currentGeneration == policyGeneration
+    }
+
+    func canRequestExplicitViewing(at url: URL) -> Bool {
+        let current = snapshot()
+        return current.isOriginalArchiveFile(url) && !current.escapesArchive(url)
+    }
+
+    func isAvailableForExplicitViewing(at url: URL) -> Bool {
+        let current = snapshot()
+        return !current.escapesArchive(url) && current.isOriginalArchiveFile(url) && !current.isOnlineOnly(url)
+    }
+
+    @discardableResult
+    func grantExplicitViewing(at url: URL, generation expectedGeneration: Int) -> Bool {
+        guard isAvailableForExplicitViewing(at: url) else { return false }
+        lock.lock()
+        defer { lock.unlock() }
+        guard expectedGeneration == policyGeneration else { return false }
+        explicitViewPaths.insert(url.resolvingSymlinksInPath().standardizedFileURL.path)
+        onlineOnlyVerdicts.removeValue(forKey: url.standardizedFileURL.path)
+        return true
     }
 
     func isOnlineOnlyArchiveFile(_ url: URL) -> Bool {
@@ -387,6 +440,11 @@ struct ArchiveIndexStore {
             .appendingPathComponent("thumbs", isDirectory: true)
             .appendingPathComponent(year, isDirectory: true)
             .appendingPathComponent("\(stem)-\(ext)-\(digest).jpg")
+    }
+
+    static func validatedThumbnailURL(relativePath: String, archiveRoot: URL) -> URL? {
+        guard relativePath.hasPrefix("_index/thumbs/"), relativePath.hasSuffix(".jpg") else { return nil }
+        return try? ArchiveIndexMediaLoader().indexedURL(relativePath, archiveRoot: archiveRoot)
     }
 
     static func thumbnailRelativePath(for archiveFileURL: URL, archiveRoot: URL) -> String? {
@@ -819,7 +877,8 @@ struct ArchiveIndexStore {
             walkPath: relativePath,
             tripPath: manifest.tripFolderRelativePath,
             latitude: manifest.latitude,
-            longitude: manifest.longitude
+            longitude: manifest.longitude,
+            coordinateSource: ArchiveCoordinate(latitude: manifest.latitude, longitude: manifest.longitude) != nil ? .walkPin : nil
         )
     }
 
@@ -850,6 +909,9 @@ struct ArchiveIndexStore {
             ?? manifest.archiveRelativePath
             ?? fileURL.lastPathComponent
         let year = relativePath.split(separator: "/").first.map(String.init) ?? "unknown"
+        let gps = ArchiveCoordinate(latitude: manifest.latitude, longitude: manifest.longitude)
+        let pin = ArchiveCoordinate(latitude: walk.latitude, longitude: walk.longitude)
+        let coordinate = gps ?? pin
         return ArchiveIndexEntry(
             kind: .photo,
             year: year,
@@ -863,11 +925,12 @@ struct ArchiveIndexStore {
             thumbnailPath: existingThumbnailRelativePath(for: fileURL, archiveRoot: archiveRoot),
             walkPath: walk.archiveFolderRelativePath,
             tripPath: walk.tripFolderRelativePath,
-            latitude: manifest.latitude ?? walk.latitude,
-            longitude: manifest.longitude ?? walk.longitude,
+            latitude: coordinate?.latitude,
+            longitude: coordinate?.longitude,
             mediaItemID: manifest.mediaItemID, pixelWidth: manifest.pixelWidth, pixelHeight: manifest.pixelHeight,
             cameraModel: manifest.cameraModel, lensModel: manifest.lensModel,
-            companionPaths: manifest.companionArchivePaths.compactMap { Self.archiveRelativePath(for: URL(fileURLWithPath: $0), archiveRoot: archiveRoot) }
+            companionPaths: manifest.companionArchivePaths.compactMap { Self.archiveRelativePath(for: URL(fileURLWithPath: $0), archiveRoot: archiveRoot) },
+            coordinateSource: gps != nil ? .photoGPS : (pin != nil ? .walkPin : nil)
         )
     }
 
@@ -1103,29 +1166,54 @@ struct ArchiveIndexStore {
 
 enum ArchiveFileProviderEvictor {
     static func evict(_ url: URL) async throws {
-        let identifiers = try await withCheckedThrowingContinuation {
-            (continuation: CheckedContinuation<(NSFileProviderItemIdentifier, NSFileProviderDomainIdentifier), Error>) in
-            NSFileProviderManager.getIdentifierForUserVisibleFile(at: url) { itemIdentifier, domainIdentifier, error in
+        try await ArchiveAsyncOperation.withTimeout(seconds: 30) { try await evictWithoutTimeout(url) }
+    }
+
+    private static func evictWithoutTimeout(_ url: URL) async throws {
+        let (manager, identifier) = try await managerAndIdentifier(url)
+        try await ArchiveAsyncOperation.callback { (complete: @escaping (Result<Void, Error>) -> Void) in
+            manager.evictItem(identifier: identifier) { error in
                 if let error {
-                    continuation.resume(throwing: error)
-                } else if let itemIdentifier, let domainIdentifier {
-                    continuation.resume(returning: (itemIdentifier, domainIdentifier))
+                    complete(.failure(error))
                 } else {
-                    continuation.resume(throwing: NSError(
-                        domain: "ArchiveFileProviderEvictor",
-                        code: 1,
-                        userInfo: [NSLocalizedDescriptionKey: "The file is not managed by a File Provider domain."]
-                    ))
+                    complete(.success(()))
                 }
             }
         }
-        let domains = try await withCheckedThrowingContinuation {
-            (continuation: CheckedContinuation<[NSFileProviderDomain], Error>) in
+    }
+    static func requestDownload(_ url: URL) async throws {
+        let (manager, identifier) = try await managerAndIdentifier(url)
+        try await ArchiveAsyncOperation.callback { (complete: @escaping (Result<Void, Error>) -> Void) in
+            manager.requestDownloadForItem(withIdentifier: identifier) { error in
+                if let error { complete(.failure(error)) } else { complete(.success(())) }
+            }
+        }
+    }
+
+    private static func managerAndIdentifier(_ url: URL) async throws -> (NSFileProviderManager, NSFileProviderItemIdentifier) {
+        let identifiers = try await ArchiveAsyncOperation.callback {
+            (complete: @escaping (Result<(NSFileProviderItemIdentifier, NSFileProviderDomainIdentifier), Error>) -> Void) in
+            NSFileProviderManager.getIdentifierForUserVisibleFile(at: url) { itemIdentifier, domainIdentifier, error in
+                if let error {
+                    complete(.failure(error))
+                } else if let itemIdentifier, let domainIdentifier {
+                    complete(.success((itemIdentifier, domainIdentifier)))
+                } else {
+                    complete(.failure(NSError(
+                        domain: "ArchiveFileProviderEvictor",
+                        code: 1,
+                        userInfo: [NSLocalizedDescriptionKey: "The file is not managed by a File Provider domain."]
+                    )))
+                }
+            }
+        }
+        let domains = try await ArchiveAsyncOperation.callback {
+            (complete: @escaping (Result<[NSFileProviderDomain], Error>) -> Void) in
             NSFileProviderManager.getDomainsWithCompletionHandler { domains, error in
                 if let error {
-                    continuation.resume(throwing: error)
+                    complete(.failure(error))
                 } else {
-                    continuation.resume(returning: domains)
+                    complete(.success(domains))
                 }
             }
         }
@@ -1137,16 +1225,9 @@ enum ArchiveFileProviderEvictor {
                 userInfo: [NSLocalizedDescriptionKey: "The File Provider manager is unavailable."]
             )
         }
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            manager.evictItem(identifier: identifiers.0) { error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume()
-                }
-            }
-        }
+        return (manager, identifiers.0)
     }
+
 }
 
 actor ArchiveIndexMutationQueue {

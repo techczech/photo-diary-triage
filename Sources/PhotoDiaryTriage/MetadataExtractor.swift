@@ -5,7 +5,8 @@ struct MetadataExtractor {
     private let logger = AppLogger.metadataExtractor
 
     func extract(from url: URL) -> MediaMetadata {
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+        guard ArchiveByteReadPolicyContext.shared.canReadBytes(at: url),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] else {
             logger.error("Failed to read metadata for \(url.path, privacy: .public)")
             return MediaMetadata(capturedAt: nil, pixelWidth: nil, pixelHeight: nil, cameraModel: nil, lensModel: nil, latitude: nil, longitude: nil, raw: [:])

@@ -1165,7 +1165,7 @@ struct FullPhotoSheet: View {
 }
 
 struct FullPhotoPreviewCanvas: View {
-    let appState: AppState
+    @ObservedObject var appState: AppState
     let item: MediaItem
     @Binding var zoom: CGFloat
     @Binding var viewport: CompareViewport
@@ -1785,7 +1785,7 @@ struct ZoomableImageCanvas: View {
 
     var body: some View {
         Group {
-            if let image = imageModel.image {
+            if let image = imageModel.image, !isByteReadBlocked {
                 LockedCompareImageCanvas(
                     itemID: itemID,
                     image: image,
@@ -1820,7 +1820,7 @@ struct ZoomableImageCanvas: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .task(id: imageURL) {
+        .task(id: OriginalPreviewTaskKey(url: imageURL, blocked: isByteReadBlocked)) {
             if isByteReadBlocked == false {
                 imageModel.load(.interactiveDisplay(imageURL))
             }
@@ -1839,7 +1839,7 @@ struct ZoomableImageCanvas: View {
                     .fill(.quaternary)
             }
             VStack(spacing: 8) {
-                Text("Archive photo is online-only in travel mode.")
+                Text("Use Download to view this Archive original in travel mode.")
                     .font(.callout.weight(.semibold))
                 Button("Download to view") {
                     downloadToView?()
@@ -1854,7 +1854,7 @@ struct ZoomableImageCanvas: View {
 }
 
 struct LoadedLockedCompareImageCanvas: View {
-    let appState: AppState
+    @ObservedObject var appState: AppState
     let item: MediaItem
     @Binding var zoom: CGFloat
     @Binding var synchronizedViewport: CompareViewport
@@ -1897,7 +1897,7 @@ struct LoadedLockedCompareImageCanvas: View {
 
     var body: some View {
         Group {
-            if let image = imageModel.image {
+            if let image = imageModel.image, !appState.isArchiveByteReadBlocked(for: item) {
                 LockedCompareImageCanvas(
                     itemID: item.id,
                     image: image,
@@ -1919,7 +1919,7 @@ struct LoadedLockedCompareImageCanvas: View {
                 CompareImagePlaceholder(image: thumbnailSlot.image)
             }
         }
-        .task(id: item.id) {
+        .task(id: OriginalPreviewTaskKey(url: item.sourceURL, blocked: appState.isArchiveByteReadBlocked(for: item))) {
             appState.requestThumbnail(for: item)
             _ = appState.thumbnailImage(for: item)
             if let request = appState.decodedImageRequest(for: item) {
@@ -1949,7 +1949,7 @@ struct CompareImagePlaceholder: View {
         .overlay {
             if let downloadToView {
                 VStack(spacing: 8) {
-                    Text("Online-only")
+                    Text("Archive original")
                         .font(.caption.weight(.semibold))
                     Button("Download to view", action: downloadToView)
                         .buttonStyle(.bordered)

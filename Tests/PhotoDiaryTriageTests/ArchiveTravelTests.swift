@@ -104,7 +104,7 @@ private final class IndexOnlyFileManager: FileManager, @unchecked Sendable {
     #expect(store.cachedThumbnailURL(for: item) == thumb)
     #expect(await store.generateThumbnail(for: item))
     #expect(context.canPreheatOriginal(at: item.sourceURL) == false)
-    #expect(context.canReadBytes(at: item.sourceURL))
+    #expect(context.canReadBytes(at: item.sourceURL) == false)
 }
 
 @Test func historicalGroupingPreservesDirectoryCase() throws {
