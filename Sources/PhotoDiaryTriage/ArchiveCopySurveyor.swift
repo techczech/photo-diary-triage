@@ -1,9 +1,10 @@
 import Foundation
 
 struct ArchiveCopySurveyor: Sendable {
-    func survey(items: [MediaItem], archiveRoot: URL) async -> [String: SourceArchiveCopySnapshot] {
+    func survey(items: [MediaItem], archiveRoot: URL, machineRole: ArchiveMachineRole = .mainArchive, historical: Bool = false) async -> [String: SourceArchiveCopySnapshot] {
         let sourceItems = items.map {
             ArchiveCopySurveySourceItem(
+                sourceURL: $0.sourceURL,
                 relativePath: $0.relativePath,
                 fileName: $0.fileName,
                 fileSizeBytes: $0.fileSizeBytes,
@@ -12,14 +13,17 @@ struct ArchiveCopySurveyor: Sendable {
         }
         let root = archiveRoot.standardizedFileURL
 
-        return await Task.detached(priority: .utility) {
-            Self.survey(sourceItems: sourceItems, archiveRoot: root)
-        }.value
+        let task = Task.detached(priority: .utility) {
+            Self.survey(sourceItems: sourceItems, archiveRoot: root, machineRole: machineRole, historical: historical)
+        }
+        return await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
     }
 
     private static func survey(
         sourceItems: [ArchiveCopySurveySourceItem],
         archiveRoot: URL,
+        machineRole: ArchiveMachineRole,
+        historical: Bool,
         fileManager: FileManager = .default
     ) -> [String: SourceArchiveCopySnapshot] {
         guard !sourceItems.isEmpty else { return [:] }
@@ -28,8 +32,10 @@ struct ArchiveCopySurveyor: Sendable {
             $0.fileName.lowercased()
         }
         var copiesByRelativePath: [String: SourceArchiveCopySnapshot] = [:]
+        var sourceDigests: [URL: String] = [:]
+        let policy = ArchiveByteReadPolicy(archiveRoot: archiveRoot, machineRole: machineRole)
 
-        for root in surveyRoots(for: sourceItems, archiveRoot: archiveRoot, fileManager: fileManager) {
+        for root in (historical ? [archiveRoot] : surveyRoots(for: sourceItems, archiveRoot: archiveRoot, fileManager: fileManager)) {
             guard let enumerator = fileManager.enumerator(
                 at: root,
                 includingPropertiesForKeys: [.isRegularFileKey],
@@ -39,22 +45,33 @@ struct ArchiveCopySurveyor: Sendable {
             }
 
             for case let manifestURL as URL in enumerator {
-                guard manifestURL.pathExtension.lowercased() == "md" else { continue }
+                if Task.isCancelled { return copiesByRelativePath }
+                if manifestURL.lastPathComponent == "_index" { enumerator.skipDescendants(); continue }
+                guard manifestURL.pathExtension.lowercased() == "md",
+                      (try? manifestURL.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == false else { continue }
                 guard let manifest = ArchiveCopyManifest(url: manifestURL) else { continue }
                 guard let candidateItems = itemsByFilename[manifest.sourceFileName.lowercased()] else { continue }
-                guard fileManager.fileExists(atPath: manifest.archivePath) else { continue }
-                guard let archivedSize = fileSize(at: manifest.archivePath, fileManager: fileManager) else { continue }
+                let archivedURL = manifestURL.deletingLastPathComponent().appendingPathComponent(URL(fileURLWithPath: manifest.archivePath).lastPathComponent)
+                guard let relative = ArchiveIndexStore.archiveRelativePath(for: archivedURL, archiveRoot: archiveRoot),
+                      !policy.escapesArchive(archivedURL), policy.canReadBytes(at: archivedURL), policy.canGenerateImplicitThumbnail(at: archivedURL),
+                      fileManager.fileExists(atPath: archivedURL.path),
+                      let archivedSize = fileSize(at: archivedURL.path, fileManager: fileManager) else { continue }
 
                 for item in candidateItems where copiesByRelativePath[item.relativePath] == nil {
                     guard item.fileSizeBytes == archivedSize else { continue }
-                    if let sourceCapturedAt = item.capturedAt, let archivedCapturedAt = manifest.capturedAt {
+                    if !historical, let sourceCapturedAt = item.capturedAt, let archivedCapturedAt = manifest.capturedAt {
                         guard abs(sourceCapturedAt.timeIntervalSince(archivedCapturedAt)) < 1 else { continue }
                     }
 
+                    guard policy.canReadBytes(at: item.sourceURL),
+                          let archivedDigest = try? ArchiveFileVerification.sha256(at: archivedURL) else { continue }
+                    let sourceDigest = sourceDigests[item.sourceURL] ?? (try? ArchiveFileVerification.sha256(at: item.sourceURL))
+                    if let sourceDigest { sourceDigests[item.sourceURL] = sourceDigest }
+                    guard sourceDigest == archivedDigest else { continue }
                     copiesByRelativePath[item.relativePath] = SourceArchiveCopySnapshot(
-                        archivePath: manifest.archivePath,
-                        archiveRelativePath: manifest.archiveRelativePath,
-                        sourceFileName: manifest.sourceFileName
+                        archivePath: archivedURL.path,
+                        archiveRelativePath: relative,
+                        sourceFileName: manifest.sourceFileName, byteVerified: true
                     )
                 }
             }
@@ -108,6 +125,7 @@ struct ArchiveCopySurveyor: Sendable {
 }
 
 private struct ArchiveCopySurveySourceItem: Sendable {
+    let sourceURL: URL
     let relativePath: String
     let fileName: String
     let fileSizeBytes: Int64

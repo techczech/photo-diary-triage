@@ -54,6 +54,10 @@ enum CacheKeyBuilder {
 }
 
 enum DateFormatting {
+    static let historicalMonth: DateFormatter = {
+        let value = DateFormatter(); value.locale = Locale(identifier: "en_GB"); value.timeZone = TimeZone(secondsFromGMT: 0)
+        value.dateFormat = "MMMM yyyy"; return value
+    }()
     private static func archiveFormatter(_ format: String) -> DateFormatter {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)

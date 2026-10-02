@@ -192,12 +192,13 @@ struct ContentView: View {
             }
             .help("\(sidebarState.snapshot.isVisible ? "Hide" : "Show") sidebar")
 
-            Button {
-                appState.pickSourceFolder()
+            Menu {
+                Button("Camera/source folder…") { appState.pickSourceFolder() }
+                Button("Historical folder…") { appState.pickSourceFolder(historical: true) }
             } label: {
                 Label("Source", systemImage: "externaldrive.badge.plus")
             }
-            .help("Choose source folder")
+            .help("Choose a new source or a pre-culled historical folder")
 
             SettingsLink {
                 Label("Settings", systemImage: "gearshape")
@@ -205,6 +206,12 @@ struct ContentView: View {
             .help("Open settings")
         }
 
+        if appState.workspaceMode == .cameraTriage && appState.hasHistoricalSources {
+            ToolbarItem {
+                Button(appState.prefersHistoricalFolderDates ? "Prefer camera dates" : "Use folder dates") { appState.toggleHistoricalFolderDates() }
+                    .help(appState.historicalDateSummary)
+            }
+        }
         if appState.workspaceMode == .archiveView {
             ToolbarItem {
                 TextField("Search Archive", text: Binding(

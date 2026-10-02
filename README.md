@@ -9,7 +9,7 @@ updated: 2026-10-02
 
 ## Current release
 
-Version **0.7.7, build 143** adds contextual Walk and selected-photo location editing to the archive recovery and index-only browsing improvements. Copies are verified by SHA-256; interrupted imports reuse recorded destinations; cleanup checks every selected original and RAW companion before deleting a source. Existing Walk notes and membership survive appended imports, and metadata edits update canonical manifests.
+Version **0.7.8, build 144** adds historical-folder triage and preserves confirmed Copy plans through interruption and reopening to the archive recovery and index-only browsing improvements. Copies are verified by SHA-256; interrupted imports reuse recorded destinations; cleanup checks every selected original and RAW companion before deleting a source. Existing Walk notes and membership survive appended imports, and metadata edits update canonical manifests.
 
 Archive moves and layout migration record their plans before changing files. Canonical paths are rewritten without changing human notes or source provenance. Historical folders and hidden material are retained. The derived index publishes complete generations and detects incomplete synchronisation.
 
@@ -20,6 +20,8 @@ Rebuild the index on the Main Archive machine to add historical folder records. 
 Map shows located Walks across the filtered archive, with native clustering and direct links to their photo grids. A saved Walk pin takes precedence over the spherical centroid of original photo locations. Photo locations use a manual override, then a Walk pin, then embedded GPS; raw GPS remains intact. Walks and historical folders without a recorded location remain listed. Map data comes entirely from the index and is independent of an open Photo Log.
 
 In a canonical Archive Walk's inline Map, clear the photo selection to edit the Walk pin, or select original photos to assign one photo or a shared group. Clearing an override restores the Walk/GPS fallback. Saves preserve notes and unknown manifest fields, resume interrupted groups and block overlapping moves until recovery completes. Historical folders and generated crops without canonical photo manifests stay read-only. Travel saves update the current view and targeted canonical manifests; the main Mac must rebuild/publish the index before those changes reach other index-only views.
+
+Historical folders have a dedicated source action. New items start kept; saved exclusions, RAW choices and identities survive reload. Titles and complete/month/year folder dates supply proposals. Valid camera dates take precedence unless you choose folder dates; original camera values and uncertain date precision remain in the records. A confirmed Copy plan is saved before copying and becomes read-only until recovery finishes. Recognised previous copies require matching bytes and never acquire cleanup permission. Historical folders inside the Archive can be cleaned only after their own completed recorded import into a separate destination, with backup confirmation and complete verification; uncopied files and source folders remain.
 
 ## Working features
 
@@ -33,7 +35,7 @@ In a canonical Archive Walk's inline Map, clear the photo selection to edit the 
 
 ## Completion goals
 
-The approved 1.0 scope remains open. Trip location-label overrides, on-demand LM Studio descriptions, Google Photos delivery, and historical title/date harvesting still require work. The description integration is not yet implemented.
+The approved 1.0 scope remains open. Trip location-label overrides, on-demand LM Studio descriptions, Google Photos delivery, still require work. The description integration is not yet implemented.
 
 The [development goals and acceptance tests](planning/development-plan-walkfolio-reliability.md) explain the intended complete workflow, current evidence and the order of independent development. [CONTEXT.md](CONTEXT.md), [PRD.md](PRD.md) and [DESIGN.md](DESIGN.md) hold the domain and product rules.
 

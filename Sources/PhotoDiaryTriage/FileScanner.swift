@@ -19,17 +19,22 @@ struct FileScanner {
         settings: AppSettings,
         metadataMode: FileScannerMetadataMode = .full
     ) throws -> [MediaItem] {
-        let resourceKeys: Set<URLResourceKey> = [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]
-        let enumerator = fileManager.enumerator(at: folder, includingPropertiesForKeys: Array(resourceKeys))!
+        let resourceKeys: Set<URLResourceKey> = [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey]
+        var enumerationError: Error?
+        guard let enumerator = fileManager.enumerator(at: folder, includingPropertiesForKeys: Array(resourceKeys), options: [.skipsHiddenFiles],
+            errorHandler: { _, error in enumerationError = error; return false }) else {
+            throw ArchiveFileVerification.failure("The source folder could not be enumerated.")
+        }
         let baseFolder = folder.resolvingSymlinksInPath().standardizedFileURL
         var candidates: [ScanCandidate] = []
         var cropManifestURLs: [URL] = []
 
         for case let fileURL as URL in enumerator {
             try Task.checkCancellation()
+            if fileURL.lastPathComponent == "_index" { enumerator.skipDescendants(); continue }
 
             let values = try fileURL.resourceValues(forKeys: resourceKeys)
-            guard values.isRegularFile == true else { continue }
+            guard values.isRegularFile == true, values.isSymbolicLink != true else { continue }
 
             let ext = fileURL.pathExtension.lowercased()
             if fileURL.lastPathComponent.hasSuffix(".crops.json") {
@@ -60,6 +65,7 @@ struct FileScanner {
             )
         }
 
+        if let enumerationError { throw enumerationError }
         let cropRelationships = cropRelationships(
             for: candidates,
             manifestURLs: cropManifestURLs,
@@ -102,7 +108,8 @@ struct FileScanner {
                     metadata: metadata,
                     thumbnailCacheKey: CacheKeyBuilder.key(for: primary.sourceURL),
                     companionFiles: companions,
-                    cropRelationship: primary.cropRelationship
+                    cropRelationship: primary.cropRelationship,
+                    sourceModificationTime: primary.contentModificationDate?.timeIntervalSince1970
                 )
             )
         }

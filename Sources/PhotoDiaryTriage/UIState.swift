@@ -85,6 +85,7 @@ struct WalkCommitEditorState: Identifiable, Equatable {
     var existingTrips: [ExistingTrip]
     var tripDisplayLabel: String
     var walkDisplayLabel: String
+    var isRecoveryPlan: Bool = false
 }
 
 struct ImportReadinessSnapshot: Equatable, Sendable {
@@ -278,15 +279,17 @@ struct SourceArchiveCopySnapshot: Equatable, Sendable {
     let archivePath: String
     let archiveRelativePath: String?
     let sourceFileName: String
+    let byteVerified: Bool
 
-    init(archivePath: String, archiveRelativePath: String? = nil, sourceFileName: String) {
+    init(archivePath: String, archiveRelativePath: String? = nil, sourceFileName: String, byteVerified: Bool = false) {
         self.archivePath = archivePath
         self.archiveRelativePath = archiveRelativePath
         self.sourceFileName = sourceFileName
+        self.byteVerified = byteVerified
     }
 
     var helpText: String {
-        "Archive copy found on disk at \(archivePath). This source item is treated as copied and is left out of new photo-log copy plans."
+        byteVerified ? "Matching bytes verified at \(archivePath). Kept out of new copy plans; this match does not authorise source cleanup." : "Possible archive copy at \(archivePath); contents are not verified."
     }
 }
 

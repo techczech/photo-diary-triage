@@ -1615,10 +1615,10 @@ import Testing
 
     let copiedSnapshot = state.reviewState.snapshot.visibleItems.first { $0.item.relativePath == "IMG_0001.jpg" }
     let sourceOnlySnapshot = state.reviewState.snapshot.visibleItems.first { $0.item.relativePath == "IMG_0002.jpg" }
-    #expect(copiedSnapshot?.sourceArchiveCopy?.archivePath == archiveCopy.path)
+    #expect(copiedSnapshot?.sourceArchiveCopy.map { URL(fileURLWithPath: $0.archivePath).resolvingSymlinksInPath().path } == archiveCopy.resolvingSymlinksInPath().path)
     #expect(copiedSnapshot?.sourceLogOwnership == nil)
     #expect(copiedSnapshot?.item.lifecycleState == .verified)
-    #expect(copiedSnapshot?.item.destinationURL?.path == archiveCopy.path)
+    #expect(copiedSnapshot?.item.destinationURL?.resolvingSymlinksInPath().path == archiveCopy.resolvingSymlinksInPath().path)
     #expect(copiedSnapshot?.item.selectionState == .undecided)
     #expect(copiedSnapshot?.displayStatusLabel == "Copied")
     #expect(copiedSnapshot?.isTriageActionLocked == true)

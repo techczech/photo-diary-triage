@@ -455,7 +455,7 @@ final class AppState: ObservableObject {
         static let presentation = PendingRefreshKinds(rawValue: 1 << 5)
     }
 
-    init(testing: Bool = false, testingSettings: AppSettings? = nil, testingSupportRoot: URL? = nil) {
+    init(testing: Bool = false, testingSettings: AppSettings? = nil, testingSupportRoot: URL? = nil, testingImportCoordinator: (any ImportCoordinating)? = nil, testingSessionStore: (any SessionPersisting)? = nil) {
         self.fileManager = .default
         thumbnailImageCache.countLimit = 512
         thumbnailImageCache.totalCostLimit = 256 * 1024 * 1024
@@ -477,16 +477,17 @@ final class AppState: ObservableObject {
             supportRoot: self.supportRoot
         )
         self.sessionMutationCoordinator = SessionMutationCoordinator()
-        self.sessionStore = InMemorySessionStore()
+        self.sessionStore = testingSessionStore ?? InMemorySessionStore()
         self.previewStore = NoCachePreviewStore(cacheRoot: settings.cacheRoot)
         self.sessionManager = SessionManager(scanner: self.scanner, groupingService: self.groupingService)
-        self.importWorkflow = ImportWorkflow(coordinator: self.importCoordinator)
+        self.importWorkflow = ImportWorkflow(coordinator: testingImportCoordinator ?? self.importCoordinator)
         self.browserViewModel = BrowserViewModel(scanner: self.scanner)
         self.archiveYearFolders = ArchiveLibraryInspector.existingYearFolders(in: settings.archiveRoot)
         rebuildBrowserCaches()
         refreshAllUIState()
 
         if testing {
+            if testingSessionStore != nil { primePersistedSessionCache() }
             return
         }
 
@@ -950,6 +951,7 @@ final class AppState: ObservableObject {
 
     var canCommitImport: Bool {
         guard importOperation.isRunning == false else { return false }
+        if case .loading = sourceWorkspaceState { return false }
         return currentSession?.mediaItems.contains {
             $0.selectionState.isIncluded && !$0.lifecycleState.isImportedOrBeyond
         } ?? false
@@ -1002,7 +1004,7 @@ final class AppState: ObservableObject {
     }
 
     var canMutateImportSelection: Bool {
-        workspaceMode.allowsImportSelectionMutation && !isBrowsingArchive && !importOperation.isRunning
+        workspaceMode.allowsImportSelectionMutation && !isBrowsingArchive && !importOperation.isRunning && !(currentSession.map(hasRecordedCopy) ?? false)
     }
 
     var sidebarSnapshotGeneration: Int {
@@ -1300,7 +1302,7 @@ final class AppState: ObservableObject {
         }
         let folder = archiveURL(for: entry.archiveRelativePath)
         statusMessage = "Opening \(entry.title) as a Triage source. The Archive folder stays unchanged until you explicitly copy."
-        loadSourceWorkspace(folder: folder, origin: .manualPicker)
+        loadSourceWorkspace(folder: folder, origin: .historicalFolder)
     }
 
     var canOpenSelectedArchiveItem: Bool {
@@ -1384,7 +1386,7 @@ final class AppState: ObservableObject {
         refreshArchiveBrowserState()
     }
 
-    func pickSourceFolder() {
+    func pickSourceFolder(historical: Bool = false) {
         let shouldAddToCurrentTriage: Bool
         if currentSession != nil && workspaceMode == .cameraTriage {
             let alert = NSAlert()
@@ -1410,21 +1412,25 @@ final class AppState: ObservableObject {
 
         if panel.runModal() == .OK, let folder = panel.urls.first {
             if shouldAddToCurrentTriage {
-                addSourceFolderToCurrentTriage(folder)
+                addSourceFolderToCurrentTriage(folder, historical: historical)
             } else {
-                loadSourceWorkspace(folder: folder, origin: .manualPicker)
+                loadSourceWorkspace(folder: folder, origin: historical ? .historicalFolder : .manualPicker)
             }
         }
     }
 
-    func addSourceFolderToCurrentTriage(_ folder: URL) {
+    func addSourceFolderToCurrentTriage(_ folder: URL, historical: Bool = false) {
+        guard activeWalkCommitEditor == nil else { statusMessage = "Finish or dismiss the Copy review before adding another Source."; return }
         guard let currentSession else {
-            loadSourceWorkspace(folder: folder, origin: .manualPicker)
+            loadSourceWorkspace(folder: folder, origin: historical ? .historicalFolder : .manualPicker)
             return
         }
+        guard allowEditingCopyInputs(currentSession) else { return }
+        let historicalContext = currentSession.sourceProvenances.compactMap(\.historical).first { $0.root.standardizedFileURL == folder.resolvingSymlinksInPath().standardizedFileURL }
+            ?? (historical ? HistoricalSourceContext(root: folder.resolvingSymlinksInPath()) : nil)
         let generation = invalidateInFlightSourceLoad()
         sourceLoadTask = Task { [weak self] in
-            await self?.performAdditionalSourceLoad(folder: folder, into: currentSession, generation: generation)
+            await self?.performAdditionalSourceLoad(folder: folder, into: currentSession, generation: generation, historical: historicalContext)
         }
     }
 
@@ -1485,8 +1491,10 @@ final class AppState: ObservableObject {
     }
 
     func saveCurrentLogDetailsAndStartNext(title: String, location: String, notes: String) {
-        if currentSession != nil {
-            updateWalkMetadata(title: title, location: location, notes: notes)
+        if let currentSession {
+            guard allowEditingCopyInputs(currentSession) else { return }
+            let updated = sessionMutationCoordinator.sessionByUpdatingWalkMetadata(currentSession, title: title, location: location, notes: notes)
+            guard save(updated) else { return }
         }
         startNewPhotoLogSession()
     }
@@ -1564,17 +1572,22 @@ final class AppState: ObservableObject {
         origin: SourceLoadOrigin,
         generation: Int
     ) async {
+        guard !Task.isCancelled, generation == sourceLoadGeneration else { return }
         let standardizedFolder = folder.standardizedFileURL
-        let resolvedFolder = sourceWorkspaceFolderResolver.resolve(selectedFolder: standardizedFolder)
+        var resolvedFolder = standardizedFolder
         do {
             flushPendingSessionPersistence()
-            let resolvedFolderPath = resolvedFolder.path
             try reloadPersistedSessionsFromStore()
+            let previousHistorical = ((currentSession?.sourceProvenances ?? []) + persistedSessions.flatMap { $0.0.sourceProvenances })
+                .compactMap(\.historical).first { $0.root.standardizedFileURL == standardizedFolder.resolvingSymlinksInPath().standardizedFileURL }
+            let historical = previousHistorical ?? (origin == .historicalFolder ? HistoricalSourceContext(root: standardizedFolder.resolvingSymlinksInPath()) : nil)
+            resolvedFolder = historical?.root ?? sourceWorkspaceFolderResolver.resolve(selectedFolder: standardizedFolder)
+            let resolvedFolderPath = resolvedFolder.path
             logger.log("Starting source workspace load from \(standardizedFolder.path, privacy: .public) resolved to \(resolvedFolder.path, privacy: .public) via \(origin.rawValue, privacy: .public)")
             sourceWorkspaceState = .loading(sourcePath: resolvedFolder.path)
             statusMessage = "Scanning source folder \(resolvedFolder.lastPathComponent)..."
 
-            let scanned = try await scanSourceFolder(for: resolvedFolder, settings: settings)
+            let scanned = try await scanSourceFolder(for: resolvedFolder, settings: settings, historical: historical)
             guard !Task.isCancelled, generation == sourceLoadGeneration else {
                 logger.log("Discarded stale source load for \(resolvedFolder.path, privacy: .public)")
                 return
@@ -1586,11 +1599,12 @@ final class AppState: ObservableObject {
             var rebuiltInbox = rebuildInboxSession(
                 from: scanned,
                 workspaceSourceFolder: resolvedFolder,
-                existingInbox: existingInbox?.0
+                existingInbox: existingInbox?.0, historical: historical
             )
             let archiveCopySurvey = await archiveCopySurveyor.survey(
                 items: rebuiltInbox.mediaItems,
-                archiveRoot: settings.archiveRoot
+                archiveRoot: settings.archiveRoot, machineRole: settings.archiveMachineRole,
+                historical: historical != nil
             )
             guard !Task.isCancelled, generation == sourceLoadGeneration else {
                 logger.log("Discarded stale source load after archive survey for \(resolvedFolder.path, privacy: .public)")
@@ -1598,7 +1612,9 @@ final class AppState: ObservableObject {
             }
 
             rebuiltInbox = applyArchiveCopySurvey(archiveCopySurvey, to: rebuiltInbox)
-            let inboxRecord = (rebuiltInbox, scanned.bursts, scanned.clusters)
+            let regrouped = groupingService.group(items: rebuiltInbox.mediaItems, settings: settings)
+            rebuiltInbox.mediaItems = regrouped.items
+            let inboxRecord = (rebuiltInbox, regrouped.burstGroups, regrouped.timeClusters)
             try sessionManager.save(inboxRecord.0, bursts: inboxRecord.1, clusters: inboxRecord.2, to: sessionStore)
             storePersistedSession(inboxRecord.0, bursts: inboxRecord.1, clusters: inboxRecord.2)
 
@@ -1636,26 +1652,34 @@ final class AppState: ObservableObject {
     private func performAdditionalSourceLoad(
         folder: URL,
         into baseSession: ImportSession,
-        generation: Int
+        generation: Int,
+        historical: HistoricalSourceContext? = nil
     ) async {
+        guard !Task.isCancelled, generation == sourceLoadGeneration else { return }
         let standardizedFolder = folder.standardizedFileURL
-        let resolvedFolder = sourceWorkspaceFolderResolver.resolve(selectedFolder: standardizedFolder)
+        let resolvedFolder = historical?.root ?? sourceWorkspaceFolderResolver.resolve(selectedFolder: standardizedFolder)
         do {
             flushPendingSessionPersistence()
             logger.log("Adding source \(resolvedFolder.path, privacy: .public) to current Triage \(baseSession.id.uuidString, privacy: .public)")
             sourceWorkspaceState = .loading(sourcePath: resolvedFolder.path)
             statusMessage = "Adding Source \(resolvedFolder.lastPathComponent)..."
 
-            let scanned = try await scanSourceFolder(for: resolvedFolder, settings: settings)
+            let scanned = try await scanSourceFolder(for: resolvedFolder, settings: settings, historical: historical)
             guard !Task.isCancelled, generation == sourceLoadGeneration else { return }
 
-            let provenance = SourceProvenance(folder: resolvedFolder)
-            var newItems = scanned.session.mediaItems
+            let survey = await archiveCopySurveyor.survey(items: scanned.session.mediaItems,
+                archiveRoot: settings.archiveRoot, machineRole: settings.archiveMachineRole, historical: historical != nil)
+            guard !Task.isCancelled, generation == sourceLoadGeneration else { return }
+            guard let latestSession = currentSession, latestSession.id == baseSession.id,
+                  !importOperation.isRunning, allowEditingCopyInputs(latestSession) else { return }
+            let provenance = latestSession.sourceProvenances.first { $0.folder.standardizedFileURL == resolvedFolder.standardizedFileURL }
+                ?? SourceProvenance(folder: resolvedFolder, historical: historical)
+            var newItems = applyArchiveCopySurvey(survey, to: scanned.session).mediaItems
             for index in newItems.indices {
                 newItems[index].sourceProvenanceID = provenance.id
             }
 
-            var merged = baseSession
+            var merged = latestSession
             if !merged.sourceProvenances.contains(where: { $0.folder.standardizedFileURL.path == resolvedFolder.path }) {
                 merged.sourceProvenances.append(provenance)
             }
@@ -1672,7 +1696,8 @@ final class AppState: ObservableObject {
             sourceWorkspaceState = .loaded(itemCount: merged.mediaItems.count, sourcePath: merged.workspaceSourceFolder.path)
             openPersistedSessionRecord(
                 (merged, grouped.burstGroups, grouped.timeClusters),
-                status: "Added Source \(resolvedFolder.lastPathComponent); Triage now has \(merged.mediaItems.count) item(s) from \(merged.sourceProvenances.count) Source(s)."
+                status: "Added Source \(resolvedFolder.lastPathComponent); Triage now has \(merged.mediaItems.count) item(s) from \(merged.sourceProvenances.count) Source(s).",
+                sourceArchiveCopiesByRelativePath: sourceArchiveCopiesByRelativePath.merging(survey, uniquingKeysWith: { _, added in added })
             )
             requestVisibleThumbnails(prefetching: merged.mediaItems)
         } catch {
@@ -1705,6 +1730,7 @@ final class AppState: ObservableObject {
             statusMessage = "Photo log could not be found in the local library."
             return
         }
+        guard allowEditingCopyInputs(logRecord.0) else { return }
         if PhotoLogStatusPolicy.isMembershipLocked(status: logRecord.0.status) {
             statusMessage = PhotoLogStatusPolicy.membershipLockMessage(status: logRecord.0.status) ?? "This photo log's item list is locked."
             return
@@ -1968,12 +1994,65 @@ final class AppState: ObservableObject {
 
     private func prepareSessionForCopy(_ session: ImportSession) throws -> ImportSession {
         var prepared = session.sessionKind == .inbox ? try createAutomaticPhotoLogForCopy(from: session) : session
-        prepared.weekdayTokenStyle = settings.weekdayTokenStyle
-        prepared.proposedWalks = walkBoundaryProposalService.proposedWalks(for: prepared, timeClusters: timeClusters)
+        if let record = try recordedCopyPlan(for: prepared) {
+            let original = record.originalSession ?? record.session
+            guard prepared.proposedWalks.isEmpty || prepared.proposedWalks == original.proposedWalks else {
+                throw ArchiveFileVerification.failure("Finish the recorded copy before changing its Walk or Trip targets.")
+            }
+            prepared.proposedWalks = original.proposedWalks
+            prepared.weekdayTokenStyle = original.weekdayTokenStyle
+        } else if prepared.confirmedCopyPending != true || prepared.proposedWalks.isEmpty {
+            prepared.weekdayTokenStyle = settings.weekdayTokenStyle
+            prepared.proposedWalks = walkBoundaryProposalService.proposedWalks(for: prepared, timeClusters: timeClusters)
+        }
         if prepared.proposedWalks.isEmpty {
             throw CopyPreparationError.cannotCreateAutomaticLog("Mark photos with S before copying. The app needs at least one proposed Walk.")
         }
         return prepared
+    }
+
+    private var cachedCopyRecords: [URL: (modified: Date?, size: Int?, record: ImportRecoveryRecord)] = [:]
+
+    private func hasRecordedCopy(_ session: ImportSession) -> Bool {
+        if session.confirmedCopyPending == true { return true }
+        do { return try recordedCopyPlan(for: session) != nil } catch { return true }
+    }
+
+    @discardableResult private func allowEditingCopyInputs(_ session: ImportSession) -> Bool {
+        guard !hasRecordedCopy(session) else {
+            statusMessage = "Finish the recorded Copy before editing this photo log. You can open a separate Source for new Triage."
+            return false
+        }
+        return true
+    }
+
+    private func recordedCopyPlan(for session: ImportSession) throws -> ImportRecoveryRecord? {
+        let recovery = ArchiveOperationRecovery(archiveRoot: session.archiveRoot)
+        let url = recovery.url(kind: "import", sessionID: session.id)
+        guard fileManager.fileExists(atPath: url.path) else {
+            if cachedCopyRecords[url]?.record.complete == false {
+                throw ArchiveFileVerification.failure("The recorded Copy is unavailable. Reconnect the Archive before editing or retrying.")
+            }
+            if session.confirmedCopyPending == true {
+                // The directory read distinguishes an accessible unstarted plan from unavailable storage.
+                _ = try fileManager.contentsOfDirectory(at: session.archiveRoot, includingPropertiesForKeys: nil)
+                if fileManager.fileExists(atPath: recovery.root.path) {
+                    _ = try fileManager.contentsOfDirectory(at: recovery.root, includingPropertiesForKeys: nil)
+                }
+            }
+            return nil
+        }
+        let attributes = try url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+        let record: ImportRecoveryRecord
+        if let cached = cachedCopyRecords[url], cached.modified == attributes.contentModificationDate, cached.size == attributes.fileSize {
+            record = cached.record
+        } else {
+            guard let loaded = try recovery.load(ImportRecoveryRecord.self, kind: "import", sessionID: session.id) else { return nil }
+            record = loaded
+            cachedCopyRecords[url] = (attributes.contentModificationDate, attributes.fileSize, loaded)
+        }
+        let pending = Set(session.mediaItems.filter { $0.selectionState.isIncluded && !$0.lifecycleState.isImportedOrBeyond }.map(\.id))
+        return !record.complete || !record.mediaItemIDs.isDisjoint(with: pending) ? record : nil
     }
 
     private func sourceDecisionAppendPlan(for sessionID: UUID) throws -> (target: ImportSession, inbox: ImportSession, itemsToAdd: [MediaItem]) {
@@ -1983,6 +2062,7 @@ final class AppState: ObservableObject {
         guard let target = persistedSessions.first(where: { $0.0.id == sessionID && $0.0.sessionKind == .walkDraft })?.0 else {
             throw CopyPreparationError.cannotCreateAutomaticLog("Photo log could not be found in the local library.")
         }
+        guard !hasRecordedCopy(target) else { throw ArchiveFileVerification.failure("Finish the recorded Copy before adding photos to this log.") }
         guard target.status != LifecycleState.sourceCleaned.rawValue else {
             throw CopyPreparationError.cannotCreateAutomaticLog("Source-cleaned logs cannot accept more photos.")
         }
@@ -2037,7 +2117,7 @@ final class AppState: ObservableObject {
         let remainingItems = inbox.mediaItems.filter { !selectedIDs.contains($0.id) }
         let draftGrouped = groupingService.group(items: selectedItems, settings: settings)
         let inboxGrouped = groupingService.group(items: remainingItems, settings: settings)
-        let autoTitle = automaticPhotoLogTitle(for: selectedItems)
+        let autoTitle = inbox.sourceProvenances.contains(where: { $0.historical != nil }) ? (inbox.walkMetadata.title.nonEmpty ?? automaticPhotoLogTitle(for: selectedItems)) : automaticPhotoLogTitle(for: selectedItems)
         let metadata = WalkMetadata(
             title: autoTitle,
             location: inbox.walkMetadata.location,
@@ -2104,6 +2184,7 @@ final class AppState: ObservableObject {
             return
         }
 
+        guard allowEditingCopyInputs(record.0) else { return }
         var updatedSession = record.0
         updatedSession.lastUpdatedAt = Date()
         updatedSession.walkMetadata.title = editor.title
@@ -2131,6 +2212,7 @@ final class AppState: ObservableObject {
             return
         }
 
+        guard allowEditingCopyInputs(logRecord.0) else { return }
         let returnableItems = logRecord.0.mediaItems.filter { !$0.lifecycleState.isImportedOrBeyond }
         let updatedInboxRecord = rebuildInboxAfterDeletingPhotoLog(logRecord.0, returning: returnableItems)
         var updatedRecords = persistedSessions.filter { $0.0.id != sessionID && $0.0.id != updatedInboxRecord.0.id }
@@ -2280,6 +2362,41 @@ final class AppState: ObservableObject {
         } else {
             statusMessage += " The travel view is updated; the main Mac will publish the index after rebuilding."
         }
+    }
+
+    var hasHistoricalSources: Bool { currentSession?.sourceProvenances.contains { $0.historical != nil } == true }
+
+    var historicalDateSummary: String {
+        let evidence = currentSession?.mediaItems.compactMap(\.captureDateEvidence) ?? []
+        let conflicts = evidence.filter(\.conflictsWithFolder).count
+        let partial = evidence.filter { $0.precision == .month || $0.precision == .year }.count
+        return "Historical source · \(conflicts) camera/folder conflicts · \(partial) partial dates"
+    }
+
+    var prefersHistoricalFolderDates: Bool {
+        currentSession?.sourceProvenances.compactMap(\.historical).contains { $0.datePreference == .folder } == true
+    }
+
+    func toggleHistoricalFolderDates() {
+        guard var session = currentSession, hasHistoricalSources, !importOperation.isRunning else { return }
+        do { guard try recordedCopyPlan(for: session) == nil else {
+            statusMessage = "Finish the recorded Copy before changing its date preference."; return
+        } } catch { statusMessage = error.localizedDescription; return }
+        let preference: HistoricalDatePreference = prefersHistoricalFolderDates ? .camera : .folder
+        for index in session.sourceProvenances.indices where session.sourceProvenances[index].historical != nil {
+            session.sourceProvenances[index].historical!.datePreference = preference
+        }
+        for index in session.mediaItems.indices where !session.mediaItems[index].lifecycleState.isImportedOrBeyond {
+            if let context = HistoricalSourceSafety.context(for: session.mediaItems[index].sourceURL, in: session) {
+                session.mediaItems[index] = HistoricalSourceHints.applying(to: session.mediaItems[index], context: context)
+            }
+        }
+        session.proposedWalks = []
+        let grouped = groupingService.group(items: session.mediaItems, settings: settings)
+        session.mediaItems = grouped.items
+        burstGroups = grouped.burstGroups; timeClusters = grouped.timeClusters
+        _ = save(session, updateKind: .full)
+        statusMessage = preference == .folder ? "Using recorded folder date hints; camera dates remain in provenance." : "Using valid camera dates, with folder/file-date fallback."
     }
 
     var currentWalkLocationName: String {
@@ -2462,6 +2579,7 @@ final class AppState: ObservableObject {
     func commitImport() {
         guard let session = currentSession else { return }
         guard canCommitImport else { return }
+        invalidateInFlightSourceLoad()
         do {
             let preparedSession = try prepareSessionForCopy(session)
             presentWalkCommitEditor(for: preparedSession)
@@ -2486,25 +2604,38 @@ final class AppState: ObservableObject {
 
     private func clearCurrentSessionProposedWalks() {
         guard var session = currentSession, !session.proposedWalks.isEmpty else { return }
+        guard session.confirmedCopyPending != true else { return }
+        do { if try recordedCopyPlan(for: session) != nil { return } }
+        catch { statusMessage = "Copy recovery could not be read: \(error.localizedDescription)"; return }
         session.proposedWalks = []
         setCurrentSession(session, updateKind: .sessionOnly)
     }
 
     func updateWalkCommitEditor(_ editor: WalkCommitEditorState) {
+        if let current = activeWalkCommitEditor, current.isRecoveryPlan, current.walks != editor.walks {
+            statusMessage = "The recorded recovery targets are fixed until copying finishes."; return
+        }
         activeWalkCommitEditor = editor
     }
 
     func confirmWalkCommit() {
         guard let editor = activeWalkCommitEditor, var session = currentSession else { return }
         session.proposedWalks = editor.walks
-        session.weekdayTokenStyle = settings.weekdayTokenStyle
+        session.confirmedCopyPending = true
+        if !editor.isRecoveryPlan { session.weekdayTokenStyle = settings.weekdayTokenStyle }
+        // The confirmed plan must be durable before the importer can copy its first file.
+        do {
+            flushPendingSessionPersistence()
+            try sessionManager.save(session, bursts: burstGroups, clusters: timeClusters, to: sessionStore)
+            storePersistedSession(session, bursts: burstGroups, clusters: timeClusters)
+        } catch { statusMessage = "Could not save the confirmed Copy plan: \(error.localizedDescription)"; return }
         activeWalkCommitEditor = nil
         setCurrentSession(session, updateKind: .sessionOnly)
         performConfirmedImport(session)
     }
 
     func mergeWalkProposalWithPrevious(_ walkID: UUID) {
-        guard var editor = activeWalkCommitEditor,
+        guard var editor = activeWalkCommitEditor, !editor.isRecoveryPlan,
               let index = editor.walks.firstIndex(where: { $0.id == walkID }),
               index > 0 else { return }
         var previous = editor.walks[index - 1]
@@ -2520,7 +2651,7 @@ final class AppState: ObservableObject {
     }
 
     func splitWalkProposal(_ walkID: UUID) {
-        guard var editor = activeWalkCommitEditor,
+        guard var editor = activeWalkCommitEditor, !editor.isRecoveryPlan,
               let index = editor.walks.firstIndex(where: { $0.id == walkID }) else { return }
         let walk = editor.walks[index]
         guard walk.mediaItemIDs.count > 1 else { return }
@@ -2555,7 +2686,8 @@ final class AppState: ObservableObject {
             walks: preparedSession.proposedWalks,
             existingTrips: existingTrips,
             tripDisplayLabel: settings.tripDisplayLabel,
-            walkDisplayLabel: settings.walkDisplayLabel
+            walkDisplayLabel: settings.walkDisplayLabel,
+            isRecoveryPlan: preparedSession.confirmedCopyPending == true || (try? recordedCopyPlan(for: preparedSession)) != nil
         )
     }
 
@@ -2614,6 +2746,13 @@ final class AppState: ObservableObject {
                 browserViewModel.invalidateArchiveTreeCache()
                 scheduleArchiveIndexUpdate(after: result)
             } catch {
+                if var failed = currentSession, failed.id == preparedSession.id,
+                   let contents = try? fileManager.contentsOfDirectory(at: ArchiveOperationRecovery(archiveRoot: failed.archiveRoot).root, includingPropertiesForKeys: nil),
+                   !contents.contains(where: { $0.lastPathComponent == "import-\(failed.id.uuidString).json" }) {
+                    failed.confirmedCopyPending = nil
+                    setCurrentSession(failed, updateKind: .sessionOnly)
+                    persistCurrentSession(immediately: true)
+                }
                 let message = userFacingCopyFailureMessage(for: error)
                 importProgress = nil
                 importOperation = ImportOperationSnapshot(
@@ -2629,15 +2768,23 @@ final class AppState: ObservableObject {
     }
 
     func cleanupImportedSources() {
-        guard let session = currentSession else { return }
-
+        guard let session = currentSession, canCleanupImportedSources else { return }
+        let pending = session.mediaItems.filter { $0.lifecycleState == .sourceCleanupPending && !($0.cropRelationship?.role == .original && $0.cropRelationship?.hasCrops == true) }
+        guard !pending.isEmpty else { statusMessage = "Originals with crops are retained."; return }
+        let count = pending.reduce(0) { $0 + 1 + ($1.importRawCompanions ? $1.companionFiles.count : 0) }
+        let alert = NSAlert()
+        alert.messageText = "Remove \(count) verified copied source file(s)?"
+        alert.informativeText = "Walkfolio will recheck every archived copy before deleting only these imported originals/RAW companions. Uncopied files and source folders remain. Backup confirmation is required."
+        alert.addButton(withTitle: "Remove copied sources")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
         Task {
             do {
-                statusMessage = "Cleaning imported source files from SSD..."
+                statusMessage = "Verifying and cleaning imported source files..."
                 let cleaned = try await importWorkflow.cleanupImportedSources(in: session)
                 setCurrentSession(cleaned, updateKind: .sessionOnly)
                 persistCurrentSession(immediately: true)
-                statusMessage = "Removed verified imported files from the source SSD."
+                statusMessage = "Removed verified imported source files."
             } catch {
                 statusMessage = error.localizedDescription
             }
@@ -3691,6 +3838,9 @@ final class AppState: ObservableObject {
     }
 
     func cropMediaItem(_ item: MediaItem, normalizedRect: CropNormalizedRect, trigger: CropTrigger) {
+        if let currentSession, currentSession.mediaItems.contains(where: { $0.id == item.id }) {
+            guard allowEditingCopyInputs(currentSession) else { return }
+        }
         guard normalizedRect.isUsableCrop else {
             statusMessage = "Crop area is too small."
             return
@@ -4176,6 +4326,11 @@ final class AppState: ObservableObject {
     }
 
     func importBackup() {
+        do {
+            guard !(try sessionStore.loadSessions()).contains(where: { hasRecordedCopy($0.0) }) else {
+                statusMessage = "Finish recorded Copies before restoring a backup."; return
+            }
+        } catch { statusMessage = "Copy recovery could not be checked: \(error.localizedDescription)"; return }
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.json]
         panel.allowsMultipleSelection = false
@@ -4215,6 +4370,7 @@ final class AppState: ObservableObject {
             var importedCount = 0
             for record in records {
                 let incoming = record.document.session
+                if let current = existingByID[incoming.id], hasRecordedCopy(current.0) { continue }
                 if let current = existingByID[incoming.id],
                    current.0.lastUpdatedAt > incoming.lastUpdatedAt {
                     continue
@@ -4887,13 +5043,34 @@ final class AppState: ObservableObject {
     private func rebuildInboxSession(
         from scanned: SessionOpenResult,
         workspaceSourceFolder: URL,
-        existingInbox: ImportSession?
+        existingInbox: ImportSession?,
+        historical: HistoricalSourceContext? = nil
     ) -> ImportSession {
         let existing = existingInbox
-        let provenance = existing?.sourceProvenances.first(where: {
+        var provenance = existing?.sourceProvenances.first(where: {
             $0.folder.standardizedFileURL.path == workspaceSourceFolder.standardizedFileURL.path
         }) ?? SourceProvenance(folder: workspaceSourceFolder)
+        if let historical { provenance.historical = historical }
         var mediaItems = scanned.session.mediaItems
+        let previousByPath = Dictionary((existing?.mediaItems ?? []).map { ($0.sourceURL.standardizedFileURL.path, $0) }, uniquingKeysWith: { first, _ in first })
+        for index in mediaItems.indices {
+            let item = mediaItems[index]
+            if let previous = previousByPath[item.sourceURL.standardizedFileURL.path],
+               previous.fileSizeBytes == item.fileSizeBytes, previous.sourceModificationTime == item.sourceModificationTime {
+                // Retain user decisions and stable IDs only for the same scanned file revision.
+                var retained = previous
+                retained.metadata = item.metadata
+                retained.companionFiles = item.companionFiles.map { companion in
+                    previous.companionFiles.first { $0.sourceURL.standardizedFileURL == companion.sourceURL.standardizedFileURL && $0.fileSizeBytes == companion.fileSizeBytes } ?? companion
+                }
+                retained.cropRelationship = item.cropRelationship
+                retained.sourceModificationTime = item.sourceModificationTime
+                if let historical { retained = HistoricalSourceHints.applying(to: retained, context: historical) }
+                mediaItems[index] = retained
+            } else if historical != nil {
+                mediaItems[index].selectionState = .included
+            }
+        }
         for index in mediaItems.indices {
             mediaItems[index].sourceProvenanceID = provenance.id
         }
@@ -4925,7 +5102,8 @@ final class AppState: ObservableObject {
         var updatedInbox = inbox
         for index in updatedInbox.mediaItems.indices {
             let relativePath = updatedInbox.mediaItems[index].relativePath
-            guard let archiveCopy = copiesByRelativePath[relativePath] else { continue }
+            guard let archiveCopy = copiesByRelativePath[relativePath], archiveCopy.byteVerified else { continue }
+            updatedInbox.mediaItems[index].recognisedArchiveCopy = true
             updatedInbox.mediaItems[index].lifecycleState = .verified
             updatedInbox.mediaItems[index].destinationURL = URL(fileURLWithPath: archiveCopy.archivePath)
             updatedInbox.mediaItems[index].archiveRelativePath = archiveCopy.archiveRelativePath
@@ -4935,18 +5113,32 @@ final class AppState: ObservableObject {
         return updatedInbox
     }
 
-    private func scanSourceFolder(for folder: URL, settings: AppSettings) async throws -> SessionOpenResult {
+    private func scanSourceFolder(for folder: URL, settings: AppSettings, historical: HistoricalSourceContext? = nil) async throws -> SessionOpenResult {
         if let testingSourceScanHandler {
-            return try await testingSourceScanHandler(folder, settings)
+            let result = try await testingSourceScanHandler(folder, settings)
+            if let historical {
+                try HistoricalSourceSafety.validate(root: historical.root, archiveRoot: settings.archiveRoot)
+                let grouped = groupingService.group(items: result.session.mediaItems.map { item in
+                    var item = HistoricalSourceHints.applying(to: item, context: historical); item.selectionState = .included; return item
+                }, settings: settings)
+                var session = result.session
+                session.mediaItems = grouped.items
+                session.walkMetadata.title = historical.proposedTripTitle ?? ""
+                return SessionOpenResult(session: session, bursts: grouped.burstGroups, clusters: grouped.timeClusters)
+            }
+            return result
         }
         return try await Task.detached(priority: .userInitiated) {
             let sessionManager = SessionManager(scanner: FileScanner(), groupingService: GroupingService())
-            return try sessionManager.openSession(for: folder, settings: settings)
+            return try sessionManager.openSession(for: folder, settings: settings, historical: historical)
         }.value
     }
 
     @discardableResult
     private func save(_ session: ImportSession, updateKind: CurrentSessionUpdateKind = .sessionOnly) -> Bool {
+        if let previous = currentSession?.id == session.id ? currentSession : persistedSessions.first(where: { $0.0.id == session.id })?.0 {
+            guard allowEditingCopyInputs(previous) else { return false }
+        }
         if let previous = currentSession, previous.id == session.id,
            (previous.walkMetadata.title != session.walkMetadata.title
             || previous.walkMetadata.location != session.walkMetadata.location
@@ -5135,7 +5327,7 @@ final class AppState: ObservableObject {
         switch origin {
         case .launchDefault, .mountedDefault:
             return false
-        case .manualPicker, .savedWalkInbox, .openDefaultSource, .settingsDefaultRoot, .reloadCurrentSource, .addSource:
+        case .manualPicker, .historicalFolder, .savedWalkInbox, .openDefaultSource, .settingsDefaultRoot, .reloadCurrentSource, .addSource:
             return true
         }
     }

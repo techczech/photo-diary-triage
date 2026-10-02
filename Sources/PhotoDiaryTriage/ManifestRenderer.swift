@@ -147,6 +147,13 @@ struct ManifestRenderer {
             lines.append("location_assigned_at: \(DateFormatting.iso8601.string(from: location.assignedAt))")
             lines.append("location_assignment_shared: \(location.isShared)")
         }
+        if let evidence = manifest.captureDateEvidence {
+            lines.append("capture_date_source: \(evidence.source.rawValue)")
+            lines.append("capture_date_precision: \(evidence.precision.rawValue)")
+            if let date = evidence.originalCameraDate { lines.append("original_captured_at: \(DateFormatting.iso8601.string(from: date))") }
+            if let date = evidence.folderDate { lines.append("folder_date_hint: \(DateFormatting.iso8601.string(from: date))") }
+            lines.append("capture_date_conflicts_with_folder: \(evidence.conflictsWithFolder)")
+        }
         lines.append("walk_title: \(escapeYAML(manifest.walkTitle))")
         lines.append("walk_location: \(escapeYAML(manifest.walkLocation))")
         lines.append("---")

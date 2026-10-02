@@ -45,6 +45,7 @@ struct ArchiveIndexEntry: Codable, Hashable, Sendable {
     var locationOverride: PhotoLocationOverride?
     var sessionID: UUID?
     var walkID: UUID?
+    var captureDateEvidence: CaptureDateEvidence?
 
     init(
         kind: ArchiveIndexEntryKind,
@@ -78,7 +79,8 @@ struct ArchiveIndexEntry: Codable, Hashable, Sendable {
         gpsLongitude: Double? = nil,
         locationOverride: PhotoLocationOverride? = nil,
         sessionID: UUID? = nil,
-        walkID: UUID? = nil
+        walkID: UUID? = nil,
+        captureDateEvidence: CaptureDateEvidence? = nil
     ) {
         self.kind = kind
         self.year = year
@@ -112,6 +114,7 @@ struct ArchiveIndexEntry: Codable, Hashable, Sendable {
         self.locationOverride = locationOverride
         self.sessionID = sessionID
         self.walkID = walkID
+        self.captureDateEvidence = captureDateEvidence
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -147,6 +150,7 @@ struct ArchiveIndexEntry: Codable, Hashable, Sendable {
         case locationOverride = "location_override"
         case sessionID = "session_id"
         case walkID = "walk_id"
+        case captureDateEvidence = "capture_date_evidence"
     }
 }
 
@@ -956,7 +960,7 @@ struct ArchiveIndexStore {
             coordinateSource: manifest.locationOverride?.coordinate != nil ? (manifest.locationOverride!.isShared ? .sharedOverride : .photoOverride)
                 : (pin != nil ? .walkPin : (gps != nil ? .photoGPS : nil)),
             gpsLatitude: gps?.latitude, gpsLongitude: gps?.longitude, locationOverride: manifest.locationOverride,
-            sessionID: walk.sessionID, walkID: walk.walkID
+            sessionID: walk.sessionID, walkID: walk.walkID, captureDateEvidence: manifest.captureDateEvidence
         )
     }
 
@@ -1059,7 +1063,8 @@ struct ArchiveIndexStore {
             walkTitle: yamlValue("walk_title", in: text) ?? "",
             walkLocation: yamlValue("walk_location", in: text) ?? "",
             notes: notes,
-            locationOverride: try PhotoLocationOverride.read(in: text)
+            locationOverride: try PhotoLocationOverride.read(in: text),
+            captureDateEvidence: try CaptureDateEvidence.read(in: text)
         )
     }
 

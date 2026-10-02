@@ -175,12 +175,14 @@ struct SourceProvenance: Identifiable, Codable, Hashable, Sendable {
     var folder: URL
     var label: String
     var addedAt: Date
+    var historical: HistoricalSourceContext?
 
-    init(id: UUID = UUID(), folder: URL, label: String? = nil, addedAt: Date = Date()) {
+    init(id: UUID = UUID(), folder: URL, label: String? = nil, addedAt: Date = Date(), historical: HistoricalSourceContext? = nil) {
         self.id = id
         self.folder = folder
         self.label = label?.nonEmpty ?? folder.lastPathComponent
         self.addedAt = addedAt
+        self.historical = historical
     }
 }
 
@@ -430,6 +432,7 @@ enum SourceLoadOrigin: String, Equatable, Sendable {
     case launchDefault
     case mountedDefault
     case manualPicker
+    case historicalFolder
     case savedWalkInbox
     case openDefaultSource
     case settingsDefaultRoot
@@ -663,6 +666,7 @@ struct ImportSession: Identifiable, Codable, Hashable, Sendable {
     var sourceProvenances: [SourceProvenance]
     var proposedWalks: [Walk]
     var weekdayTokenStyle: WeekdayTokenStyle
+    var confirmedCopyPending: Bool?
 
     init(
         id: UUID = UUID(),
@@ -681,7 +685,8 @@ struct ImportSession: Identifiable, Codable, Hashable, Sendable {
         mediaItems: [MediaItem] = [],
         sourceProvenances: [SourceProvenance] = [],
         proposedWalks: [Walk] = [],
-        weekdayTokenStyle: WeekdayTokenStyle = .englishAbbreviated
+        weekdayTokenStyle: WeekdayTokenStyle = .englishAbbreviated,
+        confirmedCopyPending: Bool? = nil
     ) {
         self.id = id
         self.sourceFolder = sourceFolder
@@ -702,6 +707,7 @@ struct ImportSession: Identifiable, Codable, Hashable, Sendable {
             : sourceProvenances
         self.proposedWalks = proposedWalks
         self.weekdayTokenStyle = weekdayTokenStyle
+        self.confirmedCopyPending = confirmedCopyPending
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -721,6 +727,7 @@ struct ImportSession: Identifiable, Codable, Hashable, Sendable {
         case sourceProvenances
         case proposedWalks
         case weekdayTokenStyle
+        case confirmedCopyPending
     }
 
     init(from decoder: Decoder) throws {
@@ -742,6 +749,7 @@ struct ImportSession: Identifiable, Codable, Hashable, Sendable {
         sourceProvenances = try container.decodeIfPresent([SourceProvenance].self, forKey: .sourceProvenances) ?? [SourceProvenance(folder: sourceFolder)]
         proposedWalks = try container.decodeIfPresent([Walk].self, forKey: .proposedWalks) ?? []
         weekdayTokenStyle = try container.decodeIfPresent(WeekdayTokenStyle.self, forKey: .weekdayTokenStyle) ?? .englishAbbreviated
+        confirmedCopyPending = try container.decodeIfPresent(Bool.self, forKey: .confirmedCopyPending)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -762,6 +770,7 @@ struct ImportSession: Identifiable, Codable, Hashable, Sendable {
         try container.encode(sourceProvenances, forKey: .sourceProvenances)
         try container.encode(proposedWalks, forKey: .proposedWalks)
         try container.encode(weekdayTokenStyle, forKey: .weekdayTokenStyle)
+        try container.encodeIfPresent(confirmedCopyPending, forKey: .confirmedCopyPending)
     }
 }
 
@@ -861,6 +870,9 @@ struct MediaItem: Identifiable, Codable, Hashable, Sendable {
     var sourceCleanedAt: Date?
     var cropRelationship: CropRelationship?
     var sourceProvenanceID: UUID?
+    var sourceModificationTime: TimeInterval?
+    var captureDateEvidence: CaptureDateEvidence?
+    var recognisedArchiveCopy: Bool?
 
     init(
         id: UUID = UUID(),
@@ -885,7 +897,10 @@ struct MediaItem: Identifiable, Codable, Hashable, Sendable {
         verifiedAt: Date? = nil,
         sourceCleanedAt: Date? = nil,
         cropRelationship: CropRelationship? = nil,
-        sourceProvenanceID: UUID? = nil
+        sourceProvenanceID: UUID? = nil,
+        sourceModificationTime: TimeInterval? = nil,
+        captureDateEvidence: CaptureDateEvidence? = nil,
+        recognisedArchiveCopy: Bool? = nil
     ) {
         self.id = id
         self.sourceURL = sourceURL
@@ -910,6 +925,9 @@ struct MediaItem: Identifiable, Codable, Hashable, Sendable {
         self.sourceCleanedAt = sourceCleanedAt
         self.cropRelationship = cropRelationship
         self.sourceProvenanceID = sourceProvenanceID
+        self.sourceModificationTime = sourceModificationTime
+        self.captureDateEvidence = captureDateEvidence
+        self.recognisedArchiveCopy = recognisedArchiveCopy
     }
 }
 
@@ -941,6 +959,9 @@ extension MediaItem {
 
     var compactCapturedAtLabel: String? {
         guard let capturedAt else { return nil }
+        if captureDateEvidence?.precision == .day { return DateFormatting.archiveFormatterForParsing.string(from: capturedAt) + " (time unknown)" }
+        if captureDateEvidence?.precision == .month { return DateFormatting.historicalMonth.string(from: capturedAt) + " (day unknown)" }
+        if captureDateEvidence?.precision == .year { return DateFormatting.archiveYearFolderName(from: capturedAt) + " (month/day unknown)" }
         return DateFormatting.reviewCardTimestamp.string(from: capturedAt)
     }
 
@@ -1178,6 +1199,7 @@ struct FileManifest: Codable, Hashable, Sendable {
     var walkLocation: String
     var notes: String
     var locationOverride: PhotoLocationOverride?
+    var captureDateEvidence: CaptureDateEvidence?
 
     init(
         mediaItemID: UUID,
@@ -1197,7 +1219,8 @@ struct FileManifest: Codable, Hashable, Sendable {
         walkTitle: String,
         walkLocation: String,
         notes: String,
-        locationOverride: PhotoLocationOverride? = nil
+        locationOverride: PhotoLocationOverride? = nil,
+        captureDateEvidence: CaptureDateEvidence? = nil
     ) {
         self.mediaItemID = mediaItemID
         self.archivePath = archivePath
@@ -1217,6 +1240,7 @@ struct FileManifest: Codable, Hashable, Sendable {
         self.walkLocation = walkLocation
         self.notes = notes
         self.locationOverride = locationOverride
+        self.captureDateEvidence = captureDateEvidence
     }
 }
 
