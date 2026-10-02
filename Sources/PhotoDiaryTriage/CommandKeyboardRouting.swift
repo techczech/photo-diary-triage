@@ -42,7 +42,9 @@ struct CommandSelectionFingerprint: Equatable {
     let sessionID: UUID?, node: String?, folders: Set<String>, photos: Set<UUID>, focused: UUID?, preview: UUID?, compare: [UUID]
     let archiveSelection: String
     let reviewContext: String
+    let googleContext: String
     @MainActor init(_ state: AppState) {
+        googleContext = state.commandGoogleContextKey
         contextGeneration = ArchiveByteReadPolicyContext.shared.generation
         root = state.settings.archiveRoot.standardizedFileURL.path; role = state.settings.archiveMachineRole
         pictures = state.settings.oneDrivePicturesRoot.standardizedFileURL.path
@@ -50,6 +52,19 @@ struct CommandSelectionFingerprint: Equatable {
         folders = state.selectedFolderNodeIDs; photos = state.selectedMediaItemIDs
         focused = state.focusedReviewItemID; preview = state.previewingMediaItemID; compare = state.comparingMediaItemIDs
         archiveSelection = state.commandArchiveSelectionFingerprint; reviewContext = state.commandReviewContextFingerprint
+    }
+}
+
+/// Exact containing capabilities, captured when an action is issued. A new parent
+/// cannot lend its authority to an old child button or palette invocation.
+@MainActor
+struct CommandSurfaceSnapshot {
+    weak var lease: CommandSurfaceLease?
+    let token: UUID
+    let sourceScope: AppCommandScope
+    let effectiveScope: AppCommandScope
+    init(_ lease: CommandSurfaceLease, effectiveScope: AppCommandScope) {
+        self.lease = lease; token = lease.token; sourceScope = lease.scope; self.effectiveScope = effectiveScope
     }
 }
 
@@ -66,7 +81,9 @@ final class CommandInvocation {
     let text: String?
     let selection: NSRange?
     let requiresFocusedOwner: Bool
-    init(window: NSWindow, scope: AppCommandScope, lease: CommandSurfaceLease?, state: AppState, windowRegistrationID: UUID, requiresFocusedOwner: Bool = true) {
+    let surfaces: [CommandSurfaceSnapshot]
+    init(window: NSWindow, scope: AppCommandScope, lease: CommandSurfaceLease?, state: AppState, windowRegistrationID: UUID, requiresFocusedOwner: Bool = true, surfaces: [CommandSurfaceSnapshot]? = nil) {
+        self.surfaces = surfaces ?? lease.map { [CommandSurfaceSnapshot($0, effectiveScope: scope)] } ?? []
         self.requiresFocusedOwner = requiresFocusedOwner
         self.windowRegistrationID = windowRegistrationID
         self.window = window; self.scope = scope; self.lease = lease; self.leaseToken = lease?.token; self.fingerprint = .init(state)
@@ -191,16 +208,33 @@ final class CommandKeyboardCoordinator: ObservableObject {
         leases.values.filter { $0.view?.window === window && $0.view?.isHiddenOrHasHiddenAncestor == false && $0.active && [.compare, .preview, .form, .information].contains($0.scope) }
             .max { leaseOrders[$0.token, default: 0] < leaseOrders[$1.token, default: 0] }
     }
-    private func activeLease(in window: NSWindow) -> CommandSurfaceLease? {
-        let visible = leases.values.filter { $0.view?.window === window && $0.view?.isHiddenOrHasHiddenAncestor == false }.sorted { leaseOrders[$0.token, default: 0] > leaseOrders[$1.token, default: 0] }
-        // Overlays own their window even during the interval before initial focus.
-        if let overlay = modalLease(in: window) { return overlay }
-        var candidate = focusedView(in: window)
+    func surfaceChain(for lease: CommandSurfaceLease, editing: Bool = false) -> [CommandSurfaceSnapshot] {
+        guard let window = lease.view?.window else { return [.init(lease, effectiveScope: editing ? lease.scope.textEditingScope : lease.scope)] }
+        var result = [CommandSurfaceSnapshot(lease, effectiveScope: editing ? lease.scope.textEditingScope : lease.scope)]
+        let boundary = modalLease(in: window)
+        if lease === boundary { return result }
+        var candidate = lease.view?.superview
         while let view = candidate {
-            if let lease = visible.first(where: { $0.view === view && ($0.active || $0.scope == .review) }) { return lease }
+            if let parent = leases.values.first(where: { $0.view === view && $0.active }) {
+                result.append(.init(parent, effectiveScope: editing ? parent.scope.textEditingScope : parent.scope))
+                if parent === boundary { break }
+            }
             candidate = view.superview
         }
-        return nil
+        return result
+    }
+    private func activeLease(in window: NSWindow) -> CommandSurfaceLease? {
+        let visible = leases.values.filter { $0.view?.window === window && $0.view?.isHiddenOrHasHiddenAncestor == false }.sorted { leaseOrders[$0.token, default: 0] > leaseOrders[$1.token, default: 0] }
+        let boundary = modalLease(in: window)
+        var candidate = focusedView(in: window)
+        if let boundary, let boundaryView = boundary.view,
+           candidate.map({ $0 === boundaryView || $0.isDescendant(of: boundaryView) }) != true { return boundary }
+        while let view = candidate {
+            if let lease = visible.first(where: { $0.view === view && ($0.active || $0.scope == .review) }) { return lease }
+            if view === boundary?.view { break }
+            candidate = view.superview
+        }
+        return boundary
     }
     func invocation(in window: NSWindow) -> CommandInvocation? {
         guard let state = appState, let registration = registration(for: window) else { return nil }
@@ -214,16 +248,30 @@ final class CommandKeyboardCoordinator: ObservableObject {
         }
         else if window.sheetParent != nil && lease == nil { scope = .editor }
         else { scope = lease?.scope ?? registration.scope }
-        return .init(window: window, scope: scope, lease: scope == .editor || scope == .settingsEditor ? nil : lease, state: state, windowRegistrationID: registration.instanceID)
+        let retained = scope == .editor || scope == .settingsEditor ? nil : lease
+        return .init(window: window, scope: scope, lease: retained, state: state, windowRegistrationID: registration.instanceID,
+            surfaces: retained.map { surfaceChain(for: $0, editing: scope.isTextEditing) })
     }
     func isCurrent(_ invocation: CommandInvocation) -> Bool {
         guard let state = appState, let window = invocation.window, registration(for: window)?.instanceID == invocation.windowRegistrationID,
               invocation.fingerprint == .init(state) else { return false }
         guard window.attachedSheet == nil else { return false }
-        if let modal = modalLease(in: window), invocation.lease !== modal { return false }
+        if let modal = modalLease(in: window), invocation.lease !== modal {
+            guard let child = invocation.lease?.view, let container = modal.view, child.isDescendant(of: container) else { return false }
+        }
         if let token = invocation.leaseToken {
             guard let lease = invocation.lease, leases[token] === lease, (lease.active || lease.scope == .review), lease.view?.window === window, lease.view?.isHiddenOrHasHiddenAncestor == false,
                   (!invocation.requiresFocusedOwner || activeLease(in: window) === lease) else { return false }
+        }
+        if let lease = invocation.lease {
+            let currentChain = surfaceChain(for: lease, editing: invocation.scope.isTextEditing)
+            guard currentChain.count == invocation.surfaces.count else { return false }
+            for (current, captured) in zip(currentChain, invocation.surfaces) {
+                guard let exact = captured.lease, current.lease === exact, current.token == captured.token,
+                      current.sourceScope == captured.sourceScope, current.effectiveScope == captured.effectiveScope,
+                      leases[captured.token] === exact, exact.active || exact.scope == .review,
+                      exact.view?.window === window, exact.view?.isHiddenOrHasHiddenAncestor == false else { return false }
+            }
         }
         if invocation.scope.isTextEditing {
             guard window.firstResponder === invocation.responder else { return false }
@@ -239,9 +287,10 @@ final class CommandKeyboardCoordinator: ObservableObject {
     func unavailableReason(_ id: AppCommandID, invocation: CommandInvocation?) -> String? {
         guard let state = appState, let invocation, isCurrent(invocation) else { return "The original selection or window has changed." }
         let definition = AppCommandRegistry.definition(id)
-        guard definition.scopes.contains(invocation.scope) else { return "Available in another pane." }
+        let handler = handler(for: id, invocation: invocation)
+        guard definition.scopes.contains(invocation.scope) || handler != nil else { return "Available in another pane." }
         _ = registry
-        if cachedConflictingIDs.contains(id) { return "A saved shortcut conflicts with another command. Change it in Settings." }
+        if cachedConflictingIDs.contains(id) || conflictingIDs(in: invocation).contains(id) { return "A saved shortcut conflicts with another command. Change it in Settings." }
         if id == .rebindCommand || [.palettePrevious, .paletteNext, .paletteRun, .closeCommandPanel, .cancelShortcutCapture].contains(id) {
             return invocation.window.flatMap { panels.session(in: $0) } != nil ? nil : "Open the command palette first."
         }
@@ -250,11 +299,44 @@ final class CommandKeyboardCoordinator: ObservableObject {
         if id == .toggleInspector, registration(for: invocation.window!)?.scope != .main { return "The Inspector belongs to the main Walkfolio window." }
         if id == .find { return registration(for: invocation.window!)?.findAction != nil ? nil : "Find is available in the main Walkfolio view." }
         if isPresentationCommand(id) { return nil }
-        if let lease = invocation.lease, lease.supports(id) {
-            return lease.availability(id) ? nil : "Unavailable for the current photo or selection."
+        if let handler {
+            return handler.availability(id) ? nil : "Unavailable for the current photo or selection."
         }
         guard !definition.needsSurfaceHandler else { return "Focus the pane that offers this action." }
         return definition.enabled(state) ? nil : "Unavailable for the current selection or operation."
+    }
+    private func handler(for id: AppCommandID, invocation: CommandInvocation) -> CommandSurfaceLease? {
+        let definition = AppCommandRegistry.definition(id)
+        guard invocation.surfaces.contains(where: { definition.scopes.contains($0.effectiveScope) }) else { return nil }
+        // An explicit child handler shadows its ancestor, including when disabled.
+        return invocation.surfaces.first { $0.lease?.supports(id) == true }?.lease
+    }
+    func offeredIDs(in invocation: CommandInvocation) -> Set<AppCommandID> {
+        Set(AppCommandRegistry.commands.filter { command in
+            command.scopes.contains(invocation.scope) || invocation.surfaces.dropFirst().contains {
+                command.scopes.contains($0.effectiveScope) && $0.lease?.supports(command.id) == true
+            }
+        }.map(\.id))
+    }
+    private var cachedOfferedIDs: Set<AppCommandID>?
+    private var cachedRuntimeScopes: [AppCommandScope]?
+    private var cachedRuntimeOverrides: [String: AppShortcutOverride]?
+    private var cachedRuntimeConflicts: Set<AppCommandID> = []
+    private func conflictingIDs(in invocation: CommandInvocation) -> Set<AppCommandID> {
+        let offered = offeredIDs(in: invocation), overrides = appState?.settings.commandShortcutOverrides ?? [:]
+        let scopes = [invocation.scope] + invocation.surfaces.map(\.effectiveScope)
+        if cachedOfferedIDs != offered || cachedRuntimeOverrides != overrides || cachedRuntimeScopes != scopes {
+            cachedOfferedIDs = offered; cachedRuntimeOverrides = overrides; cachedRuntimeScopes = scopes
+            var chords: [AppShortcut: Set<AppCommandID>] = [:]
+            for id in offered {
+                let active = invocation.surfaces.filter { AppCommandRegistry.definition(id).scopes.contains($0.effectiveScope) }
+                for binding in registry.bindings(id) where binding.scopes.contains(invocation.scope) || active.contains(where: { binding.scopes.contains($0.effectiveScope) && $0.lease?.supports(id) == true }) {
+                    chords[binding.shortcut, default: []].insert(id)
+                }
+            }
+            cachedRuntimeConflicts = Set(chords.values.filter { $0.count > 1 }.flatMap { $0 })
+        }
+        return cachedRuntimeConflicts
     }
     private func isPresentationCommand(_ id: AppCommandID) -> Bool {
         [.palette, .contextActions, .keyboardHelp, .settings, .rebindCommand, .palettePrevious, .paletteNext, .paletteRun, .closeCommandPanel, .cancelShortcutCapture].contains(id)
@@ -267,7 +349,7 @@ final class CommandKeyboardCoordinator: ObservableObject {
         // last window's pane flag, determines which selection this command uses.
         if captured.scope == .review { state.activePane = .media; state.reviewGridHasFocus = true }
         else if captured.scope == .sourceSidebar { state.activePane = .sidebar }
-        let invocation = CommandInvocation(window: window, scope: captured.scope, lease: captured.lease, state: state, windowRegistrationID: captured.windowRegistrationID, requiresFocusedOwner: captured.requiresFocusedOwner)
+        let invocation = CommandInvocation(window: window, scope: captured.scope, lease: captured.lease, state: state, windowRegistrationID: captured.windowRegistrationID, requiresFocusedOwner: captured.requiresFocusedOwner, surfaces: captured.surfaces)
         guard unavailableReason(id, invocation: invocation) == nil else { return false }
         let previous = executingWindow; executingWindow = window; defer { executingWindow = previous }
         switch id {
@@ -286,7 +368,7 @@ final class CommandKeyboardCoordinator: ObservableObject {
         case .palettePrevious, .paletteNext, .paletteRun, .closeCommandPanel, .cancelShortcutCapture:
             return panels.perform(id, in: window)
         default:
-            if let lease = invocation.lease, lease.supports(id) { return lease.run(id) }
+            if let handler = handler(for: id, invocation: invocation) { return handler.run(id) }
             AppCommandRegistry.definition(id).run(state)
         }
         return true
@@ -318,7 +400,11 @@ final class CommandKeyboardCoordinator: ObservableObject {
            !event.modifierFlags.contains(.command) || ["return", "escape"].contains(AppShortcut(event: event)?.key ?? "") { return false }
         if panels.handleCapture(event, in: window) { return true }
         guard let origin = invocation(in: window) else { return false }
-        let claims = registry.claims(for: event, scope: origin.scope)
+        var claimed = Set(registry.claims(for: event, scope: origin.scope))
+        for parent in origin.surfaces.dropFirst() {
+            for id in registry.claims(for: event, scope: parent.effectiveScope) where parent.lease?.supports(id) == true { claimed.insert(id) }
+        }
+        let claims = Array(claimed)
         guard !claims.isEmpty else { return false }
         guard claims.count == 1 else { return true }
         let id = claims[0]

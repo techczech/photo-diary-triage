@@ -26,7 +26,7 @@ final class CommandPanelSession: ObservableObject {
             let matches = words.allSatisfy { haystack.contains($0) }
             if mode != .contextual { return matches }
             return matches && AppCommandRegistry.contextualCommands.contains(command.id)
-                && command.scopes.contains(origin.scope)
+                && controller?.coordinator?.offeredIDs(in: origin).contains(command.id) == true
         }
     }
     func reconcileHighlight() {

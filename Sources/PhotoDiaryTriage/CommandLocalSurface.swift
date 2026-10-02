@@ -3,7 +3,9 @@ import SwiftUI
 
 private struct LocalCommandAuthority: Equatable {
     let root: URL, pictures: URL, role: ArchiveMachineRole, generation: Int
+    let googleContext: String
     @MainActor init(_ state: AppState) {
+        googleContext = state.commandGoogleContextKey
         root = state.settings.archiveRoot.standardizedFileURL
         pictures = state.settings.oneDrivePicturesRoot.standardizedFileURL
         role = state.settings.archiveMachineRole; generation = ArchiveByteReadPolicyContext.shared.generation
@@ -17,8 +19,10 @@ struct LocalCommandHandle {
     weak var lease: CommandSurfaceLease?
     private let authority: LocalCommandAuthority?
     private let windowRegistrationID: UUID?
+    private let surfaces: [CommandSurfaceSnapshot]
     init(coordinator: CommandKeyboardCoordinator, lease: CommandSurfaceLease?) {
         self.coordinator = coordinator; self.lease = lease
+        surfaces = lease.map { coordinator.surfaceChain(for: $0) } ?? []
         authority = coordinator.appState.map(LocalCommandAuthority.init)
         windowRegistrationID = lease?.view?.window.flatMap { coordinator.registration(for: $0)?.instanceID }
     }
@@ -28,27 +32,33 @@ struct LocalCommandHandle {
               authority == LocalCommandAuthority(state),
               (windowRegistrationID ?? lease.firstOwnerRegistrationID) == owner.instanceID else { return }
         let origin = CommandInvocation(window: window, scope: lease.scope, lease: lease, state: state,
-            windowRegistrationID: owner.instanceID, requiresFocusedOwner: false)
+            windowRegistrationID: owner.instanceID, requiresFocusedOwner: false, surfaces: surfaces)
         coordinator.execute(id, invocation: origin)
     }
 }
 
 /// Contains the actual controls, so a shared native field editor can be traced to
-/// its owning container. It never claims ownership of the whole application window.
+/// its owning container. Containing modal roots can also own their sheet window.
 struct CommandLocalSurface<Content: View>: NSViewRepresentable {
     let coordinator: CommandKeyboardCoordinator
     let scope: AppCommandScope
     let contextKey: String
     let actions: [AppCommandID: SheetCommandAction]
+    var ownsWindow = false
+    var fillsAvailableHeight = false
+    @Environment(\.openSettings) private var openSettings
     @ViewBuilder let content: (LocalCommandHandle) -> Content
 
     func makeNSView(context: Context) -> CommandLocalSurfaceView { CommandLocalSurfaceView() }
     func updateNSView(_ view: CommandLocalSurfaceView, context: Context) {
         view.renderContent = { AnyView(content($0)) }
-        view.configure(coordinator: coordinator, scope: scope, contextKey: contextKey, actions: actions)
+        view.configure(coordinator: coordinator, scope: scope, contextKey: contextKey, actions: actions, ownsWindow: ownsWindow, openSettings: { openSettings() })
     }
     func sizeThatFits(_ proposal: ProposedViewSize, nsView view: CommandLocalSurfaceView, context: Context) -> CGSize? {
-        view.measure(width: proposal.width.flatMap { $0.isFinite ? $0 : nil })
+        let measured = view.measure(width: proposal.width.flatMap { $0.isFinite ? $0 : nil })
+        // A scrollable Form consumes the tab's proposal instead of its entire
+        // unconstrained ideal height. Inline fields keep their content height.
+        return CGSize(width: measured.width, height: fillsAvailableHeight ? proposal.height.flatMap { $0.isFinite ? $0 : nil } ?? measured.height : measured.height)
     }
     static func dismantleNSView(_ view: CommandLocalSurfaceView, coordinator: ()) { view.unregister() }
 }
@@ -57,7 +67,10 @@ final class CommandLocalSurfaceView: NSView {
     let host = NSHostingView(rootView: AnyView(EmptyView()))
     weak var coordinator: CommandKeyboardCoordinator?
     var renderContent: ((LocalCommandHandle) -> AnyView)?
-    private let token = UUID()
+    private let token = UUID(), windowToken = UUID()
+    private weak var registeredWindow: NSWindow?
+    private var ownsWindow = false
+    private var openSettings: (() -> Void)?
     private var lease: CommandSurfaceLease?
     private var contextKey: String?
     private var scope: AppCommandScope = .logDetails
@@ -82,10 +95,13 @@ final class CommandLocalSurfaceView: NSView {
 
     @discardableResult
     func configure(coordinator: CommandKeyboardCoordinator, scope: AppCommandScope, contextKey: String,
-                   actions: [AppCommandID: SheetCommandAction]) -> LocalCommandHandle {
+                   actions: [AppCommandID: SheetCommandAction], ownsWindow: Bool = false, openSettings: (() -> Void)? = nil) -> LocalCommandHandle {
+        if self.coordinator !== coordinator || self.ownsWindow != ownsWindow { unregister() }
+        self.coordinator = coordinator; self.ownsWindow = ownsWindow; self.openSettings = openSettings
+        registerOwnedWindow(scope: scope)
         let owner = window.flatMap { coordinator.registration(for: $0)?.instanceID }
-        if self.coordinator !== coordinator || self.scope != scope || self.contextKey != contextKey
-            || (lease?.firstOwnerRegistrationID != nil && owner != lease?.firstOwnerRegistrationID) { unregister() }
+        if self.scope != scope || self.contextKey != contextKey
+            || (lease?.firstOwnerRegistrationID != nil && owner != lease?.firstOwnerRegistrationID) { unregisterLease() }
         self.coordinator = coordinator; self.scope = scope; self.contextKey = contextKey; self.actions = actions
         if lease == nil {
             lease = CommandSurfaceLease(view: self, token: token, scope: scope, active: true,
@@ -102,11 +118,22 @@ final class CommandLocalSurfaceView: NSView {
         return handle
     }
     private func register() { if let lease, window != nil { coordinator?.register(lease) } }
-    func unregister() { coordinator?.unregisterSurface(token); lease = nil }
+    private func registerOwnedWindow(scope: AppCommandScope) {
+        guard ownsWindow else { return }
+        if registeredWindow !== window { coordinator?.unregisterWindow(windowToken); registeredWindow = nil }
+        if let window {
+            coordinator?.register(window: window, token: windowToken, scope: scope, openSettings: openSettings)
+            registeredWindow = window
+        }
+    }
+    private func unregisterLease() { coordinator?.unregisterSurface(token); lease = nil }
+    func unregister() {
+        unregisterLease(); coordinator?.unregisterWindow(windowToken); registeredWindow = nil
+    }
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if window == nil { unregister() } else if let coordinator, let contextKey {
-            configure(coordinator: coordinator, scope: scope, contextKey: contextKey, actions: actions)
+            configure(coordinator: coordinator, scope: scope, contextKey: contextKey, actions: actions, ownsWindow: ownsWindow, openSettings: openSettings)
         }
     }
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
@@ -141,4 +168,33 @@ struct LogDetailsCommandSurface<Content: View>: View {
 func tripLabelCommandContextKey(root: URL, trip: ArchiveBrowseEntry, draft: String, isEditing: Bool) -> String {
     localCommandContextKey([root.standardizedFileURL.path, trip.archiveRelativePath,
         trip.tripID?.uuidString ?? "no-canonical-trip", trip.locationLabelOverride ?? "", draft, String(isEditing)])
+}
+
+func walkCommitCommandContextKey(_ editor: WalkCommitEditorState) -> String {
+    let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+    let walks = (try? encoder.encode(editor.walks)).flatMap { String(data: $0, encoding: .utf8) } ?? "invalid-walk-draft"
+    return localCommandContextKey([editor.id.uuidString, String(editor.isRecoveryPlan), editor.tripDisplayLabel,
+        editor.walkDisplayLabel, walks] + editor.existingTrips.map {
+            localCommandContextKey([$0.title, $0.folder.standardizedFileURL.path, $0.folderRelativePath, $0.year])
+        })
+}
+
+@MainActor
+func walkProposalCommandActions(appState: AppState, editor: WalkCommitEditorState, walkID: UUID,
+                                onEdited: @escaping (WalkCommitEditorState) -> Void) -> [AppCommandID: SheetCommandAction] {
+    let index = editor.walks.firstIndex { $0.id == walkID }
+    let current = appState.presentationState.snapshot.activeWalkCommitEditor
+    let editable = current?.id == editor.id && current?.isRecoveryPlan == false && !editor.isRecoveryPlan
+    func apply(_ id: AppCommandID) {
+        guard let current = appState.presentationState.snapshot.activeWalkCommitEditor,
+              current.id == editor.id, !current.isRecoveryPlan, !editor.isRecoveryPlan else { return }
+        appState.updateWalkCommitEditor(editor)
+        if id == .mergeWalkProposal { appState.mergeWalkProposalWithPrevious(walkID) }
+        else { appState.splitWalkProposal(walkID) }
+        if let updated = appState.presentationState.snapshot.activeWalkCommitEditor, updated.id == editor.id { onEdited(updated) }
+    }
+    return [
+        .mergeWalkProposal: .init(enabled: editable && index.map { $0 > 0 } == true, run: { apply(.mergeWalkProposal) }),
+        .splitWalkProposal: .init(enabled: editable && index.map { editor.walks[$0].mediaItemIDs.count > 1 } == true, run: { apply(.splitWalkProposal) })
+    ]
 }

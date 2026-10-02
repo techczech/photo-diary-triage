@@ -4,8 +4,14 @@ import Testing
 
 private final class GoogleTestSecrets: GooglePhotosSecretStoring, @unchecked Sendable {
     let lock = NSLock(); var values: [String: Data] = [:]
+    var failsClientWrites = false
+    func failClientWrites(_ value: Bool) { lock.lock(); defer { lock.unlock() }; failsClientWrites = value }
     func read(_ key: String) throws -> Data? { lock.lock(); defer { lock.unlock() }; return values[key] }
-    func write(_ data: Data?, key: String) throws { lock.lock(); defer { lock.unlock() }; values[key] = data }
+    func write(_ data: Data?, key: String) throws {
+        lock.lock(); defer { lock.unlock() }
+        if failsClientWrites && key.hasPrefix("client-") { throw CocoaError(.fileWriteNoPermission) }
+        values[key] = data
+    }
     func changeUploadDates(to date: Date) throws {
         lock.lock(); defer { lock.unlock() }
         for (key, data) in values where key.hasPrefix("upload-") {
@@ -651,4 +657,202 @@ private actor GoogleJourneyDescriptionClient: DescriptionGenerating {
     }
     try "# Photo Log\n\n- Photo Log ID: `\(UUID().uuidString)`\n".write(to: url, atomically: true, encoding: .utf8)
     #expect(throws: (any Error).self) { try repository.ownerText(log) }
+}
+
+@Test @MainActor func googleDiscardedReviewCannotStartDeliveryFromARetainedConfirmation() async throws {
+    let root = try makeTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+    let imported = try await googleFixture(root), client = GoogleTestClient()
+    var settings = AppSettings.default(); settings.archiveRoot = imported.session.archiveRoot; settings.oneDrivePicturesRoot = settings.archiveRoot; settings.googlePhotosClientID = googleTestAccount.clientID
+    let app = AppState(testing: true, testingSettings: settings, testingSupportRoot: root.appendingPathComponent("support"), testingGoogleCredentials: GoogleTestCredentials(), testingGoogleClient: client, testingGoogleSecrets: GoogleTestSecrets())
+    await app.reviewGoogleScope(try googleScope(imported)); let old = try #require(app.googleDeliveryReview)
+    app.googleDeliveryReview = nil
+    await app.confirmGoogleDelivery(old)
+    let albums = await client.count("createAlbum"), uploads = await client.count("startUpload")
+    #expect(albums == 0); #expect(uploads == 0); #expect(app.googleDeliveryJobs.isEmpty)
+    await app.reviewGoogleScope(try googleScope(imported)); let replacement = try #require(app.googleDeliveryReview)
+    #expect(replacement.id != old.id)
+    await app.confirmGoogleDelivery(old)
+    #expect(app.googleDeliveryReview?.id == replacement.id)
+    let finalAlbums = await client.count("createAlbum"); #expect(finalAlbums == 0)
+}
+
+@Test @MainActor func googleCommandJobTargetsStayCapturedAndDoNotConfirmAlbumAbsenceAutomatically() async throws {
+    let root = try makeTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+    let imported = try await googleFixture(root), client = GoogleTestClient(), queue = googleQueue(imported, client: client)
+    await client.configure(lostAlbum: true)
+    let enqueued = try await queue.enqueue(scope: googleScope(imported), expectedAccount: googleTestAccount); try await queue.run()
+    let a = try #require(try await queue.jobs().first)
+    var b = a; b.id = UUID(); b.scope.id = UUID(); b.scope.title = "Captured B"
+    var settings = AppSettings.default(); settings.archiveRoot = imported.session.archiveRoot; settings.oneDrivePicturesRoot = settings.archiveRoot; settings.googlePhotosClientID = googleTestAccount.clientID
+    let app = AppState(testing: true, testingSettings: settings, testingSupportRoot: root.appendingPathComponent("support"), testingGoogleCredentials: GoogleTestCredentials(), testingGoogleClient: client, testingGoogleSecrets: GoogleTestSecrets())
+    app.googleDeliveryJobs = [a, b]
+    var reviews: [GoogleJobCommandTarget] = []
+    let actions = googleJobCommandActions(appState: app, job: b, reviewAbsent: { reviews.append($0) })
+    actions[.reviewGoogleAlbumAbsent]?.run()
+    #expect(reviews.map(\.jobID) == [b.id]); #expect(reviews.first?.accountID == googleTestAccount.id)
+    let stillReconciling = try #require(try await queue.jobs().first)
+    #expect(stillReconciling.id == enqueued.id); #expect(stillReconciling.state == .needsReconciliation && stillReconciling.albumCreationStarted)
+    app.isDeliveringGooglePhotos = true; actions[.reviewGoogleAlbumAbsent]?.run(); #expect(reviews.count == 1)
+    app.isDeliveringGooglePhotos = false
+    app.setGooglePhotosClientID("different-fixture-client"); app.setGooglePhotosClientID(googleTestAccount.clientID)
+    actions[.reviewGoogleAlbumAbsent]?.run(); actions[.findGoogleAlbum]?.run()
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(reviews.count == 1); #expect(app.googleAlbumCandidates.isEmpty)
+    #expect(!reviews[0].isCurrent(app))
+    var changed = b; changed.scope.path += "/replacement"
+    app.googleDeliveryJobs = [a, changed]
+    let target = GoogleJobCommandTarget(job: b, state: app); #expect(!target.isCurrent(app))
+}
+
+@Test @MainActor func googleAlbumCommandAdoptsOnlyTheCapturedCandidateAndNeverStartsSending() async throws {
+    let root = try makeTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+    let imported = try await googleFixture(root), client = GoogleTestClient(), queue = googleQueue(imported, client: client)
+    await client.configure(lostAlbum: true)
+    let enqueued = try await queue.enqueue(scope: googleScope(imported), expectedAccount: googleTestAccount); try await queue.run()
+    let job = try #require(try await queue.jobs().first), album = try #require(try await queue.candidates(jobID: enqueued.id).first)
+    var settings = AppSettings.default(); settings.archiveRoot = imported.session.archiveRoot; settings.oneDrivePicturesRoot = settings.archiveRoot; settings.googlePhotosClientID = googleTestAccount.clientID
+    let app = AppState(testing: true, testingSettings: settings, testingSupportRoot: root.appendingPathComponent("support"), testingGoogleCredentials: GoogleTestCredentials(), testingGoogleClient: client, testingGoogleSecrets: GoogleTestSecrets())
+    app.googleDeliveryJobs = [job]; app.googleAlbumCandidates[job.id] = [album]
+    let target = GoogleJobCommandTarget(job: job, state: app)
+    let actions = googleAlbumCommandActions(appState: app, target: target, album: album)
+    app.googleAlbumCandidates[job.id] = []
+    actions[.adoptGoogleAlbum]?.run(); try await Task.sleep(for: .milliseconds(20))
+    let untouched = try #require(try await queue.jobs().first); #expect(untouched.binding == nil)
+    app.googleAlbumCandidates[job.id] = [album]; actions[.adoptGoogleAlbum]?.run()
+    for _ in 0..<50 where app.googleDeliveryJobs.first?.binding == nil { try await Task.sleep(for: .milliseconds(10)) }
+    let bound = try #require(app.googleDeliveryJobs.first?.binding)
+    #expect(bound.album.id == album.id); #expect(bound.accountID == target.accountID); #expect(bound.operationID == target.jobID)
+    let uploads = await client.count("startUpload"), media = await client.count("createMedia"); #expect(uploads == 0 && media == 0)
+    let before = await client.count("albums")
+    actions[.adoptGoogleAlbum]?.run(); try await Task.sleep(for: .milliseconds(20))
+    let after = await client.count("albums"); #expect(after == before)
+}
+
+@Test @MainActor func googleCommandCandidateResultsCannotPublishAfterAnAccountRoundTrip() async throws {
+    let root = try makeTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+    let imported = try await googleFixture(root), client = GoogleTestClient(), queue = googleQueue(imported, client: client), gate = GoogleTestBarrier()
+    await client.configure(lostAlbum: true)
+    _ = try await queue.enqueue(scope: googleScope(imported), expectedAccount: googleTestAccount); try await queue.run()
+    let job = try #require(try await queue.jobs().first)
+    var settings = AppSettings.default(); settings.archiveRoot = imported.session.archiveRoot; settings.oneDrivePicturesRoot = settings.archiveRoot; settings.googlePhotosClientID = googleTestAccount.clientID
+    let app = AppState(testing: true, testingSettings: settings, testingSupportRoot: root.appendingPathComponent("support"), testingGoogleCredentials: GoogleTestCredentials(), testingGoogleClient: client, testingGoogleSecrets: GoogleTestSecrets())
+    app.googleDeliveryJobs = [job]
+    await client.setAction { name, _ in if name == "albums" { await gate.stop() } }
+    let actions = googleJobCommandActions(appState: app, job: job, reviewAbsent: { _ in Issue.record("No absence confirmation should be offered by lookup") })
+    actions[.findGoogleAlbum]?.run(); await gate.waitForEntry()
+    app.setGooglePhotosClientID("different-fixture-client"); app.setGooglePhotosClientID(googleTestAccount.clientID)
+    await gate.release(); try await Task.sleep(for: .milliseconds(30))
+    #expect(app.googleAlbumCandidates.isEmpty)
+    let retained = try #require(try await queue.jobs().first); #expect(retained.state == .needsReconciliation && retained.binding == nil)
+}
+
+@Test @MainActor func googleAccountCommandsRejectStaleClientAndKeepEnteredDraftOnCredentialFailure() async throws {
+    let root = try makeTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+    let secrets = GoogleTestSecrets()
+    var settings = AppSettings.default(); settings.archiveRoot = root; settings.oneDrivePicturesRoot = root; settings.googlePhotosClientID = googleTestAccount.clientID
+    let app = AppState(testing: true, testingSettings: settings, testingSupportRoot: root.appendingPathComponent("support"), testingGoogleCredentials: GoogleTestCredentials(), testingGoogleClient: GoogleTestClient(), testingGoogleSecrets: secrets)
+    var cleared = 0, shown = 0
+    let old = googleAccountCommandActions(appState: app, clientSecret: "fixture-only-entered-value", secretSaved: { cleared += 1 }, showQueue: { shown += 1 })
+    app.setGooglePhotosClientID("different-fixture-client"); app.setGooglePhotosClientID(googleTestAccount.clientID)
+    old[.saveGoogleClientSecret]?.run(); old[.googleQueue]?.run(); try await Task.sleep(for: .milliseconds(30))
+    #expect(cleared == 0 && shown == 0)
+    let key = "client-" + MachineDescriptionHistory.digest(Data(googleTestAccount.clientID.utf8))
+    #expect(try secrets.read(key) == nil)
+    let fresh = googleAccountCommandActions(appState: app, clientSecret: "fixture-only-entered-value", secretSaved: { cleared += 1 }, showQueue: { shown += 1 })
+    secrets.failClientWrites(true); fresh[.saveGoogleClientSecret]?.run(); try await Task.sleep(for: .milliseconds(30))
+    #expect(cleared == 0); #expect(try secrets.read(key) == nil)
+    secrets.failClientWrites(false); fresh[.saveGoogleClientSecret]?.run()
+    for _ in 0..<30 where cleared == 0 { try await Task.sleep(for: .milliseconds(10)) }
+    #expect(cleared == 1); #expect(try secrets.read(key) == Data("fixture-only-entered-value".utf8))
+}
+
+@Test func googleStaleQueueCannotAbandonACapturedSavedJob() async throws {
+    let root = try makeTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+    let imported = try await googleFixture(root), context = GooglePhotosContextCounter(), client = GoogleTestClient()
+    let generation = context.generation
+    let queue = googleQueue(imported, client: client, context: { context.generation == generation })
+    let job = try await queue.enqueue(scope: googleScope(imported), expectedAccount: googleTestAccount)
+    context.invalidate()
+    await #expect(throws: CancellationError.self) { try await queue.abandon(jobID: job.id) }
+    let retained = try #require(try await queue.jobs().first); #expect(retained.state == .pending)
+}
+
+@Test @MainActor func googleRefreshCannotRepublishAccountOrErrorAfterAClientRoundTrip() async throws {
+    let root = try makeTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+    for failing in [false, true] {
+        let credentials = GoogleTestCredentials(), gate = GoogleTestBarrier()
+        var settings = AppSettings.default(); settings.archiveRoot = root; settings.oneDrivePicturesRoot = root; settings.googlePhotosClientID = googleTestAccount.clientID
+        let app = AppState(testing: true, testingSettings: settings, testingSupportRoot: root.appendingPathComponent(failing ? "failure-support" : "success-support"), testingGoogleCredentials: credentials, testingGoogleClient: GoogleTestClient(), testingGoogleSecrets: GoogleTestSecrets())
+        app.googleAccount = googleTestAccount
+        await credentials.setAccountAction { await gate.stop(); if failing { throw GooglePhotosFailure.network } }
+        let refresh = Task { await app.loadGoogleAccount() }
+        await gate.waitForEntry()
+        app.setGooglePhotosClientID("different-fixture-client"); app.setGooglePhotosClientID(googleTestAccount.clientID)
+        app.statusMessage = "Current account context retained."
+        await gate.release(); await refresh.value
+        #expect(app.googleAccount == nil); #expect(app.statusMessage == "Current account context retained.")
+    }
+}
+
+@Test @MainActor func googleOldResumeCannotPublishJobsOrStatusAfterAnAccountChange() async throws {
+    let root = try makeTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+    let imported = try await googleFixture(root), client = GoogleTestClient(), queue = googleQueue(imported, client: client), gate = GoogleTestBarrier()
+    _ = try await queue.enqueue(scope: googleScope(imported), expectedAccount: googleTestAccount)
+    var settings = AppSettings.default(); settings.archiveRoot = imported.session.archiveRoot; settings.oneDrivePicturesRoot = settings.archiveRoot; settings.googlePhotosClientID = googleTestAccount.clientID
+    let app = AppState(testing: true, testingSettings: settings, testingSupportRoot: root.appendingPathComponent("support"), testingGoogleCredentials: GoogleTestCredentials(), testingGoogleClient: client, testingGoogleSecrets: GoogleTestSecrets())
+    await client.setAction { name, _ in if name == "createAlbum" { await gate.stop() } }
+    let resume = Task { await app.resumeGoogleDelivery() }
+    await gate.waitForEntry()
+    app.setGooglePhotosClientID("different-fixture-client"); app.setGooglePhotosClientID(googleTestAccount.clientID)
+    app.googleDeliveryJobs = []; app.statusMessage = "Current account context retained."
+    await gate.release(); await resume.value
+    #expect(app.googleDeliveryJobs.isEmpty); #expect(app.statusMessage == "Current account context retained.")
+    let uploads = await client.count("startUpload"); #expect(uploads == 0)
+}
+
+@Test @MainActor func googlePendingReviewCannotReappearAfterAnAccountRoundTrip() async throws {
+    let root = try makeTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+    let imported = try await googleFixture(root), credentials = GoogleTestCredentials(), gate = GoogleTestBarrier()
+    var settings = AppSettings.default(); settings.archiveRoot = imported.session.archiveRoot; settings.oneDrivePicturesRoot = settings.archiveRoot; settings.googlePhotosClientID = googleTestAccount.clientID
+    let app = AppState(testing: true, testingSettings: settings, testingSupportRoot: root.appendingPathComponent("support"), testingGoogleCredentials: credentials, testingGoogleClient: GoogleTestClient(), testingGoogleSecrets: GoogleTestSecrets())
+    await credentials.setAccountAction { await gate.stop() }
+    let scope = try googleScope(imported), review = Task { await app.reviewGoogleScope(scope) }
+    await gate.waitForEntry()
+    app.setGooglePhotosClientID("different-fixture-client"); app.setGooglePhotosClientID(googleTestAccount.clientID)
+    await gate.release(); await review.value
+    #expect(app.googleDeliveryReview == nil); #expect(app.googleAccount == nil)
+}
+
+@Test @MainActor func googleOlderReviewCannotReplaceTheLatestRequestedReviewInTheSameAccount() async throws {
+    let root = try makeTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+    let imported = try await googleFixture(root), credentials = GoogleTestCredentials(), gate = GoogleTestBarrier()
+    var settings = AppSettings.default(); settings.archiveRoot = imported.session.archiveRoot; settings.oneDrivePicturesRoot = settings.archiveRoot; settings.googlePhotosClientID = googleTestAccount.clientID
+    let app = AppState(testing: true, testingSettings: settings, testingSupportRoot: root.appendingPathComponent("support"), testingGoogleCredentials: credentials, testingGoogleClient: GoogleTestClient(), testingGoogleSecrets: GoogleTestSecrets())
+    app.googleAccount = googleTestAccount
+    var olderScope = try googleScope(imported); olderScope.title = "Older requested review"
+    var newerScope = olderScope; newerScope.title = "Latest requested review"
+    await credentials.setAccountAction { await gate.stop() }
+    let older = Task { await app.reviewGoogleScope(olderScope) }
+    await gate.waitForEntry(); await credentials.setAccountAction(nil)
+    await app.reviewGoogleScope(newerScope)
+    let latestID = try #require(app.googleDeliveryReview?.id)
+    await gate.release(); await older.value
+    #expect(app.googleDeliveryReview?.id == latestID)
+    #expect(app.googleDeliveryReview?.scope.title == newerScope.title)
+}
+
+@Test @MainActor func googlePendingReviewCannotPublishAfterAnExistingDeliveryStartsAndFinishes() async throws {
+    let root = try makeTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+    let imported = try await googleFixture(root), client = GoogleTestClient(), queue = googleQueue(imported, client: client), credentials = GoogleTestCredentials(), gate = GoogleTestBarrier()
+    _ = try await queue.enqueue(scope: googleScope(imported), expectedAccount: googleTestAccount)
+    var settings = AppSettings.default(); settings.archiveRoot = imported.session.archiveRoot; settings.oneDrivePicturesRoot = settings.archiveRoot; settings.googlePhotosClientID = googleTestAccount.clientID
+    let app = AppState(testing: true, testingSettings: settings, testingSupportRoot: root.appendingPathComponent("support"), testingGoogleCredentials: credentials, testingGoogleClient: client, testingGoogleSecrets: GoogleTestSecrets())
+    app.googleAccount = googleTestAccount
+    await credentials.setAccountAction { await gate.stop() }
+    let scope = try googleScope(imported), review = Task { await app.reviewGoogleScope(scope) }
+    await gate.waitForEntry(); await credentials.setAccountAction(nil)
+    await app.resumeGoogleDelivery()
+    #expect(app.googleDeliveryJobs.first?.state == .completed && !app.isDeliveringGooglePhotos)
+    await gate.release(); await review.value
+    #expect(app.googleDeliveryReview == nil)
 }

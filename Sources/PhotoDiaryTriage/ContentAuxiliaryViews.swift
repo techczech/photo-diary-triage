@@ -83,6 +83,16 @@ struct WalkCommitEditorSheet: View {
     }
 
     var body: some View {
+        let reviewed = editor
+        let contextKey = walkCommitCommandContextKey(reviewed)
+        CommandLocalSurface(coordinator: appState.commandCoordinator, scope: .form, contextKey: contextKey,
+            actions: [
+                .closeSheet: .init(run: { guard appState.presentationState.snapshot.activeWalkCommitEditor?.id == reviewed.id else { return }; appState.dismissWalkCommitEditor() }),
+                .confirmSheet: .init(enabled: !reviewed.walks.isEmpty && !reviewed.walks.contains { $0.title.nonEmpty == nil || $0.mediaItemIDs.isEmpty }, run: {
+                    guard appState.presentationState.snapshot.activeWalkCommitEditor?.id == reviewed.id else { return }
+                    appState.updateWalkCommitEditor(reviewed); appState.confirmWalkCommit()
+                })
+            ], ownsWindow: true) { commands in
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -93,14 +103,14 @@ struct WalkCommitEditorSheet: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("Cancel") { appState.commandCoordinator.execute(.closeSheet) }
+                Button("Cancel") { commands.run(.closeSheet) }
                 .commandShortcutHint(.closeSheet, appState: appState, scope: .form, help: "Cancel this copy plan")
             }
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach($editor.walks) { $walk in
-                        walkRow(walk: $walk)
+                        walkRow(walk: $walk, reviewed: reviewed, parentContextKey: contextKey)
                     }
                 }
                 .padding(.trailing, 8)
@@ -110,28 +120,27 @@ struct WalkCommitEditorSheet: View {
                 Text("\(editor.walks.count) proposed \(editor.walkDisplayLabel)\(editor.walks.count == 1 ? "" : "s")")
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button("Cancel") { appState.commandCoordinator.execute(.closeSheet) }
-                Button("Copy To Archive") { appState.commandCoordinator.execute(.confirmSheet) }
+                Button("Cancel") { commands.run(.closeSheet) }
+                Button("Copy To Archive") { commands.run(.confirmSheet) }
                 .commandShortcutHint(.confirmSheet, appState: appState, scope: .form, help: "Confirm this reviewed copy plan")
                 .disabled(editor.walks.isEmpty || editor.walks.contains { $0.title.nonEmpty == nil || $0.mediaItemIDs.isEmpty })
             }
         }
         .padding(24)
         .frame(minWidth: 760, minHeight: 560)
-        .background(CommandSheetAnchor(coordinator: appState.commandCoordinator, actions: [
-            .closeSheet: .init(run: { appState.dismissWalkCommitEditor() }),
-            .confirmSheet: .init(enabled: !editor.walks.isEmpty && !editor.walks.contains { $0.title.nonEmpty == nil || $0.mediaItemIDs.isEmpty }, run: {
-                appState.updateWalkCommitEditor(editor); appState.confirmWalkCommit()
-            })
-        ]))
+        }
         .onDisappear {
-            if appState.presentationState.snapshot.activeWalkCommitEditor != nil {
+            if appState.presentationState.snapshot.activeWalkCommitEditor?.id == editor.id {
                 appState.updateWalkCommitEditor(editor)
             }
         }
     }
 
-    private func walkRow(walk: Binding<Walk>) -> some View {
+    private func walkRow(walk: Binding<Walk>, reviewed: WalkCommitEditorState, parentContextKey: String) -> some View {
+        let walkID = walk.wrappedValue.id
+        return CommandLocalSurface(coordinator: appState.commandCoordinator, scope: .walkProposal,
+            contextKey: localCommandContextKey([parentContextKey, walkID.uuidString]),
+            actions: walkProposalCommandActions(appState: appState, editor: reviewed, walkID: walkID, onEdited: { editor = $0 })) { commands in
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
                 TextField("Walk title", text: walk.title)
@@ -151,22 +160,12 @@ struct WalkCommitEditorSheet: View {
             }
 
             HStack {
-                Button("Merge With Previous") {
-                    appState.updateWalkCommitEditor(editor)
-                    appState.mergeWalkProposalWithPrevious(walk.wrappedValue.id)
-                    if let refreshed = appState.presentationState.snapshot.activeWalkCommitEditor {
-                        editor = refreshed
-                    }
-                }
-                .disabled(editor.walks.first?.id == walk.wrappedValue.id)
+                Button("Merge With Previous") { commands.run(.mergeWalkProposal) }
+                .commandShortcutHint(.mergeWalkProposal, appState: appState, scope: .walkProposal, help: "Merge this row with the previous Walk")
+                .disabled(reviewed.walks.first?.id == walkID)
 
-                Button("Split") {
-                    appState.updateWalkCommitEditor(editor)
-                    appState.splitWalkProposal(walk.wrappedValue.id)
-                    if let refreshed = appState.presentationState.snapshot.activeWalkCommitEditor {
-                        editor = refreshed
-                    }
-                }
+                Button("Split") { commands.run(.splitWalkProposal) }
+                .commandShortcutHint(.splitWalkProposal, appState: appState, scope: .walkProposal, help: "Split this proposed Walk")
                 .disabled(walk.wrappedValue.mediaItemIDs.count < 2)
 
                 Spacer()
@@ -175,6 +174,7 @@ struct WalkCommitEditorSheet: View {
         }
         .sheetSectionStyle()
         .disabled(editor.isRecoveryPlan)
+        }
     }
 
     private func tripSelection(for walk: Binding<Walk>) -> Binding<String> {

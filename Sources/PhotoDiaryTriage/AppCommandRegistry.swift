@@ -67,20 +67,36 @@ struct AppShortcutOverride: Codable, Hashable, Sendable {
 
 enum AppCommandScope: String, CaseIterable, Hashable, Sendable {
     case main, settings, editor, review, preview, compare, archiveCards, archiveSidebar, sourceSidebar, commandPanel, helpPanel, shortcutCapture, form, formEditor, information, settingsEditor
-    case logDetails, logDetailsEditor, location, locationEditor, tripLabel, tripLabelEditor, photoLogActions
+    case logDetails, logDetailsEditor, location, locationEditor, tripLabel, tripLabelEditor, photoLogActions, walkProposal, walkProposalEditor, googleJob, googleJobEditor, googleAlbum, googleAlbumEditor, googleAccount, googleAccountEditor
 
     var isTextEditing: Bool {
-        [.editor, .settingsEditor, .formEditor, .logDetailsEditor, .locationEditor, .tripLabelEditor].contains(self)
+        [.editor, .settingsEditor, .formEditor, .logDetailsEditor, .locationEditor, .tripLabelEditor, .walkProposalEditor, .googleJobEditor, .googleAlbumEditor, .googleAccountEditor].contains(self)
     }
     var textEditingScope: Self {
-        switch self {
+        if isTextEditing { return self }
+        return switch self {
         case .form: .formEditor
         case .settings: .settingsEditor
         case .logDetails: .logDetailsEditor
         case .location: .locationEditor
         case .tripLabel: .tripLabelEditor
+        case .walkProposal: .walkProposalEditor
+        case .googleJob: .googleJobEditor
+        case .googleAlbum: .googleAlbumEditor
+        case .googleAccount: .googleAccountEditor
         case .information: .information
         default: .editor
+        }
+    }
+    var coactiveAncestors: Set<Self> {
+        switch self {
+        case .walkProposal: [.form]
+        case .walkProposalEditor: [.formEditor]
+        case .googleJob: [.information]
+        case .googleJobEditor: [.information]
+        case .googleAlbum: [.googleJob, .information]
+        case .googleAlbumEditor: [.googleJobEditor, .information]
+        default: []
         }
     }
 }
@@ -222,6 +238,9 @@ enum AppCommandID: String, CaseIterable, Codable, Hashable, Sendable {
     case openPhotoLog, showPhotoLogContents, editPhotoLogDetails, editPhotoLogMembership, addMarkedToPhotoLog, deletePhotoLog
     case saveLocation, clearLocation, retryLocationSave, pinLocationAtMapCentre
     case editTripLabel, saveTripLabel, useWalkLocations, cancelTripLabelEdit
+    case mergeWalkProposal, splitWalkProposal
+    case connectGoogleAccount, cancelGoogleSignIn, disconnectGoogleAccount, refreshGoogleAccount, saveGoogleClientSecret
+    case findGoogleAlbum, adoptGoogleAlbum, reviewGoogleAlbumAbsent, abandonGoogleJob
 }
 
 @MainActor
@@ -255,7 +274,7 @@ struct AppCommandRegistry {
     static let contextualCommands: Set<AppCommandID> = [.openArchive, .organiseFolder, .moveWalk, .open, .viewOriginal,
         .markIncluded, .markExcluded, .markCandidate, .clearTriage, .toggleRAW, .createPhotoLog, .newPhotoLog, .compare,
         .describeSelection, .regenerateDescriptions, .describeTrip, .describeYear, .deliverTrip, .deliverPhotoLog,
-        .markPreviousUpload, .clearPreviousUpload, .cropVisible, .removeCompareItem, .confirmSheet, .confirmAndOpenSheet, .closeSheet, .confirmGoogleDelivery, .saveLogDetails, .saveLogAndStartNext, .openPhotoLog, .showPhotoLogContents, .editPhotoLogDetails, .editPhotoLogMembership, .addMarkedToPhotoLog, .deletePhotoLog, .saveLocation, .clearLocation, .retryLocationSave, .pinLocationAtMapCentre, .editTripLabel, .saveTripLabel, .useWalkLocations, .cancelTripLabelEdit]
+        .markPreviousUpload, .clearPreviousUpload, .cropVisible, .removeCompareItem, .confirmSheet, .confirmAndOpenSheet, .closeSheet, .confirmGoogleDelivery, .saveLogDetails, .saveLogAndStartNext, .openPhotoLog, .showPhotoLogContents, .editPhotoLogDetails, .editPhotoLogMembership, .addMarkedToPhotoLog, .deletePhotoLog, .saveLocation, .clearLocation, .retryLocationSave, .pinLocationAtMapCentre, .editTripLabel, .saveTripLabel, .useWalkLocations, .cancelTripLabelEdit, .mergeWalkProposal, .splitWalkProposal, .findGoogleAlbum, .adoptGoogleAlbum, .reviewGoogleAlbumAbsent, .abandonGoogleJob]
 
     static let commands: [AppCommandDefinition] = {
         let mainScopes = Self.mainScopes, imageScopes = Self.imageScopes, allScopes = Self.allScopes
@@ -336,7 +355,7 @@ struct AppCommandRegistry {
             .init(id: .deliverPhotoLog, title: "Review sending this Photo Log to Google Photos…", task: "Google Photos", scopes: mainScopes, defaults: [], enabled: { s in s.canDeliverGooglePhotoLog && !s.isDeliveringGooglePhotos }, run: { s in Task { await s.reviewGooglePhotoLog() } }, needsSurfaceHandler: false),
             .init(id: .markPreviousUpload, title: "Mark selection previously uploaded", task: "Google Photos", scopes: mainScopes, defaults: [], enabled: { s in s.canMarkGoogleMaterial }, run: { s in Task { await s.markGoogleMaterial(clear: false) } }, needsSurfaceHandler: false),
             .init(id: .clearPreviousUpload, title: "Clear previous-upload marks", task: "Google Photos", scopes: mainScopes, defaults: [], enabled: { s in s.canMarkGoogleMaterial }, run: { s in Task { await s.markGoogleMaterial(clear: true) } }, needsSurfaceHandler: false),
-            .init(id: .googleQueue, title: "Open Google Photos delivery queue", task: "Google Photos", scopes: mainScopes, defaults: [], enabled: { _ in true }, run: { s in Task { await s.loadGoogleDeliveryQueue() } }, needsSurfaceHandler: false),
+            .init(id: .googleQueue, title: "Open Google Photos delivery queue", task: "Google Photos", scopes: mainScopes.union([.googleAccount, .googleAccountEditor]), defaults: [], enabled: { _ in true }, run: { s in Task { await s.loadGoogleDeliveryQueue() } }, needsSurfaceHandler: false),
             .init(id: .moveLeft, title: "Move left", task: "Keyboard context", scopes: imageScopes.union([.archiveCards]), defaults: [.init(.init(key: "left", modifiers: []), scopes: imageScopes.union([.archiveCards]))], enabled: { _ in true }, run: { _ in }, needsSurfaceHandler: true),
             .init(id: .moveRight, title: "Move right", task: "Keyboard context", scopes: imageScopes.union([.archiveCards]), defaults: [.init(.init(key: "right", modifiers: []), scopes: imageScopes.union([.archiveCards]))], enabled: { _ in true }, run: { _ in }, needsSurfaceHandler: true),
             .init(id: .moveUp, title: "Move up", task: "Keyboard context", scopes: imageScopes.union([.archiveCards]), defaults: [.init(.init(key: "up", modifiers: []), scopes: imageScopes.union([.archiveCards]))], enabled: { _ in true }, run: { _ in }, needsSurfaceHandler: true),
@@ -408,6 +427,17 @@ struct AppCommandRegistry {
         local(.saveTripLabel, "Save edited Trip location label", "Locations", [.tripLabel, .tripLabelEditor], save: true)
         local(.useWalkLocations, "Use Walk locations for this Trip", "Locations", [.tripLabel, .tripLabelEditor])
         local(.cancelTripLabelEdit, "Cancel Trip label editing", "Locations", [.tripLabel, .tripLabelEditor])
+        local(.mergeWalkProposal, "Merge this Walk with the previous proposal", "Copy plan", [.walkProposal, .walkProposalEditor], commitsDraft: true)
+        local(.splitWalkProposal, "Split this proposed Walk", "Copy plan", [.walkProposal, .walkProposalEditor], commitsDraft: true)
+        local(.connectGoogleAccount, "Connect a Google Photos account…", "Google Photos", [.googleAccount, .googleAccountEditor], commitsDraft: true)
+        local(.cancelGoogleSignIn, "Cancel Google Photos sign-in", "Google Photos", [.googleAccount, .googleAccountEditor])
+        local(.disconnectGoogleAccount, "Disconnect this Google Photos account", "Google Photos", [.googleAccount, .googleAccountEditor])
+        local(.refreshGoogleAccount, "Refresh Google Photos account status", "Google Photos", [.googleAccount, .googleAccountEditor])
+        local(.saveGoogleClientSecret, "Save the entered Google client secret to Keychain", "Google Photos", [.googleAccount, .googleAccountEditor], commitsDraft: true)
+        local(.findGoogleAlbum, "Find the album created by this delivery…", "Google Photos", [.googleJob, .googleJobEditor])
+        local(.adoptGoogleAlbum, "Use this album for the captured delivery", "Google Photos", [.googleAlbum, .googleAlbumEditor])
+        local(.reviewGoogleAlbumAbsent, "Review confirmation that this delivery created no album…", "Google Photos", [.googleJob, .googleJobEditor])
+        local(.abandonGoogleJob, "Stop this saved Google Photos delivery", "Google Photos", [.googleJob, .googleJobEditor])
         func alias(_ id: AppCommandID, _ key: String, _ mods: ShortcutModifiers = [], scopes: Set<AppCommandScope>) {
             guard let index = result.firstIndex(where: { $0.id == id }) else { return }
             let old = result[index]
@@ -464,11 +494,15 @@ struct AppCommandRegistry {
         let chords = bindings(id).filter { scope.map($0.scopes.contains) ?? true }.map(\.shortcut.display)
         return chords.isEmpty ? "Unassigned" : Array(NSOrderedSet(array: chords)) .compactMap { $0 as? String }.joined(separator: " · ")
     }
+    private static func canBeCoactive(_ a: Set<AppCommandScope>, _ b: Set<AppCommandScope>) -> Bool {
+        !a.isDisjoint(with: b) || a.contains { !$0.coactiveAncestors.isDisjoint(with: b) }
+            || b.contains { !$0.coactiveAncestors.isDisjoint(with: a) }
+    }
     func collisions() -> [(AppCommandID, AppCommandID, AppShortcut)] {
         var result: [(AppCommandID, AppCommandID, AppShortcut)] = []
         for (index, command) in Self.commands.enumerated() {
             for other in Self.commands.dropFirst(index + 1) {
-                for a in bindings(command.id) { for b in bindings(other.id) where a.shortcut == b.shortcut && !a.scopes.isDisjoint(with:b.scopes) {
+                for a in bindings(command.id) { for b in bindings(other.id) where a.shortcut == b.shortcut && Self.canBeCoactive(a.scopes, b.scopes) {
                     result.append((command.id,other.id,a.shortcut))
                 } }
             }

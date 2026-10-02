@@ -93,37 +93,31 @@ Dominik has delegated routine design choices; this concrete spec proceeds indepe
 
 ## Remaining implementation before release
 
-Astra's complete control inventory found additional actions that bypass the registry.
-Keep this item `implementation_in_progress`; do not install/report complete until routed.
+Keep `implementation_in_progress`. The complete control inventory still has executable
+buttons/menu actions outside the shared path; the registered backend alone does not
+establish their mouse/keyboard agreement. Do not bundle/install or mark this item done.
 
-- Source/Settings: historical source picker; default source/reload; synced Photo Log
-  import; model refresh. Candidate IDs: `chooseHistoricalSource`, `openDefaultSource`,
-  `reloadSource`, `importSyncedPhotoLogs`, `refreshDescriptionModels`.
-- Photo Logs: contents/details/membership/add-marked/delete; inline draft Save and
-  Save/start-next; open Logs. Capture selected Log UUID/draft, reject stale replacement;
-  preserve imported-log guards. Candidate IDs: `showPhotoLogContents`,
-  `editPhotoLogDetails`, `editPhotoLogMembership`, `addMarkedToPhotoLog`, `deletePhotoLog`,
-  `saveLogDetails`, `showPhotoLogs`, `saveLogAndStartNext`.
-- Locations: Map save/clear/retry, Trip edit/save/use Walk locations; inline-owned leases,
-  not window-owning sheet anchors. Capture actual assignment target and local draft.
-- Walk copy proposal: merge/split; preserve recovery-plan locks and actual selected row.
-- Preview/Compare: manual crop toggle/save/cancel; Compare columns and pan lock;
-  explicit Download to view must target displayed/focused photo, not hidden selection.
-- Google: connect/cancel/disconnect/status; job-scoped album lookup/abandon/review absent
-  album. Keep sending originals keyless, reviewed and provider confirmation boundaries.
-- Navigation/view: Archive Map, review Map, Source/Logs/Archive workspace commands,
-  selected-folder Finder, folder/search retry. Keep configuration values/mouse target
-  selection/native alert grammar separate from commands.
-- Route toolbar/context/buttons through the registry with explicit target capability.
-  Generated hints now use scoped effective bindings; inspect rendered help offscreen.
-- Test changed editor text/selection, shared field-editor reuse, binding capture cancel
-  override, selected modal/local target, disabled/stale controls and actual menu refresh.
-  The SwiftUI app's generated-menu refresh is a native verification candidate, not a
-  proven source defect; do not claim it exercised without evidence.
-- Final Astra review, full suite, signed bundle/body verification, closed installation,
-  exact-version DTC return checks and complete report/index updates remain.
-- Original native/real-copy/OneDrive/LM Studio/Google acceptance remains required.
-
+- Preview/Compare: manual crop toggle/save/cancel, Compare columns/pan lock, shared
+  zoom strip, explicit Download to view targeting the displayed/focused photograph.
+- Review Map: local presentation handler for the review Map button.
+- Settings: default SSD/Archive root controls and backup export/import use registry
+  routes; existing command scopes must admit the actual Settings/editor owner.
+- Descriptions: Describe selected, Regenerate, Trip/year and queue buttons in
+  DescriptionQueueView; Settings queue opener must retain its own presentation owner.
+- Main toolbar/Inspector: sidebar, Open, Compare, Inspector and selection/triage menus;
+  inspector show/hide controls. Use actual local targets where actions offer a row.
+- Source/import: New Log, Copy, Open Archive destination, Confirm Backup and Cleanup
+  in ContentViewSections and ContentInspectorWorkflowViews.
+- Browser: Back/Return to search, Expand/Collapse All, grid size actions, selection/
+  triage controls, thumbnail Prepare/Cancel; Archive Clear filters.
+- Audit asynchronous command preparation across Task scheduling: capture actual clicked
+  selection before launch, including description and Google review preparation.
+- Menus/help: verify native refresh and inherited scoped bindings; rendered native
+  menu behaviour is an acceptance candidate, not established by source declarations.
+- Final complete inventory/Astra review, full suite, signed bundle/body comparison,
+  closed installation, immutable exact-version acceptance and final tracking remain.
+- Original native/real-copy/historical migration/OneDrive/LM Studio/Google provider
+  and quality acceptance remains required. Headed tests require Dominik watching.
 
 ## Captured local control checkpoint — 2026-10-02
 
@@ -148,3 +142,43 @@ Keep this item `implementation_in_progress`; do not install/report complete unti
   review clear. Remaining proposal/crop/Google/view/menu/help/release work still active.
 - Target remains 0.7.16/152 on codex/walkfolio-command-layer. No bundle or install.
   Installed 0.7.15/151 remains closed; original native/real-copy/provider gates open.
+
+## Containing modal and child command ownership
+
+Copy-plan rows and delivery jobs are actual containing native command surfaces. The
+most-specific focused child owns its actions; explicitly offered ancestor Confirm/Close
+commands remain available. Disabled child handlers prevent ancestor fallback. Button and
+palette invocations retain the exact complete ancestor capability chain; replacing a
+parent draft, reparenting or detaching invalidates retained commands. Window registration
+survives ordinary draft lease replacement. Coactive parent/child shortcut collisions are
+rejected on assignment and fail closed when restored. Plain Return and native text
+editing retain their existing meaning in a focused row editor. Hidden native fixtures
+cover this hierarchy, stale ancestors, siblings, disabled shadowing and collision paths.
+
+## Containing copy-plan and Google checkpoint — 2026-10-02
+
+- Full suite: 530 tests / 2 suites, 35.504 s. 72 command-file test functions and
+  11 new Google provider/callback functions: 83 additions since installed 0.7.15.
+- Actual containing modal roots retain stable window registration while semantic
+  drafts replace leases. Child buttons/palette actions capture the exact complete
+  ancestor chain; disabled handlers shadow parents; siblings never lend authority.
+- Copy-plan rows capture Walk UUID and edited draft; Merge/Split preserve canonical
+  Trip targets and recovery locks. Actual hosted row/parent keyboard and rendered
+  buttons tested through initial mount, draft replacement and detach/reattach.
+- Google settings, reviewed Send, queue/job/album controls use registered actions.
+  Client/account generations reject round trips; asynchronous handlers revalidate
+  targets before provider work and before publishing success/error/progress.
+- Discarded/replaced review cannot send; pending request identity rejects out-of-order
+  reviews and callbacks after delivery starts/finishes. Album selection stays explicit;
+  absence review still requires the native confirmation alert. No automatic resend.
+- Credential save failures retain the entered draft. Secrets never enter command
+  context keys; only synthetic fixture credentials/provider services used in tests.
+- Actual hosted Google queue verifies album -> job -> information capabilities.
+  Settings Form overflow reproduced, then proposed-height layout corrected.
+- Pre-fix evidence: hierarchy-before (3 issues); google-review-before (5),
+  google-publication-before (5), google-pending-review-before (4),
+  google-busy-review-before (1), google-hosting-before (1 layout issue).
+- Final: /private/tmp/walkfolio-keyboard-hierarchy-google-final-full.log. Astra final
+  focused review clear. No native menu acceptance, bundle/install, headed launch,
+  live archive, real authorisation, private delivery or watcher. Target remains
+  0.7.16/152; installed 0.7.15/151 verified closed. Remaining inventory above is active.
