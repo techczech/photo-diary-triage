@@ -4,6 +4,9 @@ enum ArchiveCoordinateSource: String, Codable, Hashable, Sendable {
     case walkPin = "walk_pin"
     case photoGPS = "photo_gps"
     case gpsCentroid = "gps_centroid"
+    case photoOverride = "photo_override"
+    case sharedOverride = "shared_override"
+    case photoCentroid = "photo_centroid"
     case legacy = "legacy"
 
     var title: String {
@@ -11,6 +14,9 @@ enum ArchiveCoordinateSource: String, Codable, Hashable, Sendable {
         case .walkPin: return "Walk pin"
         case .photoGPS: return "Photo GPS"
         case .gpsCentroid: return "Photo GPS centroid"
+        case .photoOverride: return "Photo assignment"
+        case .sharedOverride: return "Shared assignment"
+        case .photoCentroid: return "Photo location centroid"
         case .legacy: return "Recorded location"
         }
     }
@@ -77,12 +83,12 @@ enum ArchiveMapProjection {
         }.map { walk in
             let photos = photosByWalk[walk.archiveRelativePath] ?? []
             let pin = ArchiveCoordinate(latitude: walk.latitude, longitude: walk.longitude)
-            let gps = photos.filter { !$0.isDerivedPhoto && $0.cropRole != .crop && $0.coordinateSource == .photoGPS }
+            let gps = photos.filter { !$0.isDerivedPhoto && $0.cropRole != .crop && [.photoGPS, .photoOverride, .sharedOverride].contains($0.coordinateSource) }
                 .compactMap { ArchiveCoordinate(latitude: $0.latitude, longitude: $0.longitude) }
             let centroid = ArchiveCoordinate.centroid(gps)
             return ArchiveMapWalk(archiveRelativePath: walk.archiveRelativePath, tripPath: walk.tripPath,
                 title: walk.title, location: walk.location, date: walk.date, photoCount: walk.photoCount,
-                coordinate: pin ?? centroid, coordinateSource: pin != nil ? (walk.coordinateSource ?? .legacy) : (centroid != nil ? .gpsCentroid : nil))
+                coordinate: pin ?? centroid, coordinateSource: pin != nil ? (walk.coordinateSource ?? .legacy) : (centroid != nil ? (photos.contains { [.photoOverride, .sharedOverride].contains($0.coordinateSource) } ? .photoCentroid : .gpsCentroid) : nil))
         }.sorted { $0.archiveRelativePath < $1.archiveRelativePath }
         return ArchiveMapSnapshot(walks: walks,
             unlocatedHistoricalFolders: visibleEntries.filter { $0.kind == .unorganisedFolder })

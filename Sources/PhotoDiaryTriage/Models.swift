@@ -1177,6 +1177,7 @@ struct FileManifest: Codable, Hashable, Sendable {
     var walkTitle: String
     var walkLocation: String
     var notes: String
+    var locationOverride: PhotoLocationOverride?
 
     init(
         mediaItemID: UUID,
@@ -1195,7 +1196,8 @@ struct FileManifest: Codable, Hashable, Sendable {
         longitude: Double?,
         walkTitle: String,
         walkLocation: String,
-        notes: String
+        notes: String,
+        locationOverride: PhotoLocationOverride? = nil
     ) {
         self.mediaItemID = mediaItemID
         self.archivePath = archivePath
@@ -1214,6 +1216,7 @@ struct FileManifest: Codable, Hashable, Sendable {
         self.walkTitle = walkTitle
         self.walkLocation = walkLocation
         self.notes = notes
+        self.locationOverride = locationOverride
     }
 }
 

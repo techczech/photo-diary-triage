@@ -3,8 +3,8 @@ import MapKit
 import SwiftUI
 
 /// Inline map panel above the review grid.
-/// - C.1: plots photos in the current context that carry GPS coordinates.
-/// - C.2: assign a location (name + dropped pin) to the current walk; persisted on the session.
+/// Plots effective photo locations. Assignment follows the active Walk or selected
+/// canonical originals; source Walk pins persist on the current Photo Log.
 struct MapPanelView: View {
     @ObservedObject var appState: AppState
     let items: [ReviewItemSnapshot]
@@ -23,11 +23,11 @@ struct MapPanelView: View {
 
     private var photoAnnotations: [PhotoAnnotation] {
         items.compactMap { snapshot in
-            guard let latitude = snapshot.item.metadata.latitude,
-                  let longitude = snapshot.item.metadata.longitude else { return nil }
+            guard let point = ArchiveCoordinate(latitude: snapshot.item.metadata.latitude,
+                                                 longitude: snapshot.item.metadata.longitude) else { return nil }
             return PhotoAnnotation(
                 id: snapshot.id,
-                coordinate: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
+                coordinate: CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude),
                 label: snapshot.item.compactDisplayName
             )
         }
@@ -35,7 +35,7 @@ struct MapPanelView: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            if appState.canAssignWalkLocation {
+            if (appState.locationAssignmentContext != nil) {
                 assignmentBar
             }
             mapBody
@@ -45,15 +45,11 @@ struct MapPanelView: View {
                 .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
         }
         .onAppear { syncFromWalkIfNeeded() }
-        .onChange(of: appState.selectedBrowserNode?.id) { _, _ in
+        .onChange(of: appState.locationAssignmentContext) { _, _ in
             didSync = false
             syncFromWalkIfNeeded()
         }
-        .onChange(of: appState.canAssignWalkLocation) { _, _ in
-            didSync = false
-            syncFromWalkIfNeeded()
-        }
-        .onChange(of: appState.currentSession?.id) { _, _ in
+        .onChange(of: appState.locationAssignmentKey) { _, _ in
             didSync = false
             syncFromWalkIfNeeded()
         }
@@ -63,7 +59,9 @@ struct MapPanelView: View {
 
     private var assignmentBar: some View {
         HStack(spacing: 8) {
-            TextField("Location for this walk (e.g. Blenheim Park)", text: $locationName)
+            Text(appState.locationAssignmentContext?.title ?? "Location")
+                .font(.caption)
+            TextField(appState.locationAssignmentContext?.isMixed == true ? "Mixed locations — assign a new pin" : "Location (e.g. Blenheim Park)", text: $locationName)
                 .textFieldStyle(.roundedBorder)
                 .frame(minWidth: 180, maxWidth: 320)
                 .onSubmit { saveLocation() }
@@ -75,24 +73,29 @@ struct MapPanelView: View {
             }
             .controlSize(.small)
             .disabled(mapCenter == nil)
-            .help("Drop the walk pin at the centre of the map (or click directly on the map)")
+            .help("Drop the location pin at the centre of the map (or click directly on the map)")
 
             Button("Save Location") { saveLocation() }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
-                .disabled(!hasUnsavedChanges)
+                .disabled(!hasUnsavedChanges || appState.isSavingLocation)
 
             if walkHasSavedLocation {
                 Button("Clear") { clearLocation() }
                     .controlSize(.small)
             }
 
+            if appState.canRetryArchiveLocationSave {
+                Button("Retry unfinished save") { Task { await appState.retryArchiveLocationSave() } }
+                    .controlSize(.small)
+            }
             Spacer(minLength: 0)
 
             Text(pinStatus)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
+        .disabled(appState.isSavingLocation)
     }
 
     private var pinStatus: String {
@@ -106,11 +109,11 @@ struct MapPanelView: View {
 
     private var mapBody: some View {
         Group {
-            if !appState.canAssignWalkLocation && photoAnnotations.isEmpty {
+            if !(appState.locationAssignmentContext != nil) && photoAnnotations.isEmpty {
                 ContentUnavailableView(
-                    "No GPS in these photos",
+                    "No recorded locations",
                     systemImage: "mappin.slash",
-                    description: Text("These photos have no embedded location, and this view is read-only.")
+                    description: Text("Location editing needs a canonical Walk and original-photo records.")
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color(nsColor: .controlBackgroundColor).opacity(0.4))
@@ -122,12 +125,12 @@ struct MapPanelView: View {
                                 .tint(.blue)
                         }
                         if let pinCoordinate {
-                            Marker("This walk", systemImage: "figure.walk", coordinate: pinCoordinate)
+                            Marker(appState.locationAssignmentContext?.title ?? "Location", systemImage: "mappin", coordinate: pinCoordinate)
                                 .tint(.orange)
                         }
                     }
                     .onTapGesture { point in
-                        guard appState.canAssignWalkLocation,
+                        guard appState.locationAssignmentContext != nil, !appState.isSavingLocation,
                               let coordinate = proxy.convert(point, from: .local) else { return }
                         pinCoordinate = coordinate
                     }
@@ -144,23 +147,23 @@ struct MapPanelView: View {
     // MARK: State sync + persistence
 
     private var savedCoordinate: CLLocationCoordinate2D? {
-        guard appState.canAssignWalkLocation, let coordinate = appState.currentWalkCoordinate else { return nil }
+        guard let coordinate = appState.locationAssignmentContext?.coordinate else { return nil }
         return CLLocationCoordinate2D(latitude: coordinate.latitude, longitude: coordinate.longitude)
     }
 
     private var walkHasSavedLocation: Bool {
-        !appState.currentWalkLocationName.isEmpty || savedCoordinate != nil
+        appState.locationAssignmentContext?.hasSavedAssignment == true
     }
 
     private var hasUnsavedChanges: Bool {
-        locationName.trimmingCharacters(in: .whitespacesAndNewlines) != appState.currentWalkLocationName
+        locationName.trimmingCharacters(in: .whitespacesAndNewlines) != (appState.locationAssignmentContext?.name ?? "")
             || !coordinatesEqual(pinCoordinate, savedCoordinate)
     }
 
     private func syncFromWalkIfNeeded() {
         guard !didSync else { return }
         didSync = true
-        locationName = appState.currentWalkLocationName
+        locationName = (appState.locationAssignmentContext?.name ?? "")
         pinCoordinate = savedCoordinate
         if let coordinate = savedCoordinate ?? photoAnnotations.first?.coordinate {
             cameraPosition = .region(MKCoordinateRegion(
@@ -173,17 +176,16 @@ struct MapPanelView: View {
     }
 
     private func saveLocation() {
-        appState.setCurrentWalkLocation(
-            name: locationName,
-            latitude: pinCoordinate?.latitude,
-            longitude: pinCoordinate?.longitude
-        )
+        let context = appState.locationAssignmentContext
+        let name = locationName, latitude = pinCoordinate?.latitude, longitude = pinCoordinate?.longitude
+        Task { await appState.saveContextLocation(name: name, latitude: latitude, longitude: longitude, context: context) }
     }
 
     private func clearLocation() {
         locationName = ""
         pinCoordinate = nil
-        appState.setCurrentWalkLocation(name: "", latitude: nil, longitude: nil)
+        let context = appState.locationAssignmentContext
+        Task { await appState.saveContextLocation(name: "", latitude: nil, longitude: nil, context: context) }
     }
 
     private func coordinatesEqual(_ lhs: CLLocationCoordinate2D?, _ rhs: CLLocationCoordinate2D?) -> Bool {

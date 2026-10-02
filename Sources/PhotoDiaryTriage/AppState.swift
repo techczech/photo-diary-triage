@@ -102,6 +102,8 @@ final class AppState: ObservableObject {
             refreshNavigationState()
         }
     }
+    @Published var isSavingLocation = false
+    @Published var archiveLocationRecoveryWalkPath: String?
     @Published var selectedMediaItemIDs: Set<UUID> = [] {
         didSet {
             refreshReviewState()
@@ -389,7 +391,14 @@ final class AppState: ObservableObject {
     private var archiveCatalogueLoadGeneration: Int = 0
     private var archiveSearchTask: Task<Void, Never>?
     private var archiveBackfillTask: Task<Void, Never>?
-    private var archiveCatalogue: ArchiveCatalogue = .empty
+    private var archiveLocationPhotosByPath: [String: ArchivePhotoSummary] = [:]
+    private var archiveLocationWalksByPath: [String: ArchiveWalkSummary] = [:]
+    private var archiveCatalogue: ArchiveCatalogue = .empty {
+        didSet {
+            archiveLocationPhotosByPath = Dictionary(archiveCatalogue.photos.map { ($0.archiveRelativePath, $0) }, uniquingKeysWith: { first, _ in first })
+            archiveLocationWalksByPath = Dictionary(archiveCatalogue.walksByTripPath.values.flatMap { $0 }.map { ($0.archiveRelativePath, $0) }, uniquingKeysWith: { first, _ in first })
+        }
+    }
     private var archiveCatalogueIsLoading = false
     private var archiveCatalogueError: String?
     private var archiveYearFilter: String?
@@ -1345,6 +1354,7 @@ final class AppState: ObservableObject {
             children: nil,
             folderURL: folderURL
         )
+        archiveLocationRecoveryWalkPath = nil
         activeArchiveContentNode = node
         archiveNavigationLevel = .photos(path: relativePath, parentTripPath: parentTripPath)
         selectedSidebarNodeID = nodeID
@@ -2161,6 +2171,115 @@ final class AppState: ObservableObject {
         guard let currentSession else { return }
         guard save(sessionMutationCoordinator.sessionByUpdatingWalkMetadata(currentSession, title: title, location: location, notes: notes)) else { return }
         refreshArchiveIndexAfterMetadataEditIfNeeded()
+    }
+
+    var locationAssignmentContext: LocationAssignmentContext? {
+        if workspaceMode == .archiveView || isBrowsingArchive {
+            guard let node = selectedBrowserNode, let folder = node.folderURL,
+                  let path = ArchiveIndexStore.archiveRelativePath(for: folder, archiveRoot: settings.archiveRoot),
+                  let walk = archiveLocationWalksByPath[path] else { return nil }
+            var target = ArchiveLocationTarget(walkRelativePath: path, sessionID: walk.sessionID, walkID: walk.walkID)
+            var overrides: [PhotoLocationOverride?] = []
+            let photosByPath = archiveLocationPhotosByPath
+            for id in selectedMediaItemIDs.sorted(by: { $0.uuidString < $1.uuidString }) {
+                guard let item = mediaItem(for: id), let itemPath = item.archiveRelativePath,
+                      let photo = photosByPath[itemPath], photo.walkPath == path, !photo.isDerivedPhoto,
+                      photo.cropRole != .crop, photo.mediaItemID == id else { return nil }
+                target.photos.append(ArchiveLocationPhotoTarget(mediaItemID: id, archiveRelativePath: itemPath))
+                overrides.append(photo.locationOverride)
+            }
+            let first = overrides.first ?? nil
+            let mixed = overrides.contains { $0?.name != first?.name || $0?.coordinate != first?.coordinate }
+            let isWalk = target.photos.isEmpty
+            return LocationAssignmentContext(key: settings.archiveRoot.path + "|" + target.key,
+                title: isWalk ? "This Walk" : (target.photos.count == 1 ? "Selected photo" : "\(target.photos.count) selected photos"),
+                origin: .archive(target), archiveRoot: settings.archiveRoot,
+                name: isWalk ? (walk.location ?? "") : (mixed ? "" : first?.name ?? ""),
+                coordinate: isWalk ? ArchiveCoordinate(latitude: walk.latitude, longitude: walk.longitude) : (mixed ? nil : first?.coordinate),
+                isMixed: mixed, hasSavedAssignment: isWalk ? walk.location != nil || ArchiveCoordinate(latitude: walk.latitude, longitude: walk.longitude) != nil : overrides.contains { $0 != nil })
+        }
+        guard canAssignWalkLocation, let session = currentSession else { return nil }
+        return LocationAssignmentContext(key: "source|" + session.id.uuidString, title: "This Walk",
+            origin: .sourceWalk(session.id), archiveRoot: session.archiveRoot, name: session.walkMetadata.location,
+            coordinate: ArchiveCoordinate(latitude: session.walkMetadata.latitude, longitude: session.walkMetadata.longitude),
+            isMixed: false, hasSavedAssignment: session.walkMetadata.location.nonEmpty != nil || currentWalkCoordinate != nil)
+    }
+
+    var locationAssignmentKey: String {
+        locationAssignmentContext?.key ?? "readonly|\(selectedBrowserNode?.id ?? "")|\(selectedMediaItemIDs.map(\.uuidString).sorted().joined(separator: ","))"
+    }
+
+    var canRetryArchiveLocationSave: Bool {
+        guard case .archive(let target) = locationAssignmentContext?.origin else { return false }
+        return archiveLocationRecoveryWalkPath == target.walkRelativePath
+    }
+
+    func saveContextLocation(name: String, latitude: Double?, longitude: Double?, context captured: LocationAssignmentContext? = nil) async {
+        guard !isSavingLocation, let context = captured ?? locationAssignmentContext else { return }
+        let coordinate = ArchiveCoordinate(latitude: latitude, longitude: longitude)
+        guard (latitude == nil && longitude == nil) || coordinate != nil,
+              !name.contains("\n"), !name.contains("\r") else {
+            statusMessage = "Use a single-line location name and a complete, valid coordinate pair."; return
+        }
+        switch context.origin {
+        case .sourceWalk(let id):
+            guard currentSession?.id == id, canAssignWalkLocation else { return }
+            setCurrentWalkLocation(name: name, latitude: coordinate?.latitude, longitude: coordinate?.longitude)
+        case .archive(let target):
+            guard context.archiveRoot.standardizedFileURL == settings.archiveRoot.standardizedFileURL else { return }
+            isSavingLocation = true
+            defer { isSavingLocation = false }
+            let root = context.archiveRoot
+            do {
+                let result = try await ArchiveIndexMutationQueue.shared.saveLocation(target: target, name: name, coordinate: coordinate, archiveRoot: root)
+                guard root.standardizedFileURL == self.settings.archiveRoot.standardizedFileURL else { return }
+                archiveLocationRecoveryWalkPath = nil
+                applyArchiveLocationResult(result)
+            } catch {
+                guard root.standardizedFileURL == self.settings.archiveRoot.standardizedFileURL else { return }
+                archiveLocationRecoveryWalkPath = (try? ArchiveLocationEditor().pending(for: target.walkRelativePath, archiveRoot: root))?.target.walkRelativePath
+                statusMessage = "Location save failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func retryArchiveLocationSave() async {
+        guard !isSavingLocation, case .archive(let target) = locationAssignmentContext?.origin else { return }
+        isSavingLocation = true
+        defer { isSavingLocation = false }
+        let root = settings.archiveRoot
+        do {
+            let result = try await ArchiveIndexMutationQueue.shared.resumeLocation(walkRelativePath: target.walkRelativePath, archiveRoot: root)
+            guard root.standardizedFileURL == self.settings.archiveRoot.standardizedFileURL else { return }
+            archiveLocationRecoveryWalkPath = nil
+            applyArchiveLocationResult(result)
+        } catch { statusMessage = "Location recovery failed: \(error.localizedDescription)" }
+    }
+
+    private func applyArchiveLocationResult(_ result: ArchiveLocationSaveResult) {
+        archiveCatalogueLoadTask?.cancel()
+        archiveCatalogueLoadTask = nil
+        archiveCatalogueLoadGeneration &+= 1
+        archiveCatalogueIsLoading = false
+        archiveCatalogue = ArchiveLocationProjection.applying(result, to: archiveCatalogue)
+        let photos = Dictionary(uniqueKeysWithValues: archiveCatalogue.photos.map { ($0.archiveRelativePath, $0) })
+        for key in Array(archiveMediaCache.keys) {
+            guard var items = archiveMediaCache[key] else { continue }
+            for index in items.indices {
+                guard let path = items[index].archiveRelativePath, let photo = photos[path],
+                      photo.walkPath == result.target.walkRelativePath else { continue }
+                items[index].metadata.latitude = photo.latitude
+                items[index].metadata.longitude = photo.longitude
+            }
+            archiveMediaCache[key] = items
+        }
+        refreshAllUIState()
+        statusMessage = result.target.photos.isEmpty ? "Saved Walk location." : "Saved location for \(result.target.photos.count) selected photos."
+        if canWriteArchiveIndex {
+            refreshArchiveIndexAfterWalkFolders([archiveURL(for: result.target.walkRelativePath)], statusPrefix: "Archive Index refreshed for updated locations")
+        } else {
+            statusMessage += " The travel view is updated; the main Mac will publish the index after rebuilding."
+        }
     }
 
     var currentWalkLocationName: String {
@@ -6429,7 +6548,13 @@ final class AppState: ObservableObject {
                 switch result {
                 case .success(let loadResult):
                     guard let loadResult else { return }
-                    let sortedItems = MediaItemSort.sorted(loadResult.items)
+                    let projectedItems = loadResult.items.map { item -> MediaItem in
+                        guard let path = item.archiveRelativePath, let photo = self.archiveLocationPhotosByPath[path] else { return item }
+                        var item = item
+                        item.metadata.latitude = photo.latitude; item.metadata.longitude = photo.longitude
+                        return item
+                    }
+                    let sortedItems = MediaItemSort.sorted(projectedItems)
                     self.archiveMediaCache[loadResult.nodeID] = sortedItems
                     self.requestInitialArchiveThumbnails(for: sortedItems)
                     self.preheatDisplayImages(for: sortedItems.map(\.id), limit: 6)
