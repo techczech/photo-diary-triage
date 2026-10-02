@@ -7,6 +7,12 @@ struct HeaderPaneView: View {
     var body: some View {
         HStack(alignment: .top, spacing: 16) {
             VStack(alignment: .leading, spacing: 3) {
+                if appState.workspaceMode == .archiveView, appState.canNavigateToParent {
+                    Button { appState.navigateToParent() } label: {
+                        Label("Back", systemImage: "chevron.left")
+                    }
+                    .buttonStyle(.plain)
+                }
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Label(appState.workspaceContextTitle, systemImage: appState.workspaceContextSystemImage)
                         .font(.caption.weight(.semibold))

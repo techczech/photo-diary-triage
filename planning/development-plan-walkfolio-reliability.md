@@ -3,7 +3,7 @@ title: Walkfolio development goals and acceptance tests
 status: active
 updated: 2026-10-02
 owner: Walkfolio
-release: 0.7.12
+release: 0.7.13
 source_records:
   - planning/dictated-idea-scope.md
   - CONTEXT.md
@@ -33,7 +33,7 @@ This plan reconciles the original dictated scope, the settled Walk/Trip model, t
 
 ## Development goals
 
-| Goal | Acceptance test | State after 0.7.12 |
+| Goal | Acceptance test | State after 0.7.13 |
 |---|---|---|
 | Keep original photos safe. | Corrupt an equal-size copy, remove a destination, alter source and destination together, or lose a RAW copy. Import/cleanup must reject the operation and retain the source. Backup and machine-role gates apply inside the service. | Automated regressions pass. |
 | Recover interrupted imports without duplicate copies. | Fail the second copy or a manifest write, restart from the original Photo Log and finish the recorded destinations. Changed selections, source paths or backup consent must not be restored silently. | Automated regressions pass; immutable plans and compact per-file checkpoints implemented. |
@@ -67,8 +67,17 @@ The automated tests use temporary archives and injected failures. They do not es
 
 ## Current acceptance boundary
 
-Walkfolio 0.7.12 build 148 is installed while closed, signed and executable-verified. It passes the full suite and Astra's final focused source review. The independent implementation and fixture journey are verified; the approved real-copy, native and provider acceptance conditions remain open. The consolidated return check uses the current release, and no answer watcher or automatic delivery runs.
+Walkfolio 0.7.13 build 149 is installed while closed, signed and executable-verified.
+All 401 tests pass and Astra's focused review is clear. Navigation and projection reuse
+are verified; the composed fixture journey remains green. Further WP3 implementation is
+active: photo search/hit focus, empty/error/retry feedback, asynchronous covers and sidebar
+focus. Original native/real-copy/provider acceptance remains open. The navigation request
+has no watcher; no automatic delivery runs.
 
 The [requirements audit](audit-walkfolio-completion-requirements.md) traces every work
 package to original decisions, current implementation, regression evidence and remaining
 acceptance. It records the old Map approval and the corrected default-Trip summaries.
+
+## Continuing WP3 work
+
+Item 109 ships measured navigation, correct Map action ownership and reusable projections with 17 new cases. Search results, folder feedback, covers and sidebar focus remain active implementation. The full original scope stays committed; 1.0 is not accepted.

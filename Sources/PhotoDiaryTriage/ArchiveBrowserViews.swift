@@ -133,68 +133,71 @@ struct ArchiveMainPaneView: View {
 
     var body: some View {
         let snapshot = state.snapshot
-        VStack(alignment: .leading, spacing: 0) {
-            archiveHeader(snapshot)
-            Divider()
+        GeometryReader { geometry in
+            let layout = ArchiveGridLayout(availableWidth: geometry.size.width)
+            VStack(alignment: .leading, spacing: 0) {
+                archiveHeader(snapshot)
+                Divider()
 
-            Group {
-                if snapshot.isLoading && snapshot.entries.isEmpty {
-                    ProgressView("Reading the Archive Index and folders…")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if let error = snapshot.errorMessage, snapshot.entries.isEmpty {
-                    ContentUnavailableView(
-                        "Archive unavailable",
-                        systemImage: "exclamationmark.triangle",
-                        description: Text(error)
-                    )
-                } else if snapshot.entries.isEmpty {
-                    ContentUnavailableView {
-                        Label("No matching Archive entries", systemImage: "magnifyingglass")
-                    } description: {
-                        Text("Clear search or choose All entries and All years.")
-                    } actions: {
-                        Button("Clear filters") {
-                            appState.updateArchiveSearch("")
-                            appState.setArchiveKindFilter(.all)
-                            appState.setArchiveYearFilter(nil)
+                Group {
+                    if snapshot.isLoading && snapshot.entries.isEmpty {
+                        ProgressView("Reading the Archive Index and folders…")
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if let error = snapshot.errorMessage, snapshot.entries.isEmpty {
+                        ContentUnavailableView(
+                            "Archive unavailable",
+                            systemImage: "exclamationmark.triangle",
+                            description: Text(error)
+                        )
+                    } else if snapshot.entries.isEmpty {
+                        ContentUnavailableView {
+                            Label("No matching Archive entries", systemImage: "magnifyingglass")
+                        } description: {
+                            Text("Clear search or choose All entries and All years.")
+                        } actions: {
+                            Button("Clear filters") {
+                                appState.updateArchiveSearch("")
+                                appState.setArchiveKindFilter(.all)
+                                appState.setArchiveYearFilter(nil)
+                            }
                         }
+                    } else if snapshot.viewMode == .map {
+                        ArchiveMapView(snapshot: snapshot.map, selectedItemID: snapshot.selectedMapItemID, openWalk: appState.openArchiveMapWalk,
+                            openFolder: appState.openArchiveMapFolder)
+                    } else if snapshot.viewMode == .timeline {
+                        archiveTimeline(snapshot)
+                    } else {
+                        archiveContactSheet(snapshot, layout: layout)
                     }
-                } else if snapshot.viewMode == .map {
-                    ArchiveMapView(snapshot: snapshot.map, openWalk: appState.openArchiveMapWalk,
-                        openFolder: appState.openArchiveMapFolder)
-                } else if snapshot.viewMode == .timeline {
-                    archiveTimeline(snapshot)
-                } else {
-                    archiveContactSheet(snapshot)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .focusable()
+            .focused($hasKeyboardFocus)
+            .onAppear {
+                hasKeyboardFocus = true
+            }
+            .onChange(of: snapshot.browseFocusRevision) { _, _ in hasKeyboardFocus = true }
+            .onMoveCommand { direction in
+                guard hasKeyboardFocus else { return }
+                switch direction {
+                case .up:
+                    appState.moveArchiveSelection(horizontal: 0, vertical: -1, contactSheetColumns: layout.columnCount)
+                case .down:
+                    appState.moveArchiveSelection(horizontal: 0, vertical: 1, contactSheetColumns: layout.columnCount)
+                case .left:
+                    appState.moveArchiveSelection(horizontal: -1, vertical: 0, contactSheetColumns: layout.columnCount)
+                case .right:
+                    appState.moveArchiveSelection(horizontal: 1, vertical: 0, contactSheetColumns: layout.columnCount)
+                default:
+                    break
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .focusable()
-        .focused($hasKeyboardFocus)
-        .onAppear {
-            hasKeyboardFocus = true
-        }
-        .onMoveCommand { direction in
-            switch direction {
-            case .up:
-                appState.moveArchiveSelection(horizontal: 0, vertical: -1)
-            case .down:
-                appState.moveArchiveSelection(horizontal: 0, vertical: 1)
-            case .left:
-                appState.moveArchiveSelection(horizontal: -1, vertical: 0)
-            case .right:
-                appState.moveArchiveSelection(horizontal: 1, vertical: 0)
-            default:
-                break
+            .onKeyPress(.return) {
+                guard hasKeyboardFocus else { return .ignored }
+                appState.openSelectedArchiveItem()
+                return .handled
             }
-        }
-        .onKeyPress(.return) {
-            appState.openSelectedArchiveItem()
-            return .handled
-        }
-        .onTapGesture {
-            hasKeyboardFocus = true
         }
     }
 
@@ -242,7 +245,7 @@ struct ArchiveMainPaneView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-                    ForEach(grouped(snapshot.entries), id: \.year) { group in
+                    ForEach(snapshot.yearGroups, id: \.year) { group in
                         Section {
                             ForEach(group.entries) { entry in
                                 ArchiveTimelineRow(
@@ -250,7 +253,10 @@ struct ArchiveMainPaneView: View {
                                     archiveRoot: appState.settings.archiveRoot,
                                     showPreview: snapshot.showPreviews,
                                     isSelected: snapshot.selectedEntryID == entry.id,
-                                    onSelect: { appState.selectArchiveEntry(entry.id) },
+                                    onSelect: {
+                                        hasKeyboardFocus = true
+                                        appState.selectArchiveEntry(entry.id)
+                                    },
                                     onOpen: {
                                         appState.selectArchiveEntry(entry.id)
                                         appState.openSelectedArchiveItem()
@@ -284,17 +290,17 @@ struct ArchiveMainPaneView: View {
         }
     }
 
-    private func archiveContactSheet(_ snapshot: ArchiveBrowserSnapshot) -> some View {
+    private func archiveContactSheet(_ snapshot: ArchiveBrowserSnapshot, layout: ArchiveGridLayout) -> some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 24) {
-                    ForEach(grouped(snapshot.entries), id: \.year) { group in
+                    ForEach(snapshot.yearGroups, id: \.year) { group in
                         VStack(alignment: .leading, spacing: 10) {
                             Text(group.year)
                                 .font(.headline)
                                 .foregroundStyle(.secondary)
                             LazyVGrid(
-                                columns: [GridItem(.adaptive(minimum: 190, maximum: 280), spacing: 14)],
+                                columns: Array(repeating: GridItem(.flexible(minimum: 0, maximum: layout.maximumCardWidth), spacing: layout.spacing), count: layout.columnCount),
                                 alignment: .leading,
                                 spacing: 18
                             ) {
@@ -304,7 +310,10 @@ struct ArchiveMainPaneView: View {
                                         archiveRoot: appState.settings.archiveRoot,
                                         showPreview: snapshot.showPreviews,
                                         isSelected: snapshot.selectedEntryID == entry.id,
-                                        onSelect: { appState.selectArchiveEntry(entry.id) },
+                                        onSelect: {
+                                        hasKeyboardFocus = true
+                                        appState.selectArchiveEntry(entry.id)
+                                    },
                                         onOpen: {
                                             appState.selectArchiveEntry(entry.id)
                                             appState.openSelectedArchiveItem()
@@ -340,11 +349,6 @@ struct ArchiveMainPaneView: View {
         return "\(prefix)\(trips) Trip\(trips == 1 ? "" : "s") · \(folders) unorganised folder\(folders == 1 ? "" : "s")"
     }
 
-    private func grouped(_ entries: [ArchiveBrowseEntry]) -> [(year: String, entries: [ArchiveBrowseEntry])] {
-        Dictionary(grouping: entries, by: \.year)
-            .map { (year: $0.key, entries: $0.value) }
-            .sorted { $0.year > $1.year }
-    }
 }
 
 struct ArchiveTripPaneView: View {
@@ -354,90 +358,97 @@ struct ArchiveTripPaneView: View {
 
     var body: some View {
         let snapshot = state.snapshot
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .bottom) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Button {
-                        appState.navigateToParent()
-                    } label: {
-                        Label("Archive", systemImage: "chevron.left")
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-
-                    Text(snapshot.selectedTrip?.title ?? "Trip")
-                        .font(.largeTitle.weight(.semibold))
-                    Text("\(snapshot.walks.count) Walk\(snapshot.walks.count == 1 ? "" : "s")")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    if let trip = snapshot.selectedTrip {
-                        TripLocationLabelView(appState: appState, trip: trip)
-                    }
-                }
-                Spacer()
-            }
-            .padding(18)
-
-            Divider()
-
-            if snapshot.walks.isEmpty {
-                ContentUnavailableView(
-                    "No indexed Walks",
-                    systemImage: "figure.walk",
-                    description: Text("Rebuild the Archive Index if this Trip contains manifest-backed Walks.")
-                )
-            } else {
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVGrid(
-                            columns: [GridItem(.adaptive(minimum: 230, maximum: 340), spacing: 16)],
-                            alignment: .leading,
-                            spacing: 18
-                        ) {
-                            ForEach(snapshot.walks) { walk in
-                                ArchiveWalkCard(
-                                    walk: walk,
-                                    archiveRoot: appState.settings.archiveRoot,
-                                    showPreview: snapshot.showPreviews,
-                                    isSelected: snapshot.selectedWalkID == walk.id
-                                ) {
-                                    appState.selectArchiveWalk(walk.id)
-                                } onOpen: {
-                                    appState.selectArchiveWalk(walk.id)
-                                    appState.openSelectedArchiveItem()
-                                }
-                                .id(walk.id)
-                            }
+        GeometryReader { geometry in
+            let layout = ArchiveGridLayout(availableWidth: geometry.size.width, walkCards: true)
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .bottom) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Button {
+                            appState.navigateToParent()
+                        } label: {
+                            Label("Archive", systemImage: "chevron.left")
                         }
-                        .padding(18)
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+
+                        Text(snapshot.selectedTrip?.title ?? "Trip")
+                            .font(.largeTitle.weight(.semibold))
+                        Text("\(snapshot.walks.count) Walk\(snapshot.walks.count == 1 ? "" : "s")")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if let trip = snapshot.selectedTrip {
+                            TripLocationLabelView(appState: appState, trip: trip)
+                        }
                     }
-                    .onChange(of: snapshot.selectedWalkID) { _, id in
-                        guard let id else { return }
-                        proxy.scrollTo(id, anchor: .center)
+                    Spacer()
+                }
+                .padding(18)
+
+                Divider()
+
+                if snapshot.walks.isEmpty {
+                    ContentUnavailableView(
+                        "No indexed Walks",
+                        systemImage: "figure.walk",
+                        description: Text("Rebuild the Archive Index if this Trip contains manifest-backed Walks.")
+                    )
+                } else {
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LazyVGrid(
+                                columns: Array(repeating: GridItem(.flexible(minimum: 0, maximum: layout.maximumCardWidth), spacing: layout.spacing), count: layout.columnCount),
+                                alignment: .leading,
+                                spacing: 18
+                            ) {
+                                ForEach(snapshot.walks) { walk in
+                                    ArchiveWalkCard(
+                                        walk: walk,
+                                        archiveRoot: appState.settings.archiveRoot,
+                                        showPreview: snapshot.showPreviews,
+                                        isSelected: snapshot.selectedWalkID == walk.id
+                                    ) {
+                                        hasKeyboardFocus = true
+                                        appState.selectArchiveWalk(walk.id)
+                                    } onOpen: {
+                                        appState.selectArchiveWalk(walk.id)
+                                        appState.openSelectedArchiveItem()
+                                    }
+                                    .id(walk.id)
+                                }
+                            }
+                            .padding(18)
+                        }
+                        .onChange(of: snapshot.selectedWalkID) { _, id in
+                            guard let id else { return }
+                            proxy.scrollTo(id, anchor: .center)
+                        }
                     }
                 }
             }
-        }
-        .focusable()
-        .focused($hasKeyboardFocus)
-        .onAppear { hasKeyboardFocus = true }
-        .onMoveCommand { direction in
-            switch direction {
-            case .up:
-                appState.moveArchiveSelection(horizontal: 0, vertical: -1)
-            case .down:
-                appState.moveArchiveSelection(horizontal: 0, vertical: 1)
-            case .left:
-                appState.moveArchiveSelection(horizontal: -1, vertical: 0)
-            case .right:
-                appState.moveArchiveSelection(horizontal: 1, vertical: 0)
-            default:
-                break
+            .focusable()
+            .focused($hasKeyboardFocus)
+            .onAppear { hasKeyboardFocus = true }
+            .onChange(of: snapshot.browseFocusRevision) { _, _ in hasKeyboardFocus = true }
+            .onMoveCommand { direction in
+                guard hasKeyboardFocus else { return }
+                switch direction {
+                case .up:
+                    appState.moveArchiveSelection(horizontal: 0, vertical: -1, contactSheetColumns: layout.columnCount)
+                case .down:
+                    appState.moveArchiveSelection(horizontal: 0, vertical: 1, contactSheetColumns: layout.columnCount)
+                case .left:
+                    appState.moveArchiveSelection(horizontal: -1, vertical: 0, contactSheetColumns: layout.columnCount)
+                case .right:
+                    appState.moveArchiveSelection(horizontal: 1, vertical: 0, contactSheetColumns: layout.columnCount)
+                default:
+                    break
+                }
             }
-        }
-        .onKeyPress(.return) {
-            appState.openSelectedArchiveItem()
-            return .handled
+            .onKeyPress(.return) {
+                guard hasKeyboardFocus else { return .ignored }
+                appState.openSelectedArchiveItem()
+                return .handled
+            }
         }
     }
 }

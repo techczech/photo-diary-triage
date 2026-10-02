@@ -61,7 +61,6 @@ struct PhotoDiaryCommands: Commands {
             Button("Open Selected Archive Entry") {
                 appState.openSelectedArchiveItem()
             }
-            .keyboardShortcut(.return, modifiers: [])
             .disabled(appState.workspaceMode != .archiveView || !appState.canOpenSelectedArchiveItem)
 
             Button("Organise Selected Folder as a Trip…") {

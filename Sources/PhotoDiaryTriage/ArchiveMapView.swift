@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ArchiveMapView: View {
     let snapshot: ArchiveMapSnapshot
+    let selectedItemID: ArchiveMapItemID?
     let openWalk: (ArchiveMapWalk) -> Void
     let openFolder: (ArchiveBrowseEntry) -> Void
 
@@ -18,29 +19,40 @@ struct ArchiveMapView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             Divider()
-            List {
-                Section("Located Walks · \(snapshot.locatedWalks.count)") {
-                    ForEach(snapshot.locatedWalks) { walk in
-                        Button { openWalk(walk) } label: {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(walk.title).font(.body.weight(.medium))
-                                Text([walk.location, walk.coordinateSource?.title].compactMap { $0 }.joined(separator: " · "))
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                        }.buttonStyle(.plain)
-                    }
-                }
-                Section("Without a location · \(snapshot.unlocatedWalks.count)") {
-                    ForEach(snapshot.unlocatedWalks) { walk in
-                        Button(walk.title) { openWalk(walk) }.buttonStyle(.plain)
-                    }
-                }
-                if !snapshot.unlocatedHistoricalFolders.isEmpty {
-                    Section("Historical folders · \(snapshot.unlocatedHistoricalFolders.count)") {
-                        ForEach(snapshot.unlocatedHistoricalFolders) { folder in
-                            Button(folder.title) { openFolder(folder) }.buttonStyle(.plain)
+            ScrollViewReader { proxy in
+                List {
+                    Section("Located Walks · \(snapshot.locatedWalks.count)") {
+                        ForEach(snapshot.locatedWalks) { walk in
+                            Button { openWalk(walk) } label: {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(walk.title).font(.body.weight(.medium))
+                                    Text([walk.location, walk.coordinateSource?.title].compactMap { $0 }.joined(separator: " · "))
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                            }.buttonStyle(.plain)
+                            .id(ArchiveMapItemID.walk(walk.archiveRelativePath))
+                            .listRowBackground(selectedItemID == .walk(walk.archiveRelativePath) ? Color.accentColor.opacity(0.16) : Color.clear)
                         }
                     }
+                    Section("Without a location · \(snapshot.unlocatedWalks.count)") {
+                        ForEach(snapshot.unlocatedWalks) { walk in
+                            Button(walk.title) { openWalk(walk) }.buttonStyle(.plain)
+                                .id(ArchiveMapItemID.walk(walk.archiveRelativePath))
+                                .listRowBackground(selectedItemID == .walk(walk.archiveRelativePath) ? Color.accentColor.opacity(0.16) : Color.clear)
+                        }
+                    }
+                    if !snapshot.unlocatedHistoricalFolders.isEmpty {
+                        Section("Historical folders · \(snapshot.unlocatedHistoricalFolders.count)") {
+                            ForEach(snapshot.unlocatedHistoricalFolders) { folder in
+                                Button(folder.title) { openFolder(folder) }.buttonStyle(.plain)
+                                    .id(ArchiveMapItemID.folder(folder.id))
+                                    .listRowBackground(selectedItemID == .folder(folder.id) ? Color.accentColor.opacity(0.16) : Color.clear)
+                            }
+                        }
+                    }
+                }
+                .onChange(of: selectedItemID) { _, id in
+                    if let id { proxy.scrollTo(id, anchor: .center) }
                 }
             }
             .frame(width: 270)

@@ -1,7 +1,7 @@
 ---
 item_id: PDT-2026-10-02-100
 title: Walkfolio reliability and complete photo diary workflow
-status: independent_implementation_verified_pending_native_acceptance
+status: active
 target_release_version: 0.7.4
 target_feature_slug: archive-reliability
 date: 2026-10-02
@@ -59,3 +59,13 @@ backup/recovery cases. Reports 101–108 and the development plan extend the ori
 foundation to the full scope. The requirements audit records original decisions, the old
 Map approval and all remaining real-copy/native/provider acceptance. Version 1.0 is not
 declared accepted from fixtures alone; no routine product decision is pending.
+
+## Continuing Archive audit
+
+Astra and the primary agent found outstanding WP3 implementation defects after the 0.7.12 checkpoint. Navigation and selection performance are active in item 109. Visible photo search results, folder empty/error feedback, asynchronous cover loading and sidebar keyboard focus also require implementation. Passing the earlier fixtures did not establish those behaviours. Full original acceptance remains required.
+
+## Navigation checkpoint
+
+0.7.13 build 149 is installed while closed. All 401 tests pass; measured navigation,
+Map action ownership, Back/Open and projection reuse are verified. Astra review clear.
+Remaining WP3 implementation and original acceptance keep the whole-scope task active.
