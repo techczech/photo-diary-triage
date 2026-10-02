@@ -213,6 +213,7 @@ struct ArchiveMainPaneView: View {
                 return .handled
             }
         }
+        .environment(\.archiveCoverContext, snapshot.coverContext)
     }
 
     private func archiveHeader(_ snapshot: ArchiveBrowserSnapshot) -> some View {
@@ -465,6 +466,7 @@ struct ArchiveTripPaneView: View {
                 return .handled
             }
         }
+        .environment(\.archiveCoverContext, snapshot.coverContext)
     }
 }
 
@@ -661,13 +663,14 @@ struct ArchiveCoverView: View {
     let archiveRoot: URL
     let showPreview: Bool
     let kind: ArchiveBrowseEntryKind
+    @Environment(\.archiveCoverContext) private var context
+    @StateObject private var model = ArchiveCoverModel()
+    @State private var isVisible = false
 
     var body: some View {
+        let request = ArchiveCoverRequest(archiveRoot: archiveRoot, thumbnailPath: thumbnailPath, context: context, showPreview: showPreview)
         Group {
-            if showPreview,
-               let thumbnailPath,
-               let url = ArchiveIndexStore.validatedThumbnailURL(relativePath: thumbnailPath, archiveRoot: archiveRoot),
-               let image = NSImage(contentsOf: url) {
+            if let image = model.image(for: request) {
                 Image(nsImage: image)
                     .resizable()
                     .scaledToFill()
@@ -683,6 +686,9 @@ struct ArchiveCoverView: View {
         .clipped()
         .background(Color(nsColor: .controlBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 7))
+        .onAppear { isVisible = true; model.load(request) }
+        .onChange(of: request) { _, next in if isVisible { model.load(next) } }
+        .onDisappear { isVisible = false; model.cancel() }
     }
 }
 

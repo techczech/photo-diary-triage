@@ -3,7 +3,7 @@ title: Walkfolio development goals and acceptance tests
 status: active
 updated: 2026-10-02
 owner: Walkfolio
-release: 0.7.13
+release: 0.7.15
 source_records:
   - planning/dictated-idea-scope.md
   - CONTEXT.md
@@ -33,7 +33,7 @@ This plan reconciles the original dictated scope, the settled Walk/Trip model, t
 
 ## Development goals
 
-| Goal | Acceptance test | State after 0.7.13 |
+| Goal | Acceptance test | State after 0.7.15 |
 |---|---|---|
 | Keep original photos safe. | Corrupt an equal-size copy, remove a destination, alter source and destination together, or lose a RAW copy. Import/cleanup must reject the operation and retain the source. Backup and machine-role gates apply inside the service. | Automated regressions pass. |
 | Recover interrupted imports without duplicate copies. | Fail the second copy or a manifest write, restart from the original Photo Log and finish the recorded destinations. Changed selections, source paths or backup consent must not be restored silently. | Automated regressions pass; immutable plans and compact per-file checkpoints implemented. |
@@ -67,13 +67,13 @@ The automated tests use temporary archives and injected failures. They do not es
 
 ## Current acceptance boundary
 
-Walkfolio 0.7.14 build 150 is installed while closed, signed and executable-verified.
-All 423 tests pass in 23.227 seconds and Astra's focused review is clear. Visible photo
-search, exact-hit grid focus, explicit folder empty/error/retry, context-bound publication,
-FTS snapshot ownership and refresh-safe Compare are verified alongside the composed
-fixture journey. Further WP3 implementation is active: asynchronous bounded covers and
-sidebar focus. Original native/real-copy/provider acceptance remains open. The search
-request has synthetic disposable data and no watcher; no automatic delivery runs.
+Walkfolio 0.7.15 build 151 is installed while closed, signed and executable-verified.
+All 447 tests pass in 23.777 seconds and Astra's focused review is clear. Navigation,
+visible exact-photo search, recoverable folders, refresh-safe Compare and bounded
+asynchronous resident-only covers are verified alongside the composed fixture journey.
+Further original usability implementation is active: complete registered command discovery,
+bindings/generated help and sidebar focus. Native/real-copy/provider acceptance remains
+open. Return checks use synthetic disposable data; no watcher or automatic delivery runs.
 
 The [requirements audit](audit-walkfolio-completion-requirements.md) traces every work
 package to original decisions, current implementation, regression evidence and remaining
@@ -81,6 +81,20 @@ acceptance. It records the old Map approval and the corrected default-Trip summa
 
 ## Continuing WP3 work
 
-Navigation, visible search and folder feedback ship with meaningful regressions. Cover
-I/O remains synchronous in view bodies and Archive sidebar focus still needs implementation.
+Navigation, visible search, folder feedback and asynchronous covers ship with meaningful
+regressions. Complete command discovery/binding/help and sidebar focus require implementation.
 The full original scope stays committed; 1.0 is not accepted.
+
+## Cover loading and keyboard audit
+
+0.7.15 build 151 is installed closed and signed. All 447 tests pass in 23.777 seconds,
+including 24 new cover/decoder functions. Cover reads are asynchronous, resident-only,
+strictly linked-path safe, no-materialisation guarded and bounded by physical workers,
+pending keys and actual decoded bytes. Cancellation, shared ownership, priority, stale
+contexts and full Preview independence pass. Astra final source review is clear.
+
+The next original usability slice implements the complete command layer and sidebar:
+registered commands with effective persisted overrides, command palette, contextual
+actions, generated cheat sheet, reserved-key reconciliation, native sidebar ownership and
+real key-event tests. Existing duplicate focus/grouping chords and hard-coded help make
+this actual implementation work. Native/provider acceptance remains required.

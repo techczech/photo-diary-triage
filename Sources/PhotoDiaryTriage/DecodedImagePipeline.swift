@@ -45,6 +45,7 @@ actor DecodedImagePipeline {
     private let policyContext: ArchiveByteReadPolicyContext
     private let testingDecoder: (@Sendable (URL, Int?) async -> NSImage?)?
     private let cache = NSCache<NSString, NSImage>()
+    private var cacheGeneration: Int?
     private var inFlightTasks: [String: InFlightDecode] = [:]
 
     init(policyContext: ArchiveByteReadPolicyContext = .shared,
@@ -62,6 +63,7 @@ actor DecodedImagePipeline {
         priority: TaskPriority = .userInitiated
     ) async -> NSImage? {
         let generation = policyContext.generation
+        invalidateCacheIfNeeded(generation: generation)
         guard policyContext.canReadBytes(at: url) else { return nil }
         let key = cacheKey as NSString
         if let cached = cache.object(forKey: key) {
@@ -97,12 +99,21 @@ actor DecodedImagePipeline {
     }
 
     func preheat(_ requests: [DecodedImageRequest]) {
+        let generation = policyContext.generation
+        invalidateCacheIfNeeded(generation: generation)
         for request in requests {
+            guard policyContext.generation == generation, policyContext.canPreheatOriginal(at: request.url) else { continue }
             let key = request.cacheKey as NSString
             guard cache.object(forKey: key) == nil else { continue }
             guard inFlightTasks[request.cacheKey] == nil else { continue }
             _ = beginDecode(request: request, key: key)
         }
+    }
+
+    private func invalidateCacheIfNeeded(generation: Int) {
+        guard cacheGeneration != generation else { return }
+        cache.removeAllObjects()
+        cacheGeneration = generation
     }
 
     func removeCachedImage(for cacheKey: String) {
@@ -117,7 +128,7 @@ actor DecodedImagePipeline {
         let policy = policyContext
         let decoder = testingDecoder
         let task = Task.detached(priority: request.priority) {
-            guard policy.canReadBytes(at: request.url) else { return nil as NSImage? }
+            guard policy.generation == generation, policy.canReadBytes(at: request.url) else { return nil as NSImage? }
             if let decoder { return await decoder(request.url, request.maxPixelSize) }
             return Self.decodeImage(at: request.url, maxPixelSize: request.maxPixelSize, policy: policy)
         }
@@ -189,6 +200,7 @@ final class DecodedImageModel: ObservableObject {
     @Published private(set) var image: NSImage?
 
     private var currentRequestKey: String?
+    private var currentGeneration: Int?
     private var loadTask: Task<Void, Never>?
 
     deinit {
@@ -196,7 +208,9 @@ final class DecodedImageModel: ObservableObject {
     }
 
     func load(_ request: DecodedImageRequest) {
-        guard currentRequestKey != request.cacheKey || image == nil else { return }
+        let generation = ArchiveByteReadPolicyContext.shared.generation
+        guard currentRequestKey != request.cacheKey || currentGeneration != generation || image == nil else { return }
+        currentGeneration = generation
 
         currentRequestKey = request.cacheKey
         image = nil
@@ -209,7 +223,8 @@ final class DecodedImageModel: ObservableObject {
                 maxPixelSize: request.maxPixelSize,
                 priority: request.priority
             )
-            guard !Task.isCancelled, self.currentRequestKey == request.cacheKey else { return }
+            guard !Task.isCancelled, self.currentRequestKey == request.cacheKey,
+                  self.currentGeneration == generation, ArchiveByteReadPolicyContext.shared.generation == generation else { return }
             self.image = decoded
         }
     }

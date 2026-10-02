@@ -281,6 +281,12 @@ final class ArchiveByteReadPolicyContext: @unchecked Sendable {
         return policyGeneration
     }
 
+    // No filesystem access: cover admission must reject a stale context before validation.
+    func matchesArchive(root: URL, generation expected: Int) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return policyGeneration == expected && policy.archiveRoot == root.standardizedFileURL
+    }
+
     func update(settings: AppSettings) {
         lock.lock()
         policy = ArchiveByteReadPolicy(archiveRoot: settings.archiveRoot, machineRole: settings.archiveMachineRole)
