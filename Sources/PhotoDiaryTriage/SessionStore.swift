@@ -13,6 +13,9 @@ final class SessionStore: SessionPersisting {
         try AppDirectories.ensureExists(databaseURL.deletingLastPathComponent())
         try open()
         try migrate()
+        guard sqlite3_exec(db, "PRAGMA synchronous = FULL;", nil, nil, nil) == SQLITE_OK else {
+            throw sqliteError("Failed to configure durable session writes")
+        }
     }
 
     deinit {
@@ -40,7 +43,9 @@ final class SessionStore: SessionPersisting {
         """
 
         var statement: OpaquePointer?
-        sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+            throw sqliteError("Failed to prepare session query")
+        }
         defer { sqlite3_finalize(statement) }
 
         try bindText(session.id.uuidString, to: statement, index: 1)
@@ -61,6 +66,14 @@ final class SessionStore: SessionPersisting {
     }
 
     func loadSessions() throws -> [(ImportSession, [BurstGroup], [TimeCluster])] {
+        try readSessions(strict: false)
+    }
+
+    func loadBackupSnapshot() throws -> [(ImportSession, [BurstGroup], [TimeCluster])] {
+        try readSessions(strict: true)
+    }
+
+    private func readSessions(strict: Bool) throws -> [(ImportSession, [BurstGroup], [TimeCluster])] {
         let sql = """
         SELECT rowid, session_json, burst_groups_json, time_clusters_json
         FROM import_sessions
@@ -68,12 +81,16 @@ final class SessionStore: SessionPersisting {
         """
 
         var statement: OpaquePointer?
-        sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+            throw sqliteError("Failed to prepare session query")
+        }
         defer { sqlite3_finalize(statement) }
 
         var result: [(ImportSession, [BurstGroup], [TimeCluster])] = []
 
-        while sqlite3_step(statement) == SQLITE_ROW {
+        var step = sqlite3_step(statement)
+        while step == SQLITE_ROW {
+            defer { step = sqlite3_step(statement) }
             let rowID = sqlite3_column_int64(statement, 0)
             do {
                 guard let sessionBytes = sqlite3_column_blob(statement, 1) else {
@@ -90,13 +107,28 @@ final class SessionStore: SessionPersisting {
                 let clusters = try decoder.decode([TimeCluster].self, from: clusterData)
                 result.append((session, bursts, clusters))
             } catch {
+                if strict { throw error }
                 logger.error("Skipping corrupt persisted session row \(rowID, privacy: .public): \(error.localizedDescription, privacy: .public)")
                 continue
             }
         }
 
+        guard step == SQLITE_DONE else { throw sqliteError("Failed to read all saved sessions") }
         logger.debug("Loaded \(result.count) persisted sessions from SQLite")
         return result
+    }
+
+    func saveSessions(_ sessions: [(ImportSession, [BurstGroup], [TimeCluster])]) throws {
+        guard sqlite3_exec(db, "BEGIN IMMEDIATE TRANSACTION;", nil, nil, nil) == SQLITE_OK else {
+            throw sqliteError("Failed to begin membership save")
+        }
+        var committed = false
+        defer { if !committed { sqlite3_exec(db, "ROLLBACK;", nil, nil, nil) } }
+        for record in sessions { try save(session: record.0, bursts: record.1, clusters: record.2) }
+        guard sqlite3_exec(db, "COMMIT;", nil, nil, nil) == SQLITE_OK else {
+            throw sqliteError("Failed to complete membership save")
+        }
+        committed = true
     }
 
     func replaceAllSessions(with sessions: [(ImportSession, [BurstGroup], [TimeCluster])]) throws {

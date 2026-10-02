@@ -9,7 +9,7 @@ updated: 2026-10-02
 
 ## Current release
 
-Version **0.7.11, build 147** adds reviewed Google Photos delivery with resumable uploads, durable membership and explicit recovery. It also completes the independent reliability work on imports, canonical locations, historical triage, index-only Travel and on-demand local descriptions. All 350 automated tests pass; native and real-provider acceptance remain open.
+Version **0.7.12, build 148** adds complete app-state backups and recoverable restore, including recent edits, interrupted writes and empty-state recovery. All 384 automated tests pass across imports, canonical locations, historical triage, index-only Travel, local descriptions and reviewed Google Photos delivery. Native and real-provider acceptance remain open; [the requirements audit](planning/audit-walkfolio-completion-requirements.md) records the evidence.
 
 Copies are verified by SHA-256; interrupted imports reuse recorded destinations; cleanup checks every selected original and RAW companion before deleting a source. Existing Walk notes and membership survive appended imports, and metadata edits update canonical manifests.
 

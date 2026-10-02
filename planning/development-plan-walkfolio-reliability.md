@@ -3,7 +3,7 @@ title: Walkfolio development goals and acceptance tests
 status: active
 updated: 2026-10-02
 owner: Walkfolio
-release: 0.7.11
+release: 0.7.12
 source_records:
   - planning/dictated-idea-scope.md
   - CONTEXT.md
@@ -33,7 +33,7 @@ This plan reconciles the original dictated scope, the settled Walk/Trip model, t
 
 ## Development goals
 
-| Goal | Acceptance test | State after 0.7.11 |
+| Goal | Acceptance test | State after 0.7.12 |
 |---|---|---|
 | Keep original photos safe. | Corrupt an equal-size copy, remove a destination, alter source and destination together, or lose a RAW copy. Import/cleanup must reject the operation and retain the source. Backup and machine-role gates apply inside the service. | Automated regressions pass. |
 | Recover interrupted imports without duplicate copies. | Fail the second copy or a manifest write, restart from the original Photo Log and finish the recorded destinations. Changed selections, source paths or backup consent must not be restored silently. | Automated regressions pass; immutable plans and compact per-file checkpoints implemented. |
@@ -45,6 +45,7 @@ This plan reconciles the original dictated scope, the settled Walk/Trip model, t
 | Describe archived material on demand. | Inject an LM Studio service, describe one photo and a Walk/Trip, round-trip model/date provenance independently of human notes, then retry/cancel a historical batch without starting work during triage. | Implemented in 0.7.10. Photo/Walk/Trip dependency ordering, immutable revisions, active-only search, bounded coverage, cancellation, captured context, write/receipt recovery, stale input rejection, legacy records and thumbnail-only Travel pass. Native controls and real LM Studio inference remain unverified; the local server was unavailable. |
 | Deliver original-quality Google Photos albums reliably. | Against a test account, create one Trip album, verify media membership, interrupt/retry and avoid duplicate delivery. Store membership durably; represent previously synced material explicitly. | Implemented in 0.7.11. Reviewed Trip/Photo Log delivery, Desktop OAuth/PKCE, exact resumable byte streaming, unknown album reconciliation, membership and canonical receipt recovery, quota timing, cancellation, account context and Travel badges pass 29 new fixture cases. Live account authorisation and test-account delivery remain unverified. |
 | Process historical folders through normal triage. | Open a copied old folder, retain its keep-all starting stance, derive title/date hints, import verified copies into an existing/new Trip and recover manifests/index. Sources remain untouched during review. | Historical source actions, keep-all defaults, reload reconciliation, title/date hints, uncertain date provenance, reviewed Trip targets, byte-verified recognition, locked confirmed Copy retry through AppState and recorded archive-source cleanup pass. Native picker/date-review confirmation remains. |
+| Export complete app-state backups and recover interrupted restores. | Edit two saved sessions then export immediately; fail SQLite/settings/journal writes; reopen a prepared or committed restore; restore an empty backup and retry. | 34 regressions pass in 0.7.12: precise dates and legacy classification, strict reads, pending failures, atomic membership transfers, failed rollback guards, no RAM-only success, cleanup/editor/context races and deletion without resurrection. |
 | Preserve speed and usability. | Full selection/keyboard/compare tests continue passing. Measure large-session import recovery; queue visible thumbnails ahead of background work. Check the packaged app in the native interface without disturbing real source material. | Automated suite and bounded recovery benchmark pass. Native/OneDrive checks remain distinct. |
 
 ## Order of independent work
@@ -55,7 +56,8 @@ This plan reconciles the original dictated scope, the settled Walk/Trip model, t
 4. On-demand descriptions and recoverable historical batches are implemented in 0.7.10. The full suite passes 321 tests. Injected providers cover failures; real LM Studio quality and native controls remain distinct checks.
 5. Google Photos delivery is implemented in 0.7.11 with injectable transport, durable account-scoped membership, reviewed send and explicit reconciliation. The complete suite passes 350 tests.
 6. The integrated camera plus phone → two same-day Walks/Trip → locations/descriptions → rebuilt search/Map → fresh index-only Travel → verified mock album journey passes.
-7. Complete the consolidated native acceptance on return: exact release controls, copied historical/migration data, real OneDrive placeholders, a chosen LM Studio vision model and a disposable Google test-account delivery. No routine implementation decision is awaiting the user.
+7. The full-scope audit identified app-state backup gaps. Complete snapshots, recoverable two-store restoration and race guards pass 34 new cases in 0.7.12; full suite 384 tests.
+8. Complete the consolidated native acceptance on return: exact release controls, copied historical/migration data, real OneDrive placeholders, a chosen LM Studio vision model and a disposable Google test-account delivery. No routine implementation decision is awaiting the user.
 
 ## Evidence and limits
 
@@ -65,4 +67,8 @@ The automated tests use temporary archives and injected failures. They do not es
 
 ## Current acceptance boundary
 
-Walkfolio 0.7.11 build 147 is installed while closed, signed and executable-verified. Astra's final focused review is clear. The implementation and fixture journey are complete; the approved real-copy, native and provider acceptance conditions remain open. The consolidated return check uses the current release, and no answer watcher or automatic delivery runs.
+Walkfolio 0.7.12 build 148 is installed while closed, signed and executable-verified. It passes the full suite and Astra's final focused source review. The independent implementation and fixture journey are verified; the approved real-copy, native and provider acceptance conditions remain open. The consolidated return check uses the current release, and no answer watcher or automatic delivery runs.
+
+The [requirements audit](audit-walkfolio-completion-requirements.md) traces every work
+package to original decisions, current implementation, regression evidence and remaining
+acceptance. It records the old Map approval and the corrected default-Trip summaries.

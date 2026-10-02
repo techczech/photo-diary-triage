@@ -110,8 +110,8 @@ Introduce Walks and Trips as real model objects and break one-session-one-folder
 2. Walk-boundary proposals: reuse `GroupingService` day/time-cluster output to propose
    Walk splits of the selected items at commit time; UI to confirm/merge/split and name
    each Walk (grid-first, keyboard reachable; sheet must be closable).
-3. Commit targets: per Walk, default = its own new single-Walk Trip (month folder);
-   alternative = choose an existing Trip (scan year folders for `MM-MonthName-*` named
+3. Commit targets: per Walk, ordinary Sources default to the plain month Trip
+   (CONTEXT.md and ADR 0001); choose a new named or existing Trip (scan year folders for `MM-MonthName-*` named
    Trips + option to create a new named Trip). `ArchivePlanner` becomes per-Walk (one
    commit plan per Walk); `ImportCoordinator` writes one walk manifest + session log per
    Walk folder, plus a Trip manifest (`<TripFolderName>.md`) in named Trip folders

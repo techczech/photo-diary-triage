@@ -46,7 +46,7 @@ final class SessionLifecycleCoordinator {
         self.logger = logger
     }
 
-    func configurePersistence(settings: AppSettings) -> PersistenceConfiguration {
+    func configurePersistence(settings: AppSettings, existingSessionStore: SessionPersisting? = nil) -> PersistenceConfiguration {
         var startupAlert: AppStartupAlert?
 
         do {
@@ -62,7 +62,7 @@ final class SessionLifecycleCoordinator {
 
         let sessionStore: SessionPersisting
         do {
-            sessionStore = try SessionStore(databaseURL: supportRoot.appendingPathComponent("sessions.sqlite"))
+            sessionStore = try existingSessionStore ?? SessionStore(databaseURL: supportRoot.appendingPathComponent("sessions.sqlite"))
         } catch {
             logger.error("Failed to initialize session store: \(error.localizedDescription, privacy: .public)")
             sessionStore = InMemorySessionStore()

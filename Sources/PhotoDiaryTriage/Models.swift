@@ -730,6 +730,7 @@ struct ImportSession: Identifiable, Codable, Hashable, Sendable {
         case oneDrivePicturesRoot
         case archiveMachineRole
         case sessionKind
+        case sessionKindWasExplicit
         case status
         case mediaItems
         case sourceProvenances
@@ -750,7 +751,7 @@ struct ImportSession: Identifiable, Codable, Hashable, Sendable {
         archiveRoot = try container.decode(URL.self, forKey: .archiveRoot)
         oneDrivePicturesRoot = try container.decodeIfPresent(URL.self, forKey: .oneDrivePicturesRoot) ?? archiveRoot
         archiveMachineRole = try container.decodeIfPresent(ArchiveMachineRole.self, forKey: .archiveMachineRole) ?? .mainArchive
-        sessionKindWasExplicit = container.contains(.sessionKind)
+        sessionKindWasExplicit = try container.decodeIfPresent(Bool.self, forKey: .sessionKindWasExplicit) ?? container.contains(.sessionKind)
         sessionKind = try container.decodeIfPresent(SessionKind.self, forKey: .sessionKind) ?? .inbox
         status = try container.decodeIfPresent(String.self, forKey: .status) ?? "draft"
         mediaItems = try container.decodeIfPresent([MediaItem].self, forKey: .mediaItems) ?? []
@@ -773,6 +774,7 @@ struct ImportSession: Identifiable, Codable, Hashable, Sendable {
         try container.encode(oneDrivePicturesRoot, forKey: .oneDrivePicturesRoot)
         try container.encode(archiveMachineRole, forKey: .archiveMachineRole)
         try container.encode(sessionKind, forKey: .sessionKind)
+        try container.encode(sessionKindWasExplicit, forKey: .sessionKindWasExplicit)
         try container.encode(status, forKey: .status)
         try container.encode(mediaItems, forKey: .mediaItems)
         try container.encode(sourceProvenances, forKey: .sourceProvenances)
