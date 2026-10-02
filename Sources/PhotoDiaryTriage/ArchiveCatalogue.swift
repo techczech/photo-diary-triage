@@ -80,10 +80,12 @@ struct ArchiveBrowseEntry: Identifiable, Hashable, Sendable {
     let title: String
     let startDate: Date?
     let endDate: Date?
-    let location: String?
+    var location: String?
     let photoCount: Int
     let walkCount: Int
     let coverThumbnailPath: String?
+    var tripID: UUID? = nil
+    var locationLabelOverride: String? = nil
 
     var sortDate: Date {
         endDate ?? startDate ?? .distantPast
@@ -264,12 +266,14 @@ struct ArchiveCatalogueBuilder {
                 title: row.title,
                 startDate: parseDate(row.date) ?? dates.first,
                 endDate: dates.last ?? parseDate(row.date),
-                location: row.location?.nonEmpty ?? mostFrequent(walks.compactMap(\.location)),
+                location: row.tripLocationOverride?.nonEmpty ?? row.location?.nonEmpty ?? TripLocationProjection.derivedLabel(from: walks),
                 photoCount: tripPhotos.count,
                 walkCount: walks.count,
                 coverThumbnailPath: row.thumbnailPath
                     ?? walks.compactMap(\.coverThumbnailPath).first
-                    ?? tripPhotos.compactMap(\.thumbnailPath).first
+                    ?? tripPhotos.compactMap(\.thumbnailPath).first,
+                tripID: row.tripID,
+                locationLabelOverride: row.tripLocationOverride
             )
         }
 

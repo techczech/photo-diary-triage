@@ -1222,6 +1222,32 @@ final class AppState: ObservableObject {
         refreshArchiveBrowserState()
     }
 
+    @Published var isSavingTripLocation = false
+
+    func tripLocationTarget(for trip: ArchiveBrowseEntry) -> TripLocationTarget? {
+        guard trip.kind == .trip else { return nil }
+        return TripLocationTarget(relativePath: trip.archiveRelativePath, tripID: trip.tripID, expectedOverride: trip.locationLabelOverride)
+    }
+
+    func saveTripLocationLabel(_ label: String?, target: TripLocationTarget, archiveRoot root: URL) async {
+        guard !isSavingTripLocation, root.standardizedFileURL == settings.archiveRoot.standardizedFileURL else { return }
+        isSavingTripLocation = true
+        defer { isSavingTripLocation = false }
+        let policy = archiveIndexWritePolicy
+        do {
+            let result = try await ArchiveIndexMutationQueue.shared.saveTripLocation(target: target, label: label, archiveRoot: root, policy: policy)
+            guard root.standardizedFileURL == settings.archiveRoot.standardizedFileURL else { return }
+            archiveCatalogueLoadTask?.cancel(); archiveCatalogueLoadGeneration &+= 1
+            archiveCatalogue = TripLocationProjection.applying(result.manifest, to: archiveCatalogue)
+            refreshArchiveBrowserState()
+            if let error = result.indexError { statusMessage = "Saved Trip label, but Archive Index refresh failed: \(error)" }
+            else {
+                statusMessage = result.manifest.locationLabelOverride == nil ? "Restored the Trip location derived from its Walks." : "Saved Trip location label."
+                if !policy.canWriteIndex { statusMessage += " The current view is updated; the main Mac publishes the index after rebuilding." }
+            }
+        } catch { statusMessage = "Trip label save failed: \(error.localizedDescription)" }
+    }
+
     func selectArchiveWalk(_ walkID: String) {
         guard currentArchiveWalks.contains(where: { $0.id == walkID }) else { return }
         selectedArchiveWalkID = walkID

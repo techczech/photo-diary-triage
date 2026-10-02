@@ -9,7 +9,7 @@ updated: 2026-10-02
 
 ## Current release
 
-Version **0.7.8, build 144** adds historical-folder triage and preserves confirmed Copy plans through interruption and reopening to the archive recovery and index-only browsing improvements. Copies are verified by SHA-256; interrupted imports reuse recorded destinations; cleanup checks every selected original and RAW companion before deleting a source. Existing Walk notes and membership survive appended imports, and metadata edits update canonical manifests.
+Version **0.7.9, build 145** adds canonical Trip location labels to historical-folder triage and confirmed Copy recovery to the archive recovery and index-only browsing improvements. Copies are verified by SHA-256; interrupted imports reuse recorded destinations; cleanup checks every selected original and RAW companion before deleting a source. Existing Walk notes and membership survive appended imports, and metadata edits update canonical manifests.
 
 Archive moves and layout migration record their plans before changing files. Canonical paths are rewritten without changing human notes or source provenance. Historical folders and hidden material are retained. The derived index publishes complete generations and detects incomplete synchronisation.
 
@@ -23,6 +23,8 @@ In a canonical Archive Walk's inline Map, clear the photo selection to edit the 
 
 Historical folders have a dedicated source action. New items start kept; saved exclusions, RAW choices and identities survive reload. Titles and complete/month/year folder dates supply proposals. Valid camera dates take precedence unless you choose folder dates; original camera values and uncertain date precision remain in the records. A confirmed Copy plan is saved before copying and becomes read-only until recovery finishes. Recognised previous copies require matching bytes and never acquire cleanup permission. Historical folders inside the Archive can be cleaned only after their own completed recorded import into a separate destination, with backup confirmation and complete verification; uncopied files and source folders remain.
 
+In a recognised Trip, **Edit label** overrides its derived Walk location label; **Use Walk locations** clears the override. Default month and named Trips retain stable identities, manual member order, notes and unknown sections through appends, moves and migration. Legacy migration plans the final Trip records before moving Walks, rejects occupied canonical destinations and resumes interrupted transfers. Travel edits update tiny canonical records and the current view; future index-only views await main publication.
+
 ## Working features
 
 - Review a source SSD in a grid, using mouse and keyboard selection, bursts, time clusters, preview and comparison.
@@ -35,7 +37,7 @@ Historical folders have a dedicated source action. New items start kept; saved e
 
 ## Completion goals
 
-The approved 1.0 scope remains open. Trip location-label overrides, on-demand LM Studio descriptions, Google Photos delivery, still require work. The description integration is not yet implemented.
+The approved 1.0 scope remains open. On-demand LM Studio descriptions and Google Photos delivery still require work. The description integration is not yet implemented.
 
 The [development goals and acceptance tests](planning/development-plan-walkfolio-reliability.md) explain the intended complete workflow, current evidence and the order of independent development. [CONTEXT.md](CONTEXT.md), [PRD.md](PRD.md) and [DESIGN.md](DESIGN.md) hold the domain and product rules.
 

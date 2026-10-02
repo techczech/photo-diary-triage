@@ -220,7 +220,8 @@ struct TripManifestStore {
         title: String?,
         oneDrivePicturesRoot: URL,
         adding additions: [TripManifestMemberUpdate],
-        removing removals: [String] = []
+        removing removals: [String] = [],
+        replacing replacements: [String: String] = [:]
     ) throws -> TripManifest {
         try AppDirectories.ensureExists(folder, fileManager: fileManager)
         let url = tripManifestURL(for: folder)
@@ -230,11 +231,12 @@ struct TripManifestStore {
         }
         let existing = loadTripManifest(folder: folder, oneDrivePicturesRoot: oneDrivePicturesRoot)
         let removalSet = Set(removals)
-        var members = existing.memberWalkFolderPaths.filter { !removalSet.contains($0) }
+        let knownMembers = original == nil ? try canonicalWalkMembers(in: folder, oneDrivePicturesRoot: oneDrivePicturesRoot).map(\.relativePath) : existing.memberWalkFolderPaths
+        var members = knownMembers.filter { !removalSet.contains($0) }.map { replacements[$0] ?? $0 }
         for addition in additions where !members.contains(addition.relativePath) {
             members.append(addition.relativePath)
         }
-        members.sort()
+        if original == nil { members.sort() }
 
         let compactDates = try members.compactMap { member -> Date? in
             if let date = additions.first(where: { $0.relativePath == member })?.date { return date }
@@ -245,35 +247,16 @@ struct TripManifestStore {
         }
         let manifest = TripManifest(
             tripID: existing.tripID,
-            title: title?.nonEmpty ?? existing.title.nonEmpty ?? folder.lastPathComponent,
+            title: original != nil ? existing.title : (title?.nonEmpty ?? existing.title.nonEmpty ?? folder.lastPathComponent),
             folder: folder,
             folderRelativePath: ArchiveRelativePathResolver(root: oneDrivePicturesRoot).relativePath(for: folder),
             startDate: compactDates.min(),
             endDate: compactDates.max(),
-            memberWalkFolderPaths: members
+            memberWalkFolderPaths: members,
+            locationLabelOverride: existing.locationLabelOverride
         )
         var rendered = renderer.renderTripManifest(manifest)
-        if var original {
-            guard let start = original.range(of: "## Member Walks\n"), let newStart = rendered.range(of: "## Member Walks\n") else {
-                throw ArchiveFileVerification.failure("The existing Trip membership could not be read.")
-            }
-            let after = original[start.upperBound...]
-            let end = after.range(of: "\n## ")?.lowerBound ?? original.endIndex
-            let replacement = String(rendered[newStart.upperBound...])
-            original.replaceSubrange(start.upperBound..<end, with: replacement + (end == original.endIndex ? "" : "\n"))
-            for (label, value) in [("Start date", manifest.startDate), ("End date", manifest.endDate)] {
-                let prefix = "- \(label):"
-                var lines = original.components(separatedBy: "\n")
-                if let index = lines.firstIndex(where: { $0.hasPrefix(prefix) }) {
-                    if let value { lines[index] = "\(prefix) \(DateFormatting.iso8601.string(from: value))" }
-                    else { lines.remove(at: index) }
-                } else if let value, let member = lines.firstIndex(of: "## Member Walks") {
-                    lines.insert("\(prefix) \(DateFormatting.iso8601.string(from: value))", at: max(0, member - 1))
-                }
-                original = lines.joined(separator: "\n")
-            }
-            rendered = original
-        }
+        if let original { rendered = try TripManifestText.settingMembership(manifest, in: original, renderer: renderer) }
         try rendered.write(to: url, atomically: true, encoding: .utf8)
         return manifest
     }
@@ -313,8 +296,35 @@ struct TripManifestStore {
             folderRelativePath: ArchiveRelativePathResolver(root: oneDrivePicturesRoot).relativePath(for: folder),
             startDate: startDate,
             endDate: endDate,
-            memberWalkFolderPaths: members
+            memberWalkFolderPaths: members,
+            locationLabelOverride: TripManifestText.headerValue("Location label override", in: text)?.nonEmpty
         )
+    }
+
+    func canonicalWalkMembers(in folder: URL, oneDrivePicturesRoot: URL) throws -> [TripManifestMemberUpdate] {
+        let resolver = ArchiveRelativePathResolver(root: oneDrivePicturesRoot)
+        var members: [TripManifestMemberUpdate] = []
+        for child in try fileManager.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey], options: [.skipsHiddenFiles]) {
+            let values = try child.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            guard values.isDirectory == true, values.isSymbolicLink != true else { continue }
+            let manifestURL = child.appendingPathComponent(child.lastPathComponent + ".md")
+            guard fileManager.fileExists(atPath: manifestURL.path) else { continue }
+            let file = try manifestURL.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+            guard file.isRegularFile == true, file.isSymbolicLink != true else { throw ArchiveFileVerification.failure("A canonical Walk manifest must be a regular file.") }
+            let text = try String(contentsOf: manifestURL, encoding: .utf8)
+            guard firstBacktickedValue(after: "Session ID:", in: text).flatMap(UUID.init(uuidString:)) != nil,
+                  let absolute = firstBacktickedValue(after: "Archive folder:", in: text),
+                  let relative = resolver.relativePath(for: child) else { continue }
+            // A relocated Archive retains its canonical relative path; an unrelated copied header does not establish a Walk.
+            if let recorded = firstBacktickedValue(after: "OneDrive Pictures relative folder:", in: text) {
+                guard recorded == relative else { continue }
+            } else {
+                guard URL(fileURLWithPath: absolute).resolvingSymlinksInPath().standardizedFileURL == child.resolvingSymlinksInPath().standardizedFileURL else { continue }
+            }
+            members.append(TripManifestMemberUpdate(relativePath: relative,
+                date: firstValue(after: "Walk date:", in: text).flatMap { DateFormatting.iso8601.date(from: $0) }))
+        }
+        return members.sorted { $0.relativePath < $1.relativePath }
     }
 
     private func tripManifestURL(for folder: URL) -> URL {
@@ -358,6 +368,8 @@ struct WalkMover {
         let root = archiveRoot ?? walkFolder.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let mutationLock = try ArchiveMutationLock(archiveRoot: root)
         defer { withExtendedLifetime(mutationLock) {} }
+        try ArchiveLayoutMigrator.assertNoPending(overlapping: oldTripFolder, archiveRoot: root)
+        try ArchiveLayoutMigrator.assertNoPending(overlapping: tripFolder, archiveRoot: root)
         let operation = ArchiveFolderOperation(archiveRoot: root, fileManager: fileManager)
         let previous = try operation.recorded(for: walkFolder)
         let destination: URL
@@ -385,11 +397,11 @@ struct WalkMover {
         let record = try operation.prepare(source: walkFolder, destination: destination, spec: spec, names: names)
         _ = try operation.execute(record)
         let date = try ArchiveIndexStore(fileManager: fileManager).loadWalkManifest(folder: destination, archiveRoot: root)?.walkDate
-        if let oldWalkRelative, TripLibraryScanner.isNamedTripFolder(oldTripFolder) {
+        if let oldWalkRelative {
             _ = try tripManifestStore.updateNamedTripManifest(folder: oldTripFolder, title: nil,
                 oneDrivePicturesRoot: oneDrivePicturesRoot, adding: [], removing: [oldWalkRelative])
         }
-        if let newWalkRelative, TripLibraryScanner.isNamedTripFolder(tripFolder) {
+        if let newWalkRelative {
             _ = try tripManifestStore.updateNamedTripManifest(folder: tripFolder, title: nil,
                 oneDrivePicturesRoot: oneDrivePicturesRoot,
                 adding: [TripManifestMemberUpdate(relativePath: newWalkRelative, date: date)])

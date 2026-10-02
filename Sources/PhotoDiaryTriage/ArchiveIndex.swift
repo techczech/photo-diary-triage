@@ -46,6 +46,8 @@ struct ArchiveIndexEntry: Codable, Hashable, Sendable {
     var sessionID: UUID?
     var walkID: UUID?
     var captureDateEvidence: CaptureDateEvidence?
+    var tripID: UUID?
+    var tripLocationOverride: String?
 
     init(
         kind: ArchiveIndexEntryKind,
@@ -80,7 +82,9 @@ struct ArchiveIndexEntry: Codable, Hashable, Sendable {
         locationOverride: PhotoLocationOverride? = nil,
         sessionID: UUID? = nil,
         walkID: UUID? = nil,
-        captureDateEvidence: CaptureDateEvidence? = nil
+        captureDateEvidence: CaptureDateEvidence? = nil,
+        tripID: UUID? = nil,
+        tripLocationOverride: String? = nil
     ) {
         self.kind = kind
         self.year = year
@@ -115,6 +119,8 @@ struct ArchiveIndexEntry: Codable, Hashable, Sendable {
         self.sessionID = sessionID
         self.walkID = walkID
         self.captureDateEvidence = captureDateEvidence
+        self.tripID = tripID
+        self.tripLocationOverride = tripLocationOverride
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -151,6 +157,8 @@ struct ArchiveIndexEntry: Codable, Hashable, Sendable {
         case sessionID = "session_id"
         case walkID = "walk_id"
         case captureDateEvidence = "capture_date_evidence"
+        case tripID = "trip_id"
+        case tripLocationOverride = "trip_location_override"
     }
 }
 
@@ -616,6 +624,7 @@ struct ArchiveIndexStore {
         let mutationLock = try ArchiveMutationLock(archiveRoot: archiveRoot)
         defer { withExtendedLifetime(mutationLock) {} }
         try ArchiveLocationEditor.assertNoPending(overlapping: archiveRoot, archiveRoot: archiveRoot)
+        try ArchiveLayoutMigrator.assertNoPending(overlapping: archiveRoot, archiveRoot: archiveRoot)
         let entries = try entriesFromArchive(archiveRoot: archiveRoot)
         try replaceIndex(with: entries, archiveRoot: archiveRoot)
         let years = Array(Set(entries.map(\.year))).sorted()
@@ -722,7 +731,10 @@ struct ArchiveIndexStore {
         removingWalkPaths: Set<String> = [], tripFolders: [URL] = []) throws {
         let mutationLock = try ArchiveMutationLock(archiveRoot: archiveRoot)
         defer { withExtendedLifetime(mutationLock) {} }
-        for folder in walkFolders { try ArchiveLocationEditor.assertNoPending(overlapping: folder, archiveRoot: archiveRoot) }
+        for folder in walkFolders + tripFolders {
+            try ArchiveLocationEditor.assertNoPending(overlapping: folder, archiveRoot: archiveRoot)
+            try ArchiveLayoutMigrator.assertNoPending(overlapping: folder, archiveRoot: archiveRoot)
+        }
         var entries: [ArchiveIndexEntry] = []
         for walkFolder in walkFolders {
             entries.append(contentsOf: try entriesForWalkFolder(walkFolder, archiveRoot: archiveRoot))
@@ -749,7 +761,10 @@ struct ArchiveIndexStore {
 
     func entryForTripFolder(_ tripFolder: URL, archiveRoot: URL) -> ArchiveIndexEntry {
         let tripManifest = TripManifestStore(fileManager: fileManager).loadTripManifest(folder: tripFolder, oneDrivePicturesRoot: archiveRoot)
-        return entry(from: tripManifest, archiveRoot: archiveRoot)
+        var result = entry(from: tripManifest, archiveRoot: archiveRoot)
+        let url = tripFolder.appendingPathComponent(tripFolder.lastPathComponent + ".md")
+        if !fileManager.fileExists(atPath: url.path) { result.tripID = nil; result.tripLocationOverride = nil }
+        return result
     }
 
     private func replaceIndex(with entries: [ArchiveIndexEntry], archiveRoot: URL) throws {
@@ -801,7 +816,10 @@ struct ArchiveIndexStore {
             let folder = manifestURL.deletingLastPathComponent()
             let text = try String(contentsOf: manifestURL, encoding: .utf8)
 
-            if text.contains("Trip ID:") {
+            if let identity = TripManifestText.headerValue("Trip ID", in: text) {
+                guard UUID(uuidString: identity.trimmingCharacters(in: CharacterSet(charactersIn: "`"))) != nil else {
+                    throw ArchiveFileVerification.failure("A canonical Trip has an invalid identity. The existing index has been retained.")
+                }
                 let manifest = TripManifestStore(fileManager: fileManager)
                     .loadTripManifest(folder: folder, oneDrivePicturesRoot: archiveRoot)
                 let tripEntry = entry(from: manifest, archiveRoot: archiveRoot)
@@ -920,13 +938,13 @@ struct ArchiveIndexStore {
             archiveRelativePath: relativePath,
             date: manifest.startDate.map(DateFormatting.iso8601.string(from:)),
             title: manifest.title,
-            location: nil,
+            location: manifest.locationLabelOverride,
             exifSummary: nil,
             aiDescription: "",
             notes: nil,
             thumbnailPath: nil,
             walkPath: nil,
-            tripPath: relativePath
+            tripPath: relativePath, tripID: manifest.tripID, tripLocationOverride: manifest.locationLabelOverride
         )
     }
 
@@ -1270,6 +1288,16 @@ actor ArchiveIndexMutationQueue {
 
     init(store: ArchiveIndexStore = ArchiveIndexStore()) {
         self.store = store
+    }
+
+    func saveTripLocation(target: TripLocationTarget, label: String?, archiveRoot: URL, policy: ArchiveIndexWritePolicy) throws -> TripLocationSaveResult {
+        let manifest = try TripLocationEditor().save(target: target, label: label, archiveRoot: archiveRoot)
+        var indexError: String?
+        if policy.canWriteIndex {
+            do { try store.replaceWalkFolders([], archiveRoot: archiveRoot, tripFolders: [manifest.folder]) }
+            catch { indexError = error.localizedDescription }
+        }
+        return TripLocationSaveResult(manifest: manifest, indexError: indexError)
     }
 
     func saveLocation(target: ArchiveLocationTarget, name: String, coordinate: ArchiveCoordinate?, archiveRoot: URL) throws -> ArchiveLocationSaveResult {

@@ -370,6 +370,9 @@ struct ArchiveTripPaneView: View {
                     Text("\(snapshot.walks.count) Walk\(snapshot.walks.count == 1 ? "" : "s")")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    if let trip = snapshot.selectedTrip {
+                        TripLocationLabelView(appState: appState, trip: trip)
+                    }
                 }
                 Spacer()
             }
@@ -673,5 +676,42 @@ private enum ArchiveDateText {
             return full.string(from: start)
         }
         return "\(full.string(from: start)) – \(full.string(from: end))"
+    }
+}
+
+private struct TripLocationLabelView: View {
+    @ObservedObject var appState: AppState
+    let trip: ArchiveBrowseEntry
+    @State private var label = ""
+    @State private var isEditing = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Label(trip.location ?? "Location not set", systemImage: "mappin")
+                    .font(.caption).foregroundStyle(.secondary)
+                Text(trip.locationLabelOverride == nil ? "From Walks" : "Custom label")
+                    .font(.caption2).foregroundStyle(.secondary)
+                Button(isEditing ? "Cancel" : "Edit label") { isEditing.toggle(); label = trip.locationLabelOverride ?? "" }
+                    .buttonStyle(.borderless).disabled(appState.isSavingTripLocation)
+            }
+            if isEditing {
+                HStack {
+                    TextField("Trip location label", text: $label).textFieldStyle(.roundedBorder).frame(maxWidth: 280)
+                    Button("Save") { save(label) }.disabled(appState.isSavingTripLocation || label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    Button("Use Walk locations") { save(nil) }.disabled(appState.isSavingTripLocation || trip.locationLabelOverride == nil)
+                    if appState.isSavingTripLocation { ProgressView().controlSize(.small) }
+                }
+                Text("A label for this Trip. Walk and photo coordinates stay as recorded.").font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+        .onChange(of: trip.archiveRelativePath) { _, _ in isEditing = false; label = trip.locationLabelOverride ?? "" }
+        .onChange(of: trip.locationLabelOverride) { _, value in label = value ?? "" }
+    }
+
+    private func save(_ value: String?) {
+        guard let target = appState.tripLocationTarget(for: trip) else { return }
+        let root = appState.settings.archiveRoot
+        Task { await appState.saveTripLocationLabel(value, target: target, archiveRoot: root) }
     }
 }

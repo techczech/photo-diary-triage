@@ -82,9 +82,11 @@ struct ImportCoordinator: ImportCoordinating {
                 throw ArchiveFileVerification.failure("An unfinished import has different source files or selections. Resume the original photo log before starting another copy.")
             }
             record = saved
+            for plan in record.plans { try ArchiveLayoutMigrator.assertNoPending(overlapping: plan.tripFolder, archiveRoot: session.archiveRoot) }
             try validateHistoricalPlans(record.plans, session: session)
         } else {
             let plans = archivePlanner.planWalks(for: session)
+            for plan in plans { try ArchiveLayoutMigrator.assertNoPending(overlapping: plan.tripFolder, archiveRoot: session.archiveRoot) }
             try validateHistoricalPlans(plans, session: session)
             record = ImportRecoveryRecord(session: session, plans: plans, originalSession: session)
             try recovery.save(record, kind: "import", sessionID: session.id)
@@ -205,12 +207,10 @@ struct ImportCoordinator: ImportCoordinating {
                 archiveFolder: plan.archiveFolder, archiveRoot: session.archiveRoot, events: walkEvents)
             walkManifestResults.append(walkManifest)
             allFileManifests.append(contentsOf: fileManifests)
-            if plan.tripTarget.kind != .defaultMonth {
-                let key = plan.tripFolder.path
-                var entry = namedTripMembers[key] ?? (plan, [])
-                entry.walks.append(walkManifest)
-                namedTripMembers[key] = entry
-            }
+            let key = plan.tripFolder.path
+            var entry = namedTripMembers[key] ?? (plan, [])
+            entry.walks.append(walkManifest)
+            namedTripMembers[key] = entry
         }
 
         let manifestedIDs = Set(allFileManifests.map(\.mediaItemID))
