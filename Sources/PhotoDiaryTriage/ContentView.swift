@@ -58,6 +58,7 @@ struct ContentView: View {
         .toolbar {
             mainToolbar
         }
+
         .overlay {
             if !compareState.snapshot.itemIDs.isEmpty {
                 CompareSheet(
@@ -213,6 +214,7 @@ struct ContentView: View {
             }
         }
         if appState.workspaceMode == .archiveView {
+            ToolbarItem { ArchiveDescriptionControls(appState: appState) }
             ToolbarItem {
                 TextField("Search Archive", text: Binding(
                     get: { archiveBrowserState.snapshot.searchQuery },

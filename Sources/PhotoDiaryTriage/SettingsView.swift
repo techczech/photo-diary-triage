@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var appState: AppState
+    @State private var showLocalDescriptionQueue = false
 
     var body: some View {
         TabView {
@@ -161,6 +162,24 @@ struct SettingsView: View {
             }
 
             Form {
+                Section("LM Studio") {
+                    TextField("Base URL", text: Binding(get: { appState.settings.lmStudioConfiguration.baseURL }, set: { appState.setLMStudio(baseURL: $0) }))
+                    TextField("Model identifier", text: Binding(get: { appState.settings.lmStudioConfiguration.model }, set: { appState.setLMStudio(model: $0) }))
+                    if !appState.lmStudioModels.isEmpty {
+                        Picker("Available model", selection: Binding(get: { appState.settings.lmStudioConfiguration.model }, set: { appState.setLMStudio(model: $0) })) {
+                            Text("Choose a model").tag("")
+                            ForEach(appState.lmStudioModels, id: \.self) { Text($0).tag($0) }
+                        }
+                    }
+                    Button(appState.isRefreshingLMStudioModels ? "Refreshing…" : "Refresh models") { Task { await appState.refreshLMStudioModels() } }.disabled(appState.isRefreshingLMStudioModels)
+                    Text("Start LM Studio's local server and choose a vision-capable model for photographs. Describe runs only when requested in Archive; summaries use recorded child descriptions. Results retain model/date provenance separately from your notes.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text("Travel descriptions use prepared thumbnails; originals are never downloaded for this action.").font(.caption).foregroundStyle(.secondary)
+                    Button("Description queue…") { Task { await appState.loadDescriptionQueue(show: false); showLocalDescriptionQueue = true } }
+                }
+            }.formStyle(.grouped).tabItem { Label("Local AI", systemImage: "text.bubble") }
+
+            Form {
                 Section("Backup") {
                     Text("Export and restore saved settings and session memory.")
                         .foregroundStyle(.secondary)
@@ -181,6 +200,7 @@ struct SettingsView: View {
                 Label("Backup", systemImage: "externaldrive.badge.timemachine")
             }
         }
+        .sheet(isPresented: $showLocalDescriptionQueue) { DescriptionQueueView(appState: appState, onClose: { showLocalDescriptionQueue = false }) }
         .scenePadding()
         .frame(width: 620, height: 430)
     }

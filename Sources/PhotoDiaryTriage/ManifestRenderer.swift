@@ -66,7 +66,8 @@ struct ManifestRenderer {
             }
         }
 
-        return lines.joined(separator: "\n")
+        let text = lines.joined(separator: "\n")
+        return (try? manifest.descriptions?.setting(in: text)) ?? text
     }
 
     func renderTripManifest(_ manifest: TripManifest) -> String {
@@ -98,7 +99,8 @@ struct ManifestRenderer {
                 lines.append("- `\(path)`")
             }
         }
-        return lines.joined(separator: "\n")
+        let text = lines.joined(separator: "\n")
+        return (try? manifest.descriptions?.setting(in: text)) ?? text
     }
 
     func renderFileManifest(_ manifest: FileManifest) -> String {
@@ -163,7 +165,8 @@ struct ManifestRenderer {
         lines.append("---")
         lines.append("")
         lines.append(manifest.notes.nonEmpty ?? "_No notes provided._")
-        return lines.joined(separator: "\n")
+        let text = lines.joined(separator: "\n")
+        return (try? manifest.descriptions?.setting(in: text)) ?? text
     }
 
     func renderLog(_ events: [SessionLogEvent]) -> String {

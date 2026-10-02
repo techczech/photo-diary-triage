@@ -3,7 +3,7 @@ title: Walkfolio development goals and acceptance tests
 status: active
 updated: 2026-10-02
 owner: Walkfolio
-release: 0.7.9
+release: 0.7.10
 source_records:
   - planning/dictated-idea-scope.md
   - CONTEXT.md
@@ -33,7 +33,7 @@ This plan reconciles the original dictated scope, the settled Walk/Trip model, t
 
 ## Development goals
 
-| Goal | Acceptance test | State after 0.7.9 |
+| Goal | Acceptance test | State after 0.7.10 |
 |---|---|---|
 | Keep original photos safe. | Corrupt an equal-size copy, remove a destination, alter source and destination together, or lose a RAW copy. Import/cleanup must reject the operation and retain the source. Backup and machine-role gates apply inside the service. | Automated regressions pass. |
 | Recover interrupted imports without duplicate copies. | Fail the second copy or a manifest write, restart from the original Photo Log and finish the recorded destinations. Changed selections, source paths or backup consent must not be restored silently. | Automated regressions pass; immutable plans and compact per-file checkpoints implemented. |
@@ -42,7 +42,7 @@ This plan reconciles the original dictated scope, the settled Walk/Trip model, t
 | Publish a complete derived index. | Fail a new generation write, corrupt its pointer or remove one synchronised year shard. The previous index remains intact, full rebuild repairs the pointer, and incomplete synchronisation is reported. Delayed thumbnail work must not overwrite later metadata. | Automated regressions pass. Generations include expected shard hashes. |
 | Browse the whole archive on a travel Mac. | Copy only `_index` and thumbnails to a fresh archive root; browse Trips and historical folders, open their grids and search without manifests, originals or folder enumeration. Missing thumbnails produce a placeholder. | Automated fresh-root workflow passes with only the pinned index. Historical folders, RAW groups, crop families, search and prepared previews work without original-folder enumeration. Routine travel browsing denies original preheat/thumbnail generation. Full viewing requires explicit per-path consent, including resident originals; revoked decodes and timed-out downloads cannot grant access. |
 | Use meaningful archive locations. | Walk coordinates survive reconstruction; pin/GPS precedence and photo/cluster overrides survive relaunch. An archive-wide Map opens the correct Walk entirely from index records. | Archive-wide clustered Walk Map, pin/GPS precedence, pair validation, centroid edge cases and index-only navigation pass regressions. Contextual canonical Walk/photo/shared-group editing, raw-GPS preservation, clear fallback, recoverable multi-file saves, move guards and travel projection pass regressions. Trip label overrides, stable default/named identities, clear/fallback, append/move member preservation, mixed-layout migration recovery and index-only reconstruction pass in 0.7.9. |
-| Describe archived material on demand. | Inject an LM Studio service, describe one photo and a Walk/Trip, round-trip model/date provenance independently of human notes, then retry/cancel a historical batch without starting work during triage. | Description provider is not yet implemented. Client, queue, canonical provenance and UI remain. |
+| Describe archived material on demand. | Inject an LM Studio service, describe one photo and a Walk/Trip, round-trip model/date provenance independently of human notes, then retry/cancel a historical batch without starting work during triage. | Implemented in 0.7.10. Photo/Walk/Trip dependency ordering, immutable revisions, active-only search, bounded coverage, cancellation, captured context, write/receipt recovery, stale input rejection, legacy records and thumbnail-only Travel pass. Native controls and real LM Studio inference remain unverified; the local server was unavailable. |
 | Deliver original-quality Google Photos albums reliably. | Against a test account, create one Trip album, verify media membership, interrupt/retry and avoid duplicate delivery. Store membership durably; represent previously synced material explicitly. | OAuth/upload/membership implementation remains. Live account authorisation and external delivery require a separate concrete validation step. |
 | Process historical folders through normal triage. | Open a copied old folder, retain its keep-all starting stance, derive title/date hints, import verified copies into an existing/new Trip and recover manifests/index. Sources remain untouched during review. | Historical source actions, keep-all defaults, reload reconciliation, title/date hints, uncertain date provenance, reviewed Trip targets, byte-verified recognition, locked confirmed Copy retry through AppState and recorded archive-source cleanup pass. Native picker/date-review confirmation remains. |
 | Preserve speed and usability. | Full selection/keyboard/compare tests continue passing. Measure large-session import recovery; queue visible thumbnails ahead of background work. Check the packaged app in the native interface without disturbing real source material. | Automated suite and bounded recovery benchmark pass. Native/OneDrive checks remain distinct. |
@@ -52,7 +52,7 @@ This plan reconciles the original dictated scope, the settled Walk/Trip model, t
 1. Finish and verify the 0.7.4 safety foundation; package the actual signed app and keep the release reproducible.
 2. Index-only travel catalogue/grid/search and routine preview tests pass in 0.7.5. Rebuild the main index to include historical rows; shared machines need this release or later.
 3. Archive-wide Map is implemented in 0.7.6. Contextual canonical photo/shared-group location overrides are implemented in 0.7.7. Historical metadata defaults and the actual Copy/reopen/retry route pass in 0.7.8. Trip labels and canonical reconstruction pass in 0.7.9.
-4. Implement on-demand descriptions and a recoverable batch queue. Use mocked service responses before a local LM Studio check.
+4. On-demand descriptions and recoverable historical batches are implemented in 0.7.10. The full suite passes 321 tests. Injected providers cover failures; real LM Studio quality and native controls remain distinct checks.
 5. Implement Google Photos delivery with injectable transport and durable membership. Prepare a concrete test-account flow before any account or delivery gate.
 6. Verify the complete journey: camera plus phone → Walks/Trips → locations/descriptions → search → travel browsing → verified album delivery.
 
