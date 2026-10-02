@@ -6,19 +6,21 @@ import QuickLookThumbnailing
 final class PreviewStore: PreviewCaching {
     private let cacheRoot: URL
     private let fileManager: FileManager
+    private let policyContext: ArchiveByteReadPolicyContext
     private let logger: Logger
 
-    init(cacheRoot: URL, fileManager: FileManager = .default, logger: Logger = AppLogger.previewStore) throws {
+    init(cacheRoot: URL, fileManager: FileManager = .default, logger: Logger = AppLogger.previewStore, policyContext: ArchiveByteReadPolicyContext = .shared) throws {
         self.cacheRoot = cacheRoot
         self.fileManager = fileManager
         self.logger = logger
+        self.policyContext = policyContext
         try AppDirectories.ensureExists(cacheRoot, fileManager: fileManager)
     }
 
     var isPersistentCacheAvailable: Bool { true }
 
     func cachedThumbnailURL(for item: MediaItem) -> URL {
-        if let archiveThumbnail = ArchiveByteReadPolicyContext.shared.indexThumbnailURLIfAvailable(for: item.sourceURL) {
+        if let archiveThumbnail = policyContext.indexThumbnailURLIfAvailable(for: item.sourceURL) {
             return archiveThumbnail
         }
         return cacheRoot.appendingPathComponent("\(item.thumbnailCacheKey).png")
@@ -34,8 +36,8 @@ final class PreviewStore: PreviewCaching {
             return true
         }
 
-        guard ArchiveByteReadPolicyContext.shared.canGenerateImplicitThumbnail(at: item.sourceURL) else {
-            logger.error("Blocked implicit thumbnail read for online-only Archive photo \(item.sourceURL.path, privacy: .public)")
+        guard policyContext.canGenerateImplicitThumbnail(at: item.sourceURL) else {
+            logger.error("Original thumbnail generation is unavailable during travel browsing for \(item.sourceURL.path, privacy: .public)")
             return false
         }
 

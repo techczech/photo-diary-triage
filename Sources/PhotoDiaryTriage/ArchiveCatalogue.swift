@@ -178,14 +178,14 @@ struct ArchiveCatalogueBuilder {
         self.decoder = JSONDecoder()
     }
 
-    func build(archiveRoot: URL, supportedExtensions: Set<String>) throws -> ArchiveCatalogue {
+    func build(archiveRoot: URL, supportedExtensions: Set<String>, machineRole: ArchiveMachineRole = .mainArchive) throws -> ArchiveCatalogue {
         let indexedEntries = try readIndexEntries(archiveRoot: archiveRoot)
         let walkRows = indexedEntries.filter { $0.kind == .walk }
         let photoRows = indexedEntries.filter { $0.kind == .photo }
         let indexedWalkTripPaths = Set(walkRows.compactMap(\.tripPath))
         let tripRows = indexedEntries.filter { row in
             guard row.kind == .trip else { return false }
-            return indexedWalkTripPaths.contains(row.archiveRelativePath)
+            return machineRole == .travel || indexedWalkTripPaths.contains(row.archiveRelativePath)
                 || hasTripManifest(relativePath: row.archiveRelativePath, archiveRoot: archiveRoot)
         }
         let recognisedRoots = Set(tripRows.map(\.archiveRelativePath))
@@ -251,11 +251,18 @@ struct ArchiveCatalogueBuilder {
             )
         }
 
-        browseEntries.append(contentsOf: try unorganisedFolders(
-            archiveRoot: archiveRoot,
-            recognisedRoots: recognisedRoots,
-            supportedExtensions: supportedExtensions
-        ))
+        if machineRole == .travel {
+            browseEntries.append(contentsOf: indexedEntries.filter { $0.kind == .unorganisedFolder }.map { row in
+                ArchiveBrowseEntry(id: "folder|\(row.archiveRelativePath)", kind: .unorganisedFolder, year: row.year,
+                    archiveRelativePath: row.archiveRelativePath, title: row.title,
+                    startDate: parseDate(row.date), endDate: parseDate(row.endDate), location: row.location,
+                    photoCount: row.photoCount ?? photos.filter { $0.archiveRelativePath.hasPrefix(row.archiveRelativePath + "/") }.count,
+                    walkCount: 0, coverThumbnailPath: row.thumbnailPath)
+            })
+        } else {
+            browseEntries.append(contentsOf: try discoverHistoricalFolders(archiveRoot: archiveRoot,
+                recognisedRoots: recognisedRoots, supportedExtensions: supportedExtensions).entries)
+        }
         browseEntries.sort(by: archiveEntryOrder)
 
         return ArchiveCatalogue(
@@ -286,17 +293,20 @@ struct ArchiveCatalogueBuilder {
         return entries
     }
 
-    private func unorganisedFolders(
+    func discoverHistoricalFolders(
         archiveRoot: URL,
         recognisedRoots: Set<String>,
         supportedExtensions: Set<String>
-    ) throws -> [ArchiveBrowseEntry] {
-        let resourceKeys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .contentModificationDateKey]
+    ) throws -> (entries: [ArchiveBrowseEntry], photos: [String: [URL]]) {
+        _ = try fileManager.contentsOfDirectory(at: archiveRoot, includingPropertiesForKeys: nil)
+        var enumerationError: Error?
+        let resourceKeys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .contentModificationDateKey]
         guard let enumerator = fileManager.enumerator(
             at: archiveRoot,
             includingPropertiesForKeys: Array(resourceKeys),
-            options: [.skipsHiddenFiles]
-        ) else { return [] }
+            options: [.skipsHiddenFiles],
+            errorHandler: { _, error in enumerationError = error; return false }
+        ) else { throw ArchiveFileVerification.failure("Could not enumerate historical archive folders.") }
 
         struct FolderAccumulator {
             var year: String
@@ -319,6 +329,10 @@ struct ArchiveCatalogueBuilder {
             }
 
             let values = try url.resourceValues(forKeys: resourceKeys)
+            if values.isSymbolicLink == true {
+                if values.isDirectory == true { enumerator.skipDescendants() }
+                continue
+            }
             if values.isDirectory == true {
                 if recognisedRoots.contains(relativePath) {
                     enumerator.skipDescendants()
@@ -350,7 +364,8 @@ struct ArchiveCatalogueBuilder {
             folders[path] = accumulator
         }
 
-        return folders.values.map { folder in
+        if let enumerationError { throw enumerationError }
+        let entries = folders.values.map { folder in
             let sortedDates = folder.dates.sorted()
             let cover = folder.photoURLs.sorted { $0.path < $1.path }.compactMap { photoURL -> String? in
                 let thumbnailURL = ArchiveIndexStore.thumbnailURL(for: photoURL, archiveRoot: archiveRoot)
@@ -369,12 +384,13 @@ struct ArchiveCatalogueBuilder {
                 startDate: sortedDates.first,
                 endDate: sortedDates.last,
                 location: folder.path.replacingOccurrences(of: "/", with: " / "),
-                photoCount: folder.photoURLs.count,
+                photoCount: Set(folder.photoURLs.map(ArchiveIndexStore.historicalGroupingKey)).count,
                 walkCount: 0,
                 coverThumbnailPath: cover
             )
         }
         .sorted(by: archiveEntryOrder)
+        return (entries, Dictionary(uniqueKeysWithValues: folders.values.map { ($0.path, $0.photoURLs) }))
     }
 
     private func archiveEntryOrder(_ lhs: ArchiveBrowseEntry, _ rhs: ArchiveBrowseEntry) -> Bool {

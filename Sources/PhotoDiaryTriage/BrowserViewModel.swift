@@ -137,7 +137,9 @@ final class BrowserViewModel {
     func loadArchiveMedia(for node: BrowserNode, settings: AppSettings) throws -> ArchiveLoadResult? {
         guard (node.children?.isEmpty ?? true), let folderURL = node.folderURL, node.kind == .archiveWalkFolder else { return nil }
 
-        let items = try scanner.scanFolder(folderURL, settings: settings, metadataMode: .fileAttributesOnly)
+        let items = settings.archiveMachineRole == .travel
+            ? try ArchiveIndexMediaLoader(fileManager: fileManager).load(folder: folderURL, settings: settings)
+            : try scanner.scanFolder(folderURL, settings: settings, metadataMode: .fileAttributesOnly)
         logger.log("Loaded \(items.count) archived items from \(folderURL.path, privacy: .public)")
         return ArchiveLoadResult(
             nodeID: node.id,

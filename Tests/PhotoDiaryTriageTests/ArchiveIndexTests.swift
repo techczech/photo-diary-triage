@@ -106,8 +106,12 @@ import Testing
 
     let result = try ArchiveIndexStore().rebuildIndex(archiveRoot: archiveRoot)
 
-    #expect(result.entryCount == 0)
-    #expect(result.years.isEmpty)
+    #expect(result.entryCount == 2)
+    #expect(result.years == ["2013"])
+    let rows = try ArchiveCatalogueBuilder().readIndexEntries(archiveRoot: archiveRoot)
+    #expect(rows.filter { $0.kind == .trip || $0.kind == .walk }.isEmpty)
+    #expect(rows.contains { $0.kind == .unorganisedFolder && $0.archiveRelativePath == "2013/05-May" })
+    #expect(rows.contains { $0.kind == .photo && $0.archiveRelativePath.hasSuffix("IMG_0001.jpg") })
     #expect(FileManager.default.fileExists(
         atPath: ArchiveIndexStore.indexRoot(for: archiveRoot)
             .appendingPathComponent("index-2013.jsonl")
