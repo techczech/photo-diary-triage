@@ -52,18 +52,12 @@ struct SettingsView: View {
                         .textSelection(.enabled)
 
                     HStack {
-                        Button("Use Archive Root") {
-                            appState.setOneDrivePicturesRoot(appState.settings.archiveRoot)
-                        }
+                        RegisteredWindowControl(id: .useArchiveForOneDrivePictures, title: "Use Archive Root", appState: appState)
 
-                        Button("Choose OneDrive Pictures Root") {
-                            appState.pickOneDrivePicturesRoot()
-                        }
+                        RegisteredWindowControl(id: .chooseOneDrivePictures, title: "Choose OneDrive Pictures Root", appState: appState)
                     }
 
-                    Button("Import Synced Photo Log State") {
-                        appState.importOneDrivePhotoLogState()
-                    }
+                    RegisteredWindowControl(id: .importSyncedPhotoLogs, title: "Import Synced Photo Log State", appState: appState)
                 }
             }
             .formStyle(.grouped)
@@ -172,7 +166,7 @@ struct SettingsView: View {
                             ForEach(appState.lmStudioModels, id: \.self) { Text($0).tag($0) }
                         }
                     }
-                    Button(appState.isRefreshingLMStudioModels ? "Refreshing…" : "Refresh models") { Task { await appState.refreshLMStudioModels() } }.disabled(appState.isRefreshingLMStudioModels)
+                    RegisteredWindowControl(id: .refreshDescriptionModels, title: appState.isRefreshingLMStudioModels ? "Refreshing…" : "Refresh models", appState: appState).disabled(appState.isRefreshingLMStudioModels)
                     Text("Start LM Studio's local server and choose a vision-capable model for photographs. Describe runs only when requested in Archive; summaries use recorded child descriptions. Results retain model/date provenance separately from your notes.")
                         .font(.caption).foregroundStyle(.secondary)
                     Text("Travel descriptions use prepared thumbnails; originals are never downloaded for this action.").font(.caption).foregroundStyle(.secondary)

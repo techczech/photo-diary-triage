@@ -164,8 +164,8 @@ struct ArchiveMainPaneView: View {
                         ContentUnavailableView {
                             Label("Search unavailable", systemImage: "exclamationmark.triangle")
                         } description: { Text(error) } actions: {
-                            Button("Retry search") { appState.updateArchiveSearch(snapshot.searchQuery) }
-                            Button("Refresh Archive") { appState.reloadArchiveCatalogue() }
+                            RegisteredWindowControl(id: .retryArchiveSearch, title: "Retry search", appState: appState)
+                            RegisteredWindowControl(id: .refreshArchive, title: "Refresh Archive", appState: appState)
                         }
                     } else if let error = snapshot.errorMessage, snapshot.entries.isEmpty {
                         ContentUnavailableView(
@@ -700,32 +700,39 @@ private struct TripLocationLabelView: View {
     @State private var isEditing = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Label(trip.location ?? "Location not set", systemImage: "mappin")
-                    .font(.caption).foregroundStyle(.secondary)
-                Text(trip.locationLabelOverride == nil ? "From Walks" : "Custom label")
-                    .font(.caption2).foregroundStyle(.secondary)
-                Button(isEditing ? "Cancel" : "Edit label") { isEditing.toggle(); label = trip.locationLabelOverride ?? "" }
-                    .buttonStyle(.borderless).disabled(appState.isSavingTripLocation)
-            }
-            if isEditing {
+        let target = appState.tripLocationTarget(for: trip), root = appState.settings.archiveRoot, draft = label
+        CommandLocalSurface(coordinator: appState.commandCoordinator, scope: .tripLabel,
+            contextKey: tripLabelCommandContextKey(root: root, trip: trip, draft: draft, isEditing: isEditing),
+            actions: [
+                .editTripLabel: .init(enabled: !isEditing && !appState.isSavingTripLocation, run: { isEditing = true; label = trip.locationLabelOverride ?? "" }),
+                .cancelTripLabelEdit: .init(enabled: isEditing && !appState.isSavingTripLocation, run: { isEditing = false; label = trip.locationLabelOverride ?? "" }),
+                .saveTripLabel: .init(enabled: isEditing && target != nil && !appState.isSavingTripLocation && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                    run: { if let target { Task { await appState.saveTripLocationLabel(draft, target: target, archiveRoot: root) } } }),
+                .useWalkLocations: .init(enabled: isEditing && target != nil && !appState.isSavingTripLocation && trip.locationLabelOverride != nil,
+                    run: { if let target { Task { await appState.saveTripLocationLabel(nil, target: target, archiveRoot: root) } } })
+            ]) { commands in
+            VStack(alignment: .leading, spacing: 6) {
                 HStack {
-                    TextField("Trip location label", text: $label).textFieldStyle(.roundedBorder).frame(maxWidth: 280)
-                    Button("Save") { save(label) }.disabled(appState.isSavingTripLocation || label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    Button("Use Walk locations") { save(nil) }.disabled(appState.isSavingTripLocation || trip.locationLabelOverride == nil)
-                    if appState.isSavingTripLocation { ProgressView().controlSize(.small) }
+                    Label(trip.location ?? "Location not set", systemImage: "mappin")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text(trip.locationLabelOverride == nil ? "From Walks" : "Custom label")
+                        .font(.caption2).foregroundStyle(.secondary)
+                    Button(isEditing ? "Cancel" : "Edit label") { commands.run(isEditing ? .cancelTripLabelEdit : .editTripLabel) }
+                        .buttonStyle(.borderless).disabled(appState.isSavingTripLocation)
                 }
-                Text("A label for this Trip. Walk and photo coordinates stay as recorded.").font(.caption2).foregroundStyle(.secondary)
+                if isEditing {
+                    HStack {
+                        TextField("Trip location label", text: $label).textFieldStyle(.roundedBorder).frame(maxWidth: 280)
+                        Button("Save") { commands.run(.saveTripLabel) }.disabled(appState.isSavingTripLocation || label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        Button("Use Walk locations") { commands.run(.useWalkLocations) }.disabled(appState.isSavingTripLocation || trip.locationLabelOverride == nil)
+                        if appState.isSavingTripLocation { ProgressView().controlSize(.small) }
+                    }
+                    Text("A label for this Trip. Walk and photo coordinates stay as recorded.").font(.caption2).foregroundStyle(.secondary)
+                }
             }
         }
         .onChange(of: trip.archiveRelativePath) { _, _ in isEditing = false; label = trip.locationLabelOverride ?? "" }
+        .onChange(of: trip.tripID) { _, _ in isEditing = false; label = trip.locationLabelOverride ?? "" }
         .onChange(of: trip.locationLabelOverride) { _, value in label = value ?? "" }
-    }
-
-    private func save(_ value: String?) {
-        guard let target = appState.tripLocationTarget(for: trip) else { return }
-        let root = appState.settings.archiveRoot
-        Task { await appState.saveTripLocationLabel(value, target: target, archiveRoot: root) }
     }
 }

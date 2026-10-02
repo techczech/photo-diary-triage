@@ -162,14 +162,10 @@ struct SourceWorkspaceStatusPane: View {
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 6) {
-                Button("Open Default Source") {
-                    appState.openDefaultSourceWorkspace()
-                }
+                RegisteredWindowControl(id: .openDefaultSource, title: "Open Default Source", appState: appState)
                 .disabled(!canOpenDefaultSourceWorkspace)
 
-                Button("Reload Source") {
-                    appState.reloadCurrentSourceWorkspace()
-                }
+                RegisteredWindowControl(id: .reloadSource, title: "Reload Source", appState: appState)
                 .disabled(!canReloadSourceWorkspace)
             }
             .buttonStyle(.bordered)
@@ -192,16 +188,20 @@ struct WalkDetailsPaneView: View {
     var body: some View {
         if isEnabled {
             DisclosureGroup(isExpanded: $isExpanded) {
-                VStack(alignment: .leading, spacing: 8) {
-                    TextField("Photo log title", text: $walkTitle)
-                    TextField("Location", text: $walkLocation)
-                    TextField("Notes", text: $walkNotes, axis: .vertical)
-                        .lineLimit(4...8)
-                    Button("Save Log Details") {
-                        appState.updateWalkMetadata(title: walkTitle, location: walkLocation, notes: walkNotes)
+                if let sessionID = appState.currentSession?.id {
+                    LogDetailsCommandSurface(appState: appState, sessionID: sessionID,
+                        title: walkTitle, location: walkLocation, notes: walkNotes) { commands in
+                        VStack(alignment: .leading, spacing: 8) {
+                            TextField("Photo log title", text: $walkTitle)
+                            TextField("Location", text: $walkLocation)
+                            TextField("Notes", text: $walkNotes, axis: .vertical)
+                                .lineLimit(4...8)
+                            Button("Save Log Details") { commands.run(.saveLogDetails) }
+                                .commandShortcutHint([.saveLogDetails], appState: appState, scope: .logDetailsEditor, help: "Save the edited details for this Log.")
+                        }
+                        .padding(.top, 8)
                     }
                 }
-                .padding(.top, 8)
             } label: {
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
                     Text(PhotoLogStatusPolicy.detailsSheetTitle)

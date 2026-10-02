@@ -58,44 +58,60 @@ struct MapPanelView: View {
     // MARK: Assignment bar (C.2)
 
     private var assignmentBar: some View {
-        HStack(spacing: 8) {
-            Text(appState.locationAssignmentContext?.title ?? "Location")
-                .font(.caption)
-            TextField(appState.locationAssignmentContext?.isMixed == true ? "Mixed locations — assign a new pin" : "Location (e.g. Blenheim Park)", text: $locationName)
-                .textFieldStyle(.roundedBorder)
-                .frame(minWidth: 180, maxWidth: 320)
-                .onSubmit { saveLocation() }
+        let context = appState.locationAssignmentContext
+        let name = locationName, latitude = pinCoordinate?.latitude, longitude = pinCoordinate?.longitude
+        let centre = mapCenter
+        return CommandLocalSurface(coordinator: appState.commandCoordinator, scope: .location,
+            contextKey: localCommandContextKey([context?.key ?? "", name, String(describing: latitude), String(describing: longitude),
+                String(describing: centre?.latitude), String(describing: centre?.longitude)]),
+            actions: [
+                .saveLocation: .init(enabled: context != nil && hasUnsavedChanges && !appState.isSavingLocation,
+                    run: { Task { await appState.saveContextLocation(name: name, latitude: latitude, longitude: longitude, context: context) } }),
+                .clearLocation: .init(enabled: context != nil && walkHasSavedLocation && !appState.isSavingLocation,
+                    run: { locationName = ""; pinCoordinate = nil; Task { await appState.saveContextLocation(name: "", latitude: nil, longitude: nil, context: context) } }),
+                .retryLocationSave: .init(enabled: appState.canRetryArchiveLocationSave && !appState.isSavingLocation,
+                    run: { Task { await appState.retryArchiveLocationSave(context: context) } }),
+                .pinLocationAtMapCentre: .init(enabled: centre != nil && !appState.isSavingLocation, run: { pinCoordinate = centre })
+            ]) { commands in
+            HStack(spacing: 8) {
+                Text(appState.locationAssignmentContext?.title ?? "Location")
+                    .font(.caption)
+                TextField(appState.locationAssignmentContext?.isMixed == true ? "Mixed locations — assign a new pin" : "Location (e.g. Blenheim Park)", text: $locationName)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(minWidth: 180, maxWidth: 320)
 
-            Button {
-                pinCoordinate = mapCenter
-            } label: {
-                Label("Pin to map centre", systemImage: "mappin")
-            }
-            .controlSize(.small)
-            .disabled(mapCenter == nil)
-            .help("Drop the location pin at the centre of the map (or click directly on the map)")
-
-            Button("Save Location") { saveLocation() }
-                .buttonStyle(.borderedProminent)
+                Button {
+                    commands.run(.pinLocationAtMapCentre)
+                } label: {
+                    Label("Pin to map centre", systemImage: "mappin")
+                }
                 .controlSize(.small)
-                .disabled(!hasUnsavedChanges || appState.isSavingLocation)
+                .disabled(mapCenter == nil)
+                .help("Drop the location pin at the centre of the map (or click directly on the map)")
 
-            if walkHasSavedLocation {
-                Button("Clear") { clearLocation() }
+                Button("Save Location") { commands.run(.saveLocation) }
+                    .buttonStyle(.borderedProminent)
                     .controlSize(.small)
-            }
+                    .disabled(!hasUnsavedChanges || appState.isSavingLocation)
+                    .commandShortcutHint([.saveLocation], appState: appState, scope: .locationEditor, help: "Save this location assignment.")
 
-            if appState.canRetryArchiveLocationSave {
-                Button("Retry unfinished save") { Task { await appState.retryArchiveLocationSave() } }
-                    .controlSize(.small)
-            }
-            Spacer(minLength: 0)
+                if walkHasSavedLocation {
+                    Button("Clear") { commands.run(.clearLocation) }
+                        .controlSize(.small)
+                }
 
-            Text(pinStatus)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+                if appState.canRetryArchiveLocationSave {
+                    Button("Retry unfinished save") { commands.run(.retryLocationSave) }
+                        .controlSize(.small)
+                }
+                Spacer(minLength: 0)
+
+                Text(pinStatus)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .disabled(appState.isSavingLocation)
         }
-        .disabled(appState.isSavingLocation)
     }
 
     private var pinStatus: String {
@@ -173,19 +189,6 @@ struct MapPanelView: View {
         } else {
             cameraPosition = .automatic
         }
-    }
-
-    private func saveLocation() {
-        let context = appState.locationAssignmentContext
-        let name = locationName, latitude = pinCoordinate?.latitude, longitude = pinCoordinate?.longitude
-        Task { await appState.saveContextLocation(name: name, latitude: latitude, longitude: longitude, context: context) }
-    }
-
-    private func clearLocation() {
-        locationName = ""
-        pinCoordinate = nil
-        let context = appState.locationAssignmentContext
-        Task { await appState.saveContextLocation(name: "", latitude: nil, longitude: nil, context: context) }
     }
 
     private func coordinatesEqual(_ lhs: CLLocationCoordinate2D?, _ rhs: CLLocationCoordinate2D?) -> Bool {

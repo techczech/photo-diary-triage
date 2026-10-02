@@ -187,8 +187,8 @@ struct ContentView: View {
             .help("\(sidebarState.snapshot.isVisible ? "Hide" : "Show") sidebar")
 
             Menu {
-                Button("Camera/source folder…") { appState.pickSourceFolder() }
-                Button("Historical folder…") { appState.pickSourceFolder(historical: true) }
+                RegisteredWindowControl(id: .chooseSource, title: "Camera/source folder…", appState: appState)
+                RegisteredWindowControl(id: .chooseHistoricalSource, title: "Historical folder…", appState: appState)
             } label: {
                 Label("Source", systemImage: "externaldrive.badge.plus")
             }
@@ -202,7 +202,7 @@ struct ContentView: View {
 
         if appState.workspaceMode == .cameraTriage && appState.hasHistoricalSources {
             ToolbarItem {
-                Button(appState.prefersHistoricalFolderDates ? "Prefer camera dates" : "Use folder dates") { appState.toggleHistoricalFolderDates() }
+                Button(appState.prefersHistoricalFolderDates ? "Prefer camera dates" : "Use folder dates") { appState.commandCoordinator.executeWindowControl(.toggleHistoricalDateSource) }
                     .help(appState.historicalDateSummary)
             }
         }

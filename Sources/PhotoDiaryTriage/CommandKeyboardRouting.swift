@@ -20,6 +20,7 @@ final class CommandWindowRegistration {
 final class CommandSurfaceLease {
     weak var view: NSView?
     weak var registeredWindow: NSWindow?
+    var firstOwnerRegistrationID: UUID?
     let token: UUID
     var scope: AppCommandScope
     var active: Bool
@@ -64,7 +65,9 @@ final class CommandInvocation {
     let fingerprint: CommandSelectionFingerprint
     let text: String?
     let selection: NSRange?
-    init(window: NSWindow, scope: AppCommandScope, lease: CommandSurfaceLease?, state: AppState, windowRegistrationID: UUID) {
+    let requiresFocusedOwner: Bool
+    init(window: NSWindow, scope: AppCommandScope, lease: CommandSurfaceLease?, state: AppState, windowRegistrationID: UUID, requiresFocusedOwner: Bool = true) {
+        self.requiresFocusedOwner = requiresFocusedOwner
         self.windowRegistrationID = windowRegistrationID
         self.window = window; self.scope = scope; self.lease = lease; self.leaseToken = lease?.token; self.fingerprint = .init(state)
         responder = window.firstResponder
@@ -141,6 +144,9 @@ final class CommandKeyboardCoordinator: ObservableObject {
     func register(window: NSWindow, token: UUID, scope: AppCommandScope, openSettings: (() -> Void)? = nil, findAction: (() -> Void)? = nil, searchAction: (() -> Void)? = nil) {
         let instanceID = windows[token].flatMap { $0.window === window ? $0.instanceID : nil } ?? UUID()
         windows[token] = .init(window: window, token: token, scope: scope, openSettings: openSettings, findAction: findAction, searchAction: searchAction, instanceID: instanceID)
+        for lease in leases.values where lease.firstOwnerRegistrationID == nil {
+            if let attached = lease.view?.window { lease.firstOwnerRegistrationID = registration(for: attached)?.instanceID }
+        }
         if monitor == nil {
             monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
                 guard let self, let window = event.window, self.handle(event, in: window) else { return event }
@@ -161,6 +167,7 @@ final class CommandKeyboardCoordinator: ObservableObject {
     func register(_ lease: CommandSurfaceLease) {
         if leases[lease.token] !== lease { leaseOrder &+= 1; leaseOrders[lease.token] = leaseOrder }
         lease.registeredWindow = lease.view?.window
+        if lease.firstOwnerRegistrationID == nil, let window = lease.registeredWindow { lease.firstOwnerRegistrationID = registration(for: window)?.instanceID }
         leases[lease.token] = lease
     }
     func unregisterSurface(_ token: UUID) {
@@ -175,14 +182,25 @@ final class CommandKeyboardCoordinator: ObservableObject {
         }
         return nil
     }
+    private func focusedView(in window: NSWindow) -> NSView? {
+        if let editor = window.firstResponder as? NSTextView, editor.isFieldEditor,
+           let control = editor.delegate as? NSControl, control.window === window { return control }
+        return window.firstResponder as? NSView
+    }
+    private func modalLease(in window: NSWindow) -> CommandSurfaceLease? {
+        leases.values.filter { $0.view?.window === window && $0.view?.isHiddenOrHasHiddenAncestor == false && $0.active && [.compare, .preview, .form, .information].contains($0.scope) }
+            .max { leaseOrders[$0.token, default: 0] < leaseOrders[$1.token, default: 0] }
+    }
     private func activeLease(in window: NSWindow) -> CommandSurfaceLease? {
-        let visible = leases.values.filter { $0.view?.window === window }.sorted { leaseOrders[$0.token, default: 0] > leaseOrders[$1.token, default: 0] }
+        let visible = leases.values.filter { $0.view?.window === window && $0.view?.isHiddenOrHasHiddenAncestor == false }.sorted { leaseOrders[$0.token, default: 0] > leaseOrders[$1.token, default: 0] }
         // Overlays own their window even during the interval before initial focus.
-        if let overlay = visible.first(where: { $0.active && ($0.scope == .compare || $0.scope == .preview || $0.scope == .form || $0.scope == .information) }) { return overlay }
-        return visible.first { lease in
-            guard let view = lease.view, let focused = window.firstResponder as? NSView else { return false }
-            return (lease.active || lease.scope == .review) && (focused === view || focused.isDescendant(of: view))
+        if let overlay = modalLease(in: window) { return overlay }
+        var candidate = focusedView(in: window)
+        while let view = candidate {
+            if let lease = visible.first(where: { $0.view === view && ($0.active || $0.scope == .review) }) { return lease }
+            candidate = view.superview
         }
+        return nil
     }
     func invocation(in window: NSWindow) -> CommandInvocation? {
         guard let state = appState, let registration = registration(for: window) else { return nil }
@@ -192,22 +210,26 @@ final class CommandKeyboardCoordinator: ObservableObject {
             scope = panels.session(in: window)?.capturing != nil ? .shortcutCapture : registration.scope
         }
         else if let text = window.firstResponder as? NSTextView, text.isEditable || text.isSelectable {
-            scope = lease?.scope == .form ? .formEditor : (lease?.scope == .information ? .information : .editor)
+            scope = (lease?.scope ?? registration.scope).textEditingScope
         }
         else if window.sheetParent != nil && lease == nil { scope = .editor }
         else { scope = lease?.scope ?? registration.scope }
-        return .init(window: window, scope: scope, lease: scope == .editor ? nil : lease, state: state, windowRegistrationID: registration.instanceID)
+        return .init(window: window, scope: scope, lease: scope == .editor || scope == .settingsEditor ? nil : lease, state: state, windowRegistrationID: registration.instanceID)
     }
     func isCurrent(_ invocation: CommandInvocation) -> Bool {
         guard let state = appState, let window = invocation.window, registration(for: window)?.instanceID == invocation.windowRegistrationID,
               invocation.fingerprint == .init(state) else { return false }
         guard window.attachedSheet == nil else { return false }
+        if let modal = modalLease(in: window), invocation.lease !== modal { return false }
         if let token = invocation.leaseToken {
-            guard let lease = invocation.lease, leases[token] === lease, (lease.active || lease.scope == .review), lease.view?.window === window,
-                  activeLease(in: window) === lease else { return false }
+            guard let lease = invocation.lease, leases[token] === lease, (lease.active || lease.scope == .review), lease.view?.window === window, lease.view?.isHiddenOrHasHiddenAncestor == false,
+                  (!invocation.requiresFocusedOwner || activeLease(in: window) === lease) else { return false }
         }
-        if invocation.scope == .editor || invocation.scope == .formEditor {
+        if invocation.scope.isTextEditing {
             guard window.firstResponder === invocation.responder else { return false }
+            if let editor = window.firstResponder as? NSTextView {
+                guard editor.string == invocation.text, editor.selectedRange() == invocation.selection else { return false }
+            }
             if let control = invocation.fieldControl, let editor = window.firstResponder as? NSTextView {
                 guard editor.delegate as AnyObject? === control, control.window === window else { return false }
             }
@@ -223,7 +245,7 @@ final class CommandKeyboardCoordinator: ObservableObject {
         if id == .rebindCommand || [.palettePrevious, .paletteNext, .paletteRun, .closeCommandPanel, .cancelShortcutCapture].contains(id) {
             return invocation.window.flatMap { panels.session(in: $0) } != nil ? nil : "Open the command palette first."
         }
-        if [.confirmSheet, .confirmAndOpenSheet, .confirmGoogleDelivery].contains(id),
+        if definition.commitsDraft,
            let editor = invocation.window?.firstResponder as? NSTextView, editor.hasMarkedText() { return "Finish composing the text before confirming this form." }
         if id == .toggleInspector, registration(for: invocation.window!)?.scope != .main { return "The Inspector belongs to the main Walkfolio window." }
         if id == .find { return registration(for: invocation.window!)?.findAction != nil ? nil : "Find is available in the main Walkfolio view." }
@@ -245,7 +267,7 @@ final class CommandKeyboardCoordinator: ObservableObject {
         // last window's pane flag, determines which selection this command uses.
         if captured.scope == .review { state.activePane = .media; state.reviewGridHasFocus = true }
         else if captured.scope == .sourceSidebar { state.activePane = .sidebar }
-        let invocation = CommandInvocation(window: window, scope: captured.scope, lease: captured.lease, state: state, windowRegistrationID: captured.windowRegistrationID)
+        let invocation = CommandInvocation(window: window, scope: captured.scope, lease: captured.lease, state: state, windowRegistrationID: captured.windowRegistrationID, requiresFocusedOwner: captured.requiresFocusedOwner)
         guard unavailableReason(id, invocation: invocation) == nil else { return false }
         let previous = executingWindow; executingWindow = window; defer { executingWindow = previous }
         switch id {
@@ -273,6 +295,20 @@ final class CommandKeyboardCoordinator: ObservableObject {
     func execute(_ id: AppCommandID, in window: NSWindow? = NSApp?.keyWindow) -> Bool {
         execute(id, invocation: window.flatMap { invocation(in: $0) })
     }
+    @discardableResult
+    func executeWindowControl(_ id: AppCommandID, in requested: NSWindow? = NSApp?.keyWindow) -> Bool {
+        guard let window = requested, let state = appState, let owner = registration(for: window),
+              owner.scope == .main || owner.scope == .settings, window.attachedSheet == nil else { return false }
+        // Clicking an app-window control explicitly invokes that window's action,
+        // even when a text field was the first responder. Local target actions use
+        // their own captured surface capability instead of this window route.
+        let current = invocation(in: window)
+        if let current, AppCommandRegistry.definition(id).scopes.contains(current.scope) {
+            return execute(id, invocation: current)
+        }
+        return execute(id, invocation: CommandInvocation(window: window, scope: owner.scope, lease: nil, state: state, windowRegistrationID: owner.instanceID))
+    }
+
     @discardableResult
     func handle(_ event: NSEvent, in window: NSWindow) -> Bool {
         guard event.type == .keyDown, registration(for: window) != nil else { return false }
