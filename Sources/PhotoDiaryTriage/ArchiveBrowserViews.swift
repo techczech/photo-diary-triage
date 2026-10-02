@@ -159,6 +159,9 @@ struct ArchiveMainPaneView: View {
                             appState.setArchiveYearFilter(nil)
                         }
                     }
+                } else if snapshot.viewMode == .map {
+                    ArchiveMapView(snapshot: snapshot.map, openWalk: appState.openArchiveMapWalk,
+                        openFolder: appState.openArchiveMapFolder)
                 } else if snapshot.viewMode == .timeline {
                     archiveTimeline(snapshot)
                 } else {
@@ -226,9 +229,10 @@ struct ArchiveMainPaneView: View {
             )) {
                 Label("Timeline", systemImage: "list.bullet").tag(ArchiveBrowseViewMode.timeline)
                 Label("Contact Sheet", systemImage: "square.grid.2x2").tag(ArchiveBrowseViewMode.contactSheet)
+                Label("Map", systemImage: "map").tag(ArchiveBrowseViewMode.map)
             }
             .pickerStyle(.segmented)
-            .frame(width: 270)
+            .frame(width: 340)
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 14)
@@ -630,7 +634,8 @@ private struct ArchiveCoverView: View {
         Group {
             if showPreview,
                let thumbnailPath,
-               let image = NSImage(contentsOf: archiveRoot.appendingPathComponent(thumbnailPath)) {
+               let url = ArchiveIndexStore.validatedThumbnailURL(relativePath: thumbnailPath, archiveRoot: archiveRoot),
+               let image = NSImage(contentsOf: url) {
                 Image(nsImage: image)
                     .resizable()
                     .scaledToFill()

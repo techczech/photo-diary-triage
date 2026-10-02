@@ -409,6 +409,7 @@ struct ArchiveBrowserSnapshot: Equatable, Sendable {
     let selectedWalkID: String?
     let searchResults: [ArchivePhotoSummary]
     let selectedSearchResultID: String?
+    var map: ArchiveMapSnapshot = .empty
 
     static let empty = ArchiveBrowserSnapshot(
         isLoading: false,

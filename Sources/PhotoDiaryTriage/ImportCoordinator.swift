@@ -479,8 +479,8 @@ struct ImportCoordinator: ImportCoordinating {
             archiveFolderRelativePath: relativeResolver.relativePath(for: plan.archiveFolder),
             title: plan.walkTitle?.nonEmpty ?? session.walkMetadata.title.nonEmpty ?? "Photo Walk",
             location: plan.walkLocation ?? session.walkMetadata.location,
-            latitude: plan.walkLatitude ?? session.walkMetadata.latitude,
-            longitude: plan.walkLongitude ?? session.walkMetadata.longitude,
+            latitude: (ArchiveCoordinate(latitude: plan.walkLatitude, longitude: plan.walkLongitude) ?? ArchiveCoordinate(latitude: session.walkMetadata.latitude, longitude: session.walkMetadata.longitude))?.latitude,
+            longitude: (ArchiveCoordinate(latitude: plan.walkLatitude, longitude: plan.walkLongitude) ?? ArchiveCoordinate(latitude: session.walkMetadata.latitude, longitude: session.walkMetadata.longitude))?.longitude,
             notes: session.walkMetadata.notes,
             summary: .init(
                 totalSourceFiles: manifestItems.reduce(0) { $0 + 1 + $1.companionFiles.count },
