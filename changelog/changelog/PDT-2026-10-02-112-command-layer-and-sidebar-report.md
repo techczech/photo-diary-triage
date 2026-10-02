@@ -19,13 +19,14 @@ cross-window focus/triage defects. Settings persistence errors remain visible.
 
 Files: AppCommandRegistry, CommandKeyboardRouting, CommandPaletteView,
 ArchiveSidebarNavigation, ReviewCommandInputView; AppCommands/AppState/Models/UIState;
-Content/Archive/Settings/Google/description/review views; three command test files;
+Content/Archive/Settings/Google/description/review views; five command test files and GooglePhotosTests;
 APP_RELEASE.env and matching tracking. No new dependency.
 
-Full verification: 505 tests / 2 suites, 30.799 s, 58 new command functions. Native
+Full verification: 530 tests / 2 suites, 35.504 s: 72 command-file functions plus 11 new Google
+provider/callback functions (83 additions since installed 0.7.15). Native
 hidden windows, real NSTextView/NSTextField editor and NSWindow event paths. Distinct
 pre-fix logs plus deliberate sheet/IME guard reversal prove the defects are detected.
-Final run: `/private/tmp/walkfolio-keyboard-local-final-full.log`.
+Final run: `/private/tmp/walkfolio-keyboard-hierarchy-google-final-full.log`.
 
 Not shipped. App target is 0.7.16/152 on `codex/walkfolio-command-layer`; installed
 0.7.15/151 remains closed. No headed/manual UI, live archive, private delivery or real
@@ -47,7 +48,40 @@ are layout measurements; cacheDisplay omits some native button drawing and does 
 establish headed visual acceptance. Root-authority and hidden-pane defects reproduced
 2 and 3 red issues; layout reproduced 5 red issues before correction.
 
-Remaining: Walk proposal row commands, Preview/Compare crop/columns/pan/original
-controls, Google Settings/job controls and review Map; captured targets throughout;
-actual menu/help verification; final tests/review; signed bundle, closed install and
-exact-version acceptance. Original native/real-copy/provider gates remain open.
+Containing modal roots now hold actual child controls. Nearest focused rows retain
+local commands and explicitly offered parent Confirm/Close; disabled child handlers
+block fallback. Button/palette capabilities capture every exact ancestor lease and
+reject parent draft round trips/reparenting. Window registration remains stable while
+leases change. Coactive parent/child shortcut assignment and restored collision paths
+fail closed. Contextual discovery includes explicitly offered parent actions.
+
+Copy-plan Merge/Split capture the actual Walk UUID/draft and preserve canonical Trip
+identity and recovery locks. Hidden tests mount the real copy-plan SwiftUI sheet and
+verify rendered nested buttons through first attachment, draft change and reattachment.
+
+Google settings, reviewed Send and queue/job/album controls are registered. Job/account
+capabilities include authority generation and exact revision; awaited results cannot
+publish jobs, status, candidates or account into another context. Current review identity
+prevents retained confirmation from sending a cancelled/replacement review. Unique pending
+review requests keep the latest request and expire at delivery start, including when
+delivery finishes before the old callback returns. Explicit album adoption never starts
+sending; absence still requires the native alert's confirmation. Failed credential saves
+retain the entered draft; command context keys contain no secrets.
+
+Pre-fix logs reproduced: hierarchy (3 issues), discarded Google confirmation (5), stale
+Google publication (5), pending/out-of-order reviews (4), post-delivery review (1), and
+Settings Form overflow (1). Actual hosted Google album/job/queue chains are verified;
+scrollable Settings honours the proposed tab height. Native hidden layout is measurement,
+not headed visual acceptance. Astra final focused review found no unresolved delta.
+
+Files added: GooglePhotosCommands.swift, CommandHierarchyTests.swift, GoogleCommandTests.swift.
+Changed: AppCommandRegistry, AppState, CommandKeyboardRouting, CommandLocalSurface,
+CommandPaletteView, ContentAuxiliaryViews, GooglePhotosViews/Delivery, existing command
+and GooglePhotos tests; same target APP_RELEASE.env remains 0.7.16/152.
+
+Remaining: Preview/Compare crop/columns/pan/zoom/original; review Map; Settings roots and
+backup buttons; description controls/Settings queue; toolbar/Inspector/selection/triage;
+Source/import actions; browser Back/filter/grid/thumbnail controls; asynchronous clicked
+selection capture; native menu/help evidence. The full current inventory is in the spec.
+Final complete review/tests, signed bundle/body verification, closed install and
+exact-version acceptance remain. Original native/real-copy/provider gates stay open.

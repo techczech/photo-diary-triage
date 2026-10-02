@@ -305,6 +305,7 @@ actor GooglePhotosDeliveryQueue {
         try repository.commitBinding(job.binding!, scope: job.scope)
     }
     func abandon(jobID: UUID) throws {
+        guard contextIsCurrent() else { throw CancellationError() }
         guard !running, var job = try jobs().first(where: { $0.id == jobID }), job.state != .completed else { throw ArchiveFileVerification.failure("Cancel the running delivery first.") }
         guard !job.albumCreationStarted || job.binding != nil else { throw GooglePhotosFailure.ambiguousAlbum }
         job.state = .abandoned; job.error = "Stopped by you. Remote albums/media and recorded receipts are retained."; try persist(job, archiveRoot)

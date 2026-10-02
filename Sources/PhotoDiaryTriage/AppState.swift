@@ -1451,6 +1451,7 @@ final class AppState: ObservableObject {
     private var googleFactsOverlay: [String: GooglePhotosRecord] = [:]
     private var googleFactsRoot: URL?
     private var googleSignInTask: Task<Void, Never>?
+    private var googleReviewRequestID: UUID?
 
     private var googleRepository: GooglePhotosDeliveryRepository {
         .init(archiveRoot: settings.archiveRoot, machineRole: settings.archiveMachineRole, picturesRoot: settings.oneDrivePicturesRoot)
@@ -1460,38 +1461,55 @@ final class AppState: ObservableObject {
         settings.googlePhotosClientID = value; googleContext.invalidate(); cancelGoogleDelivery(); cancelGoogleSignIn()
         googleAccount = nil; googleDeliveryReview = nil; persistSettings()
     }
-    func saveGoogleClientSecret(_ value: String) async {
-        do { try await googleAuthentication.storeClientSecret(value, clientID: settings.googlePhotosClientID); statusMessage = "Google client credential saved in Keychain." }
-        catch { statusMessage = error.localizedDescription }
+    var commandGoogleContextKey: String {
+        localCommandContextKey([settings.archiveRoot.standardizedFileURL.path, settings.oneDrivePicturesRoot.standardizedFileURL.path,
+            settings.archiveMachineRole.rawValue, String(ArchiveByteReadPolicyContext.shared.generation), String(googleContext.generation),
+            settings.googlePhotosClientID, googleAccount?.id ?? "no-account"])
+    }
+    @discardableResult
+    func saveGoogleClientSecret(_ value: String, expectedContext: String? = nil) async -> Bool {
+        let captured = commandGoogleContextKey, clientID = settings.googlePhotosClientID
+        guard expectedContext == nil || expectedContext == captured, !clientID.isEmpty else { return false }
+        do {
+            try await googleAuthentication.storeClientSecret(value, clientID: clientID)
+            guard commandGoogleContextKey == captured else { return false }
+            statusMessage = "Google client credential saved in Keychain."; return true
+        } catch { if commandGoogleContextKey == captured { statusMessage = error.localizedDescription }; return false }
     }
     func loadGoogleAccount() async {
-        let clientID = settings.googlePhotosClientID
+        guard !isConnectingGooglePhotos else { return }
+        let clientID = settings.googlePhotosClientID, context = commandGoogleContextKey
         do {
             let account = try await googleCredentials.account()
-            guard settings.googlePhotosClientID == clientID else { return }
+            guard commandGoogleContextKey == context else { return }
             googleAccount = account?.clientID == clientID ? account : nil
             statusMessage = googleAccount == nil ? "Connect a Google account using the configured Desktop client." : "Google Photos account loaded. Delivery requires reviewing the account, album and originals."
-        } catch { statusMessage = "Google account unavailable: " + error.localizedDescription }
+        } catch { if commandGoogleContextKey == context { statusMessage = "Google account unavailable: " + error.localizedDescription } }
     }
     func startGoogleSignIn() {
         guard !isConnectingGooglePhotos, !isDeliveringGooglePhotos else { return }
         isConnectingGooglePhotos = true
         let clientID = settings.googlePhotosClientID
         googleContext.invalidate()
+        let context = commandGoogleContextKey
         googleSignInTask = Task {
             defer { isConnectingGooglePhotos = false; googleSignInTask = nil }
             do {
                 let account = try await googleAuthentication.connect(clientID: clientID)
-                guard clientID == settings.googlePhotosClientID else { return }
+                guard commandGoogleContextKey == context, !Task.isCancelled else { return }
                 googleAccount = account; googleContext.invalidate(); statusMessage = "Google Photos connected to " + account.displayName + "."
-            } catch { statusMessage = "Google sign-in stopped: " + error.localizedDescription }
+            } catch { if commandGoogleContextKey == context { statusMessage = "Google sign-in stopped: " + error.localizedDescription } }
         }
     }
     func cancelGoogleSignIn() { googleSignInTask?.cancel() }
     func disconnectGooglePhotos() async {
         googleContext.invalidate(); cancelGoogleDelivery(); googleDeliveryReview = nil
-        do { try await googleAuthentication.disconnect(); googleAccount = nil; statusMessage = "Google Photos disconnected on this Mac. Remote albums and receipts are retained." }
-        catch { statusMessage = error.localizedDescription }
+        let context = commandGoogleContextKey
+        do {
+            try await googleAuthentication.disconnect()
+            guard commandGoogleContextKey == context else { return }
+            googleAccount = nil; statusMessage = "Google Photos disconnected on this Mac. Remote albums and receipts are retained."
+        } catch { if commandGoogleContextKey == context { statusMessage = error.localizedDescription } }
     }
     private func currentGoogleQueue() -> GooglePhotosDeliveryQueue {
         let generation = ArchiveByteReadPolicyContext.shared.generation, accountGeneration = googleContext.generation
@@ -1508,43 +1526,54 @@ final class AppState: ObservableObject {
     }
     func reviewGoogleTrip() async {
         guard let path = descriptionTripPath, !isDeliveringGooglePhotos else { return }
-        let repository = googleRepository, generation = ArchiveByteReadPolicyContext.shared.generation
+        let repository = googleRepository, context = commandGoogleContextKey, request = UUID()
+        googleReviewRequestID = request
         do {
             let scope = try await Task.detached { try repository.trip(path: path) }.value
-            guard generation == ArchiveByteReadPolicyContext.shared.generation else { return }
-            await reviewGoogleScope(scope)
-        } catch { statusMessage = "Could not review Google Photos delivery: " + error.localizedDescription }
+            guard context == commandGoogleContextKey, googleReviewRequestID == request else { return }
+            await reviewGoogleScope(scope, requestID: request)
+        } catch { if context == commandGoogleContextKey && googleReviewRequestID == request { statusMessage = "Could not review Google Photos delivery: " + error.localizedDescription } }
     }
     func reviewGooglePhotoLog() async {
-        guard canDeliverGooglePhotoLog, let log = currentSession else { return }
-        let repository = googleRepository
+        guard canDeliverGooglePhotoLog, let log = currentSession, !isDeliveringGooglePhotos else { return }
+        let repository = googleRepository, request = UUID()
+        googleReviewRequestID = request
         do {
             let paths = log.mediaItems.filter { $0.lifecycleState.isImportedOrBeyond && $0.cropRelationship?.isCrop != true && $0.recognisedArchiveCopy != true }.compactMap { item in
                 item.destinationURL.flatMap { ArchiveIndexStore.archiveRelativePath(for: $0, archiveRoot: settings.archiveRoot) }
             }
             let scope = try repository.photoLog(id: log.id, title: log.walkMetadata.title.nonEmpty ?? "Photo Log", paths: paths)
-            await reviewGoogleScope(scope)
+            await reviewGoogleScope(scope, requestID: request)
         } catch { statusMessage = "Could not review Photo Log delivery: " + error.localizedDescription }
     }
-    func reviewGoogleScope(_ scope: GooglePhotosDeliveryScope) async {
-        let root = settings.archiveRoot, generation = ArchiveByteReadPolicyContext.shared.generation, repository = googleRepository
+    func reviewGoogleScope(_ scope: GooglePhotosDeliveryScope, requestID: UUID? = nil) async {
+        guard !isDeliveringGooglePhotos, !isConnectingGooglePhotos else { return }
+        let request = requestID ?? UUID()
+        if requestID == nil { googleReviewRequestID = request }
+        guard googleReviewRequestID == request else { return }
+        let root = settings.archiveRoot, generation = ArchiveByteReadPolicyContext.shared.generation, repository = googleRepository, context = commandGoogleContextKey
         do {
             guard let account = try await googleCredentials.account(), account.clientID == settings.googlePhotosClientID else { throw ArchiveFileVerification.failure("Connect the intended Google account in Settings first.") }
-            guard generation == ArchiveByteReadPolicyContext.shared.generation else { return }
+            guard context == commandGoogleContextKey, googleReviewRequestID == request,
+                  !isDeliveringGooglePhotos, !isConnectingGooglePhotos, !Task.isCancelled else { return }
             let bytes = try scope.photos.reduce(Int64(0)) { total, target in
                 let url = try ArchiveIndexMediaLoader().indexedURL(target.path, archiveRoot: root)
                 return total + Int64((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
             }
+            let album = try repository.binding(scope: scope, account: account)?.album
             googleAccount = account
             googleDeliveryReview = .init(scope: scope, account: account, archiveRoot: root, generation: generation,
-                photoCount: scope.photos.count, totalBytes: bytes, existingAlbum: try repository.binding(scope: scope, account: account)?.album)
-        } catch { statusMessage = "Could not review delivery: " + error.localizedDescription }
+                photoCount: scope.photos.count, totalBytes: bytes, existingAlbum: album)
+        } catch { if context == commandGoogleContextKey && googleReviewRequestID == request { statusMessage = "Could not review delivery: " + error.localizedDescription } }
     }
+    func dismissGoogleDeliveryReview() { googleReviewRequestID = nil; googleDeliveryReview = nil }
     func confirmGoogleDelivery(_ review: GooglePhotosDeliveryReview, includeMarked: Bool = false) async {
+        guard googleDeliveryReview?.id == review.id else { return }
         guard !isDeliveringGooglePhotos, review.archiveRoot.standardizedFileURL == settings.archiveRoot.standardizedFileURL,
               review.generation == ArchiveByteReadPolicyContext.shared.generation, review.account.clientID == settings.googlePhotosClientID else { statusMessage = "Archive or account settings changed. Review the delivery again."; return }
-        let queue = currentGoogleQueue(), operation = UUID(), cancellation = googleDeliveryCancellation
+        let queue = currentGoogleQueue(), operation = UUID(), cancellation = googleDeliveryCancellation, context = commandGoogleContextKey
         googleDeliveryOperationID = operation
+        googleReviewRequestID = nil
         isDeliveringGooglePhotos = true; googleDeliveryReview = nil
         let task = Task { [self] in
             defer {
@@ -1553,13 +1582,14 @@ final class AppState: ObservableObject {
             do {
                 let job = try await queue.enqueue(scope: review.scope, expectedAccount: review.account, includeMarked: includeMarked)
                 try Task.checkCancellation()
-                guard cancellation == googleDeliveryCancellation else { throw CancellationError() }
-                googleDeliveryJobs = try await queue.jobs(); showGoogleQueue = true
+                guard cancellation == googleDeliveryCancellation, context == commandGoogleContextKey, googleDeliveryOperationID == operation else { throw CancellationError() }
+                let jobs = try await queue.jobs()
                 try Task.checkCancellation()
-                guard cancellation == googleDeliveryCancellation else { throw CancellationError() }
+                guard cancellation == googleDeliveryCancellation, context == commandGoogleContextKey, googleDeliveryOperationID == operation else { throw CancellationError() }
+                googleDeliveryJobs = jobs; showGoogleQueue = true
                 isDeliveringGooglePhotos = false
                 await resumeGoogleDelivery(jobIDs: [job.id])
-            } catch { statusMessage = error is CancellationError ? "Google Photos preparation cancelled. No automatic delivery will start." : "Could not queue delivery: " + error.localizedDescription }
+            } catch { if context == commandGoogleContextKey && googleDeliveryOperationID == operation { statusMessage = error is CancellationError ? "Google Photos preparation cancelled. No automatic delivery will start." : "Could not queue delivery: " + error.localizedDescription } }
         }
         googleDeliveryTask = task
         await withTaskCancellationHandler(operation: { await task.value }, onCancel: { task.cancel() })
@@ -1567,28 +1597,30 @@ final class AppState: ObservableObject {
 
     func loadGoogleDeliveryQueue(show: Bool = true) async {
         guard !isDeliveringGooglePhotos else { if show { showGoogleQueue = true }; return }
-        let queue = currentGoogleQueue(), generation = ArchiveByteReadPolicyContext.shared.generation
+        let queue = currentGoogleQueue(), context = commandGoogleContextKey
         do {
-            let jobs = try await queue.jobs(); guard generation == ArchiveByteReadPolicyContext.shared.generation else { return }
+            let jobs = try await queue.jobs(); guard context == commandGoogleContextKey else { return }
             googleDeliveryJobs = jobs; if show { showGoogleQueue = true }
-        } catch { statusMessage = "Delivery queue unavailable: " + error.localizedDescription }
+        } catch { if context == commandGoogleContextKey { statusMessage = "Delivery queue unavailable: " + error.localizedDescription } }
     }
     func resumeGoogleDelivery(jobIDs: Set<UUID>? = nil) async {
         guard !isDeliveringGooglePhotos else { return }
-        let queue = currentGoogleQueue(), generation = ArchiveByteReadPolicyContext.shared.generation
+        googleReviewRequestID = nil
+        let queue = currentGoogleQueue(), context = commandGoogleContextKey
         isDeliveringGooglePhotos = true; defer { isDeliveringGooglePhotos = false }
         do {
             try await queue.run(jobIDs: jobIDs) { [weak self] jobs in
-                await MainActor.run { guard let self, generation == ArchiveByteReadPolicyContext.shared.generation else { return }; self.googleDeliveryJobs = jobs }
+                await MainActor.run { guard let self, context == self.commandGoogleContextKey else { return }; self.googleDeliveryJobs = jobs }
             }
-            guard generation == ArchiveByteReadPolicyContext.shared.generation else { return }
-            googleDeliveryJobs = try await queue.jobs()
-            guard generation == ArchiveByteReadPolicyContext.shared.generation else { return }
+            guard context == commandGoogleContextKey else { return }
+            let jobs = try await queue.jobs()
+            guard context == commandGoogleContextKey else { return }
+            googleDeliveryJobs = jobs
             statusMessage = "Google Photos: \(googleDeliveryJobs.filter { $0.state == .completed }.count) completed deliveries; other saved jobs may need retry or reconciliation."
             let targets = googleDeliveryJobs.flatMap { $0.photos.map(\.target) }
             try refreshGoogleDisplayedFacts(targets: targets, scopes: googleDeliveryJobs.map(\.scope), ignoreUnavailable: true)
             if settings.archiveMachineRole == .mainArchive { reloadArchiveCatalogue() }
-        } catch { statusMessage = "Google Photos delivery stopped: " + error.localizedDescription }
+        } catch { if context == commandGoogleContextKey { statusMessage = "Google Photos delivery stopped: " + error.localizedDescription } }
     }
     func startGoogleResume() {
         guard !isDeliveringGooglePhotos, googleDeliveryTask == nil else { return }
@@ -1596,21 +1628,44 @@ final class AppState: ObservableObject {
         googleDeliveryTask = Task { await resumeGoogleDelivery(); if googleDeliveryOperationID == operation { googleDeliveryTask = nil; googleDeliveryOperationID = nil } }
     }
     func cancelGoogleDelivery() { googleDeliveryCancellation &+= 1; googleDeliveryTask?.cancel(); let queue = googleQueue; Task { await queue?.cancel() } }
-    func loadGoogleAlbumCandidates(jobID: UUID) async {
-        do { let candidates = try await currentGoogleQueue().candidates(jobID: jobID); googleAlbumCandidates[jobID] = candidates; statusMessage = candidates.isEmpty ? "No candidate album is visible. An empty listing does not establish that creation failed; check Google Photos before allowing another request." : "Choose the intended album explicitly before resuming." }
-        catch { statusMessage = "Album reconciliation failed: " + error.localizedDescription }
+    func loadGoogleAlbumCandidates(jobID: UUID, expectedContext: String? = nil) async {
+        let captured = commandGoogleContextKey
+        guard expectedContext == nil || expectedContext == captured else { return }
+        do {
+            let candidates = try await currentGoogleQueue().candidates(jobID: jobID)
+            guard commandGoogleContextKey == captured else { return }
+            googleAlbumCandidates[jobID] = candidates
+            statusMessage = candidates.isEmpty ? "No candidate album is visible. An empty listing does not establish that creation failed; check Google Photos before allowing another request." : "Choose the intended album explicitly before resuming."
+        } catch { if commandGoogleContextKey == captured { statusMessage = "Album reconciliation failed: " + error.localizedDescription } }
     }
-    func adoptGoogleAlbum(albumID: String, jobID: UUID) async {
-        do { try await currentGoogleQueue().adopt(albumID: albumID, jobID: jobID); googleAlbumCandidates[jobID] = nil; await loadGoogleDeliveryQueue(show: false); statusMessage = "Album recorded. Resume this captured delivery when ready." }
-        catch { statusMessage = "Album reconciliation failed: " + error.localizedDescription }
+    func adoptGoogleAlbum(albumID: String, jobID: UUID, expectedContext: String? = nil) async {
+        let captured = commandGoogleContextKey
+        guard expectedContext == nil || expectedContext == captured else { return }
+        do {
+            try await currentGoogleQueue().adopt(albumID: albumID, jobID: jobID)
+            guard commandGoogleContextKey == captured else { return }
+            googleAlbumCandidates[jobID] = nil; await loadGoogleDeliveryQueue(show: false)
+            if commandGoogleContextKey == captured { statusMessage = "Album recorded. Resume this captured delivery when ready." }
+        } catch { if commandGoogleContextKey == captured { statusMessage = "Album reconciliation failed: " + error.localizedDescription } }
     }
-    func confirmGoogleAlbumAbsent(jobID: UUID, accountID: String) async {
-        do { try await currentGoogleQueue().confirmNoAlbumCreated(jobID: jobID, expectedAccountID: accountID); await loadGoogleDeliveryQueue(show: false); statusMessage = "Your confirmation is recorded. Resume may create the requested album." }
-        catch { statusMessage = error.localizedDescription }
+    func confirmGoogleAlbumAbsent(jobID: UUID, accountID: String, expectedContext: String? = nil) async {
+        let captured = commandGoogleContextKey
+        guard expectedContext == nil || expectedContext == captured else { return }
+        do {
+            try await currentGoogleQueue().confirmNoAlbumCreated(jobID: jobID, expectedAccountID: accountID)
+            guard commandGoogleContextKey == captured else { return }
+            await loadGoogleDeliveryQueue(show: false)
+            if commandGoogleContextKey == captured { statusMessage = "Your confirmation is recorded. Resume may create the requested album." }
+        } catch { if commandGoogleContextKey == captured { statusMessage = error.localizedDescription } }
     }
-    func abandonGoogleDelivery(jobID: UUID) async {
-        do { try await currentGoogleQueue().abandon(jobID: jobID); await loadGoogleDeliveryQueue(show: false) }
-        catch { statusMessage = "Could not stop delivery: " + error.localizedDescription }
+    func abandonGoogleDelivery(jobID: UUID, expectedContext: String? = nil) async {
+        let captured = commandGoogleContextKey
+        guard expectedContext == nil || expectedContext == captured else { return }
+        do {
+            try await currentGoogleQueue().abandon(jobID: jobID)
+            guard commandGoogleContextKey == captured else { return }
+            await loadGoogleDeliveryQueue(show: false)
+        } catch { if commandGoogleContextKey == captured { statusMessage = "Could not stop delivery: " + error.localizedDescription } }
     }
     var canMarkGoogleMaterial: Bool { !contextualDescriptionTargets.isEmpty || (workspaceMode == .archiveView && archiveNavigationLevel == .archive && selectedArchiveEntry?.kind == .unorganisedFolder) }
     func markGoogleMaterial(clear: Bool) async {

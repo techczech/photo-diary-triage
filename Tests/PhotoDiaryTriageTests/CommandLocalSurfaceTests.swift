@@ -43,7 +43,7 @@ import Testing
 }
 
 @MainActor
-private final class LocalSurfaceFixture {
+final class LocalSurfaceFixture {
     let root: URL, state: AppState, window: NSWindow, token = UUID()
     init() throws {
         _ = NSApplication.shared
