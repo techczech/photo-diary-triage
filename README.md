@@ -9,7 +9,7 @@ updated: 2026-10-02
 
 ## Current release
 
-Version **0.7.9, build 145** adds canonical Trip location labels to historical-folder triage and confirmed Copy recovery to the archive recovery and index-only browsing improvements. Copies are verified by SHA-256; interrupted imports reuse recorded destinations; cleanup checks every selected original and RAW companion before deleting a source. Existing Walk notes and membership survive appended imports, and metadata edits update canonical manifests.
+Version **0.7.10, build 146** adds on-demand local descriptions and a recoverable historical queue alongside canonical Trip location labels to historical-folder triage and confirmed Copy recovery to the archive recovery and index-only browsing improvements. Copies are verified by SHA-256; interrupted imports reuse recorded destinations; cleanup checks every selected original and RAW companion before deleting a source. Existing Walk notes and membership survive appended imports, and metadata edits update canonical manifests.
 
 Archive moves and layout migration record their plans before changing files. Canonical paths are rewritten without changing human notes or source provenance. Historical folders and hidden material are retained. The derived index publishes complete generations and detects incomplete synchronisation.
 
@@ -25,6 +25,8 @@ Historical folders have a dedicated source action. New items start kept; saved e
 
 In a recognised Trip, **Edit label** overrides its derived Walk location label; **Use Walk locations** clears the override. Default month and named Trips retain stable identities, manual member order, notes and unknown sections through appends, moves and migration. Legacy migration plans the final Trip records before moving Walks, rejects occupied canonical destinations and resumes interrupted transfers. Travel edits update tiny canonical records and the current view; future index-only views await main publication.
 
+In Settings, configure the LM Studio endpoint and choose a model explicitly. Refresh models discovers available IDs. In Archive, Describe can target archived photos, a Walk, a Trip or the selected year. The queue exposes progress, cancellation, retry and saved text with model/date/input coverage. Requests never start during Triage. Travel sends only prepared thumbnails; Main can prepare a bounded preview of an already-resident original. Canonical revisions remain separate from notes; successful regeneration replaces the active result, failed refresh retains it, and interrupted saves reuse recorded responses. Parent summaries require current successful member descriptions. Main publishes active text to search; Travel canonical changes await main index publication.
+
 ## Working features
 
 - Review a source SSD in a grid, using mouse and keyboard selection, bursts, time clusters, preview and comparison.
@@ -37,7 +39,7 @@ In a recognised Trip, **Edit label** overrides its derived Walk location label; 
 
 ## Completion goals
 
-The approved 1.0 scope remains open. On-demand LM Studio descriptions and Google Photos delivery still require work. The description integration is not yet implemented.
+The approved 1.0 scope remains open. Google Photos delivery still requires implementation. Descriptions pass injected provider and recovery tests; real local-model quality and native controls remain to be checked. No LM Studio server was available during development.
 
 The [development goals and acceptance tests](planning/development-plan-walkfolio-reliability.md) explain the intended complete workflow, current evidence and the order of independent development. [CONTEXT.md](CONTEXT.md), [PRD.md](PRD.md) and [DESIGN.md](DESIGN.md) hold the domain and product rules.
 

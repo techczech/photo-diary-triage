@@ -692,7 +692,7 @@ struct ArchiveIndexStore {
                 title: file.sourceFileName,
                 location: file.walkLocation.nonEmpty,
                 exifSummary: exifSummary(cameraModel: file.cameraModel, lensModel: file.lensModel, pixelWidth: file.pixelWidth, pixelHeight: file.pixelHeight),
-                aiDescription: "",
+                aiDescription: file.descriptions?.active?.text,
                 notes: file.notes,
                 thumbnailPath: generatedThumbnailPaths[relativePath],
                 walkPath: walkPath.nonEmpty,
@@ -817,6 +817,7 @@ struct ArchiveIndexStore {
             let text = try String(contentsOf: manifestURL, encoding: .utf8)
 
             if let identity = TripManifestText.headerValue("Trip ID", in: text) {
+                _ = try MachineDescriptionHistory.read(in: text)
                 guard UUID(uuidString: identity.trimmingCharacters(in: CharacterSet(charactersIn: "`"))) != nil else {
                     throw ArchiveFileVerification.failure("A canonical Trip has an invalid identity. The existing index has been retained.")
                 }
@@ -915,7 +916,7 @@ struct ArchiveIndexStore {
             title: manifest.title,
             location: manifest.location.nonEmpty,
             exifSummary: nil,
-            aiDescription: "",
+            aiDescription: manifest.descriptions?.active?.text,
             notes: manifest.notes,
             thumbnailPath: cover.flatMap { existingThumbnailRelativePath(for: $0, archiveRoot: archiveRoot) },
             walkPath: relativePath,
@@ -940,7 +941,7 @@ struct ArchiveIndexStore {
             title: manifest.title,
             location: manifest.locationLabelOverride,
             exifSummary: nil,
-            aiDescription: "",
+            aiDescription: manifest.descriptions?.active?.text,
             notes: nil,
             thumbnailPath: nil,
             walkPath: nil,
@@ -965,7 +966,7 @@ struct ArchiveIndexStore {
             title: manifest.sourceFileName,
             location: manifest.locationOverride?.name.nonEmpty ?? walk.location.nonEmpty,
             exifSummary: exifSummary(cameraModel: manifest.cameraModel, lensModel: manifest.lensModel, pixelWidth: manifest.pixelWidth, pixelHeight: manifest.pixelHeight),
-            aiDescription: "",
+            aiDescription: manifest.descriptions?.active?.text,
             notes: manifest.notes,
             thumbnailPath: existingThumbnailRelativePath(for: fileURL, archiveRoot: archiveRoot),
             walkPath: walk.archiveFolderRelativePath,
@@ -1027,7 +1028,8 @@ struct ArchiveIndexStore {
                 cleanedSourceFiles: 0
             ),
             importedFiles: files,
-            excludedFiles: []
+            excludedFiles: [],
+            descriptions: try MachineDescriptionHistory.read(in: text)
         )
     }
 
@@ -1082,7 +1084,8 @@ struct ArchiveIndexStore {
             walkLocation: yamlValue("walk_location", in: text) ?? "",
             notes: notes,
             locationOverride: try PhotoLocationOverride.read(in: text),
-            captureDateEvidence: try CaptureDateEvidence.read(in: text)
+            captureDateEvidence: try CaptureDateEvidence.read(in: text),
+            descriptions: try MachineDescriptionHistory.read(in: text)
         )
     }
 

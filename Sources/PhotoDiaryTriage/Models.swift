@@ -492,6 +492,7 @@ struct AppSettings: Codable, Hashable, Sendable {
     var tripDisplayLabel: String
     var archiveBrowseViewMode: ArchiveBrowseViewMode
     var showArchivePreviews: Bool
+    var lmStudioConfiguration = LMStudioConfiguration()
 
     static func `default`(fileManager: FileManager = .default) -> AppSettings {
         let libraryRoot = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -602,6 +603,7 @@ struct AppSettings: Codable, Hashable, Sendable {
         }
         archiveBrowseViewMode = try container.decodeIfPresent(ArchiveBrowseViewMode.self, forKey: .archiveBrowseViewMode) ?? defaults.archiveBrowseViewMode
         showArchivePreviews = try container.decodeIfPresent(Bool.self, forKey: .showArchivePreviews) ?? defaults.showArchivePreviews
+        lmStudioConfiguration = try container.decodeIfPresent(LMStudioConfiguration.self, forKey: .lmStudioConfiguration) ?? defaults.lmStudioConfiguration
     }
 
     func encode(to encoder: Encoder) throws {
@@ -622,6 +624,7 @@ struct AppSettings: Codable, Hashable, Sendable {
         try container.encode(tripDisplayLabel, forKey: .tripDisplayLabel)
         try container.encode(archiveBrowseViewMode, forKey: .archiveBrowseViewMode)
         try container.encode(showArchivePreviews, forKey: .showArchivePreviews)
+        try container.encode(lmStudioConfiguration, forKey: .lmStudioConfiguration)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -641,6 +644,7 @@ struct AppSettings: Codable, Hashable, Sendable {
         case tripDisplayLabel
         case archiveBrowseViewMode
         case showArchivePreviews
+        case lmStudioConfiguration
     }
 
     private enum LegacyCodingKeys: String, CodingKey {
@@ -1127,6 +1131,7 @@ struct WalkManifest: Codable, Hashable, Sendable {
     var summary: Summary
     var importedFiles: [FileManifest]
     var excludedFiles: [RejectedFileManifest] = []
+    var descriptions: MachineDescriptionHistory? = nil
 
     init(
         sessionID: UUID,
@@ -1143,7 +1148,8 @@ struct WalkManifest: Codable, Hashable, Sendable {
         notes: String,
         summary: Summary,
         importedFiles: [FileManifest],
-        excludedFiles: [RejectedFileManifest] = []
+        excludedFiles: [RejectedFileManifest] = [],
+        descriptions: MachineDescriptionHistory? = nil
     ) {
         self.sessionID = sessionID
         self.walkID = walkID
@@ -1160,6 +1166,7 @@ struct WalkManifest: Codable, Hashable, Sendable {
         self.summary = summary
         self.importedFiles = importedFiles
         self.excludedFiles = excludedFiles
+        self.descriptions = descriptions
     }
 }
 
@@ -1172,6 +1179,7 @@ struct TripManifest: Codable, Hashable, Sendable {
     var endDate: Date?
     var memberWalkFolderPaths: [String]
     var locationLabelOverride: String? = nil
+    var descriptions: MachineDescriptionHistory? = nil
 }
 
 struct RejectedFileManifest: Codable, Hashable, Sendable {
@@ -1201,6 +1209,7 @@ struct FileManifest: Codable, Hashable, Sendable {
     var notes: String
     var locationOverride: PhotoLocationOverride?
     var captureDateEvidence: CaptureDateEvidence?
+    var descriptions: MachineDescriptionHistory? = nil
 
     init(
         mediaItemID: UUID,
@@ -1221,7 +1230,8 @@ struct FileManifest: Codable, Hashable, Sendable {
         walkLocation: String,
         notes: String,
         locationOverride: PhotoLocationOverride? = nil,
-        captureDateEvidence: CaptureDateEvidence? = nil
+        captureDateEvidence: CaptureDateEvidence? = nil,
+        descriptions: MachineDescriptionHistory? = nil
     ) {
         self.mediaItemID = mediaItemID
         self.archivePath = archivePath
@@ -1242,6 +1252,7 @@ struct FileManifest: Codable, Hashable, Sendable {
         self.notes = notes
         self.locationOverride = locationOverride
         self.captureDateEvidence = captureDateEvidence
+        self.descriptions = descriptions
     }
 }
 
