@@ -16,7 +16,6 @@ struct PhotoDiaryTriageApp: App {
         }
         .defaultSize(width: 1280, height: 800)
         .commands {
-            SidebarCommands()
             PhotoDiaryCommands(appState: appState)
         }
 

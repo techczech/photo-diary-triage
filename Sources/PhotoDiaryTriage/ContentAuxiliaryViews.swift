@@ -46,132 +46,33 @@ private struct ShortcutHintModifier: ViewModifier {
 }
 
 extension View {
-    func shortcutHint(_ shortcut: String, help: String? = nil, alignment: Alignment = .topTrailing) -> some View {
+    func literalGestureHint(_ shortcut: String, help: String? = nil, alignment: Alignment = .topTrailing) -> some View {
         modifier(ShortcutHintModifier(shortcut: shortcut, helpText: help ?? shortcut, alignment: alignment))
     }
 }
 
-struct KeyboardHelpSheet: View {
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Keyboard Shortcuts")
-                        .font(.title2.weight(.bold))
-                    Text("Review, grouped navigation, compare, and global commands.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button("Close") {
-                    dismiss()
-                }
-                .keyboardShortcut(.cancelAction)
-            }
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    shortcutSection("Archive", rows: [
-                        ("Cmd-1 / Cmd-2", "Show Timeline or Contact Sheet without changing the selected Archive entry."),
-                        ("Cmd-Shift-F", "Focus Archive search."),
-                        ("Arrow Keys", "Move through Timeline, Contact Sheet, or a Trip’s Walk cards."),
-                        ("Return", "Open the selected Trip, Walk, or Unorganised Folder."),
-                        ("Escape", "Return from photos to the Trip, or from a Trip to the Archive.")
-                    ])
-
-                    shortcutSection("Review Selection", rows: [
-                        ("Arrow Keys", "Move grid focus; hold Shift to extend selection."),
-                        ("Space", "Toggle the focused photo selection."),
-                        ("S", "Select the current selection for import."),
-                        ("C", "Mark the current selection as candidate."),
-                        ("X", "Exclude the current selection from import."),
-                        ("D", "Clear the current selection back to undecided."),
-                        ("R", "Toggle RAW companion import for the current selection."),
-                        ("A", "Select all visible photos."),
-                        ("Cmd-Shift-C", "Open compare for the current selection."),
-                        ("Return", "Open the focused photo preview, or enter the focused grouped section for item navigation."),
-                        ("Escape", "Return to grouped-section selection, or exit review-grid keyboard focus.")
-                    ])
-
-                    shortcutSection("Grouped Review", rows: [
-                        ("Up / Down", "When a group header is focused, move between grouped sections."),
-                        ("Left / Right", "When a group header is focused, collapse or expand that section."),
-                        ("Option + Up / Down", "Jump into grouped-section navigation from item focus."),
-                        ("Option + Left / Right", "Collapse or expand the focused grouped section from item focus."),
-                        ("Cmd-Option-[ / ]", "Collapse or expand all grouped sections."),
-                        ("Cmd-Control-1...4", "Switch grouped review organization mode.")
-                    ])
-
-                    shortcutSection("View And Compare", rows: [
-                        ("+ / - / 0", "Change review grid columns, or zoom compare images when compare is open. Reset returns compare to Fit."),
-                        ("Q", "When compare is open, remove the focused compare item."),
-                        ("H / J / K / L", "When compare is zoomed, pan the focused image. With Lock Pan on, all compare images pan together."),
-                        ("V", "Crop the currently visible zoomed image area."),
-                        ("Cmd-3 / Cmd-4", "Switch flat review or grouped review."),
-                        ("Cmd-Control-A / I / C / X / U", "Filter review items to all, included, candidate, excluded, or undecided. Use the filter menu for Cropped."),
-                        ("Cmd-Option-G / Cmd-Option-L", "Switch grid or list layout."),
-                        ("Cmd-Shift-C", "Open compare from the command menu path.")
-                    ])
-
-                    shortcutSection("Focus And Global Commands", rows: [
-                        ("Cmd-O", "Choose a source folder."),
-                        ("Cmd-Control-1 / Cmd-Control-2", "Focus sidebar navigation or jump into the review grid."),
-                        ("Cmd-Return", "Open the current item, jump from sidebar into review, or drill into the focused grouped section."),
-                        ("Cmd-Option-I", "Toggle the right-side inspector."),
-                        ("Cmd-Option-S", "Toggle the left sidebar."),
-                        ("Cmd-I", "Select the current selection for import."),
-                        ("Cmd-Shift-X", "Exclude the current selection from import."),
-                        ("Cmd-Shift-I", "Remove the current selection from import."),
-                        ("Cmd-Shift-M", "Copy marked files into the archive."),
-                        ("Cmd-Shift-B", "Confirm backup and enable cleanup."),
-                        ("Cmd-Shift-K", "Clean imported files from the SSD."),
-                        ("Cmd-Shift-W", "Create a photo log from the current scope."),
-                        ("Cmd-Shift-/", "Open this shortcuts panel.")
-                    ])
-                }
-                .padding(.trailing, 8)
-            }
-        }
-        .padding(24)
-        .frame(minWidth: 760, minHeight: 620)
-    }
-
-    private func shortcutSection(_ title: String, rows: [(String, String)]) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title)
-                .font(.headline.weight(.semibold))
-            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                shortcutRow(row.0, row.1)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.45), in: RoundedRectangle(cornerRadius: 16))
-        .overlay {
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.secondary.opacity(0.16), lineWidth: 1)
-        }
-    }
-
-    private func shortcutRow(_ key: String, _ description: String) -> some View {
-        HStack(alignment: .top, spacing: 14) {
-            Text(key)
-                .font(.system(.body, design: .monospaced).weight(.bold))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
-                .frame(width: 190, alignment: .leading)
-            Text(description)
-                .font(.body)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
-        }
+private struct CommandShortcutHintModifier: ViewModifier {
+    let ids: [AppCommandID]
+    @ObservedObject var appState: AppState
+    let scope: AppCommandScope
+    let explanation: String
+    let alignment: Alignment
+    func body(content: Content) -> some View {
+        let registry = appState.commandCoordinator.registry
+        let hint = ids.map { registry.displayedShortcuts($0, scope: scope) }.joined(separator: " / ")
+        content.modifier(ShortcutHintModifier(shortcut: hint, helpText: explanation + " (" + hint + ")", alignment: alignment))
     }
 }
 
-@MainActor
+extension View {
+    func commandShortcutHint(_ id: AppCommandID, appState: AppState, scope: AppCommandScope, help: String, alignment: Alignment = .topTrailing) -> some View {
+        commandShortcutHint([id], appState: appState, scope: scope, help: help, alignment: alignment)
+    }
+    func commandShortcutHint(_ ids: [AppCommandID], appState: AppState, scope: AppCommandScope, help: String, alignment: Alignment = .topTrailing) -> some View {
+        modifier(CommandShortcutHintModifier(ids: ids, appState: appState, scope: scope, explanation: help, alignment: alignment))
+    }
+}
+
 struct WalkCommitEditorSheet: View {
     let appState: AppState
     @State private var editor: WalkCommitEditorState
@@ -192,10 +93,8 @@ struct WalkCommitEditorSheet: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("Cancel") {
-                    appState.dismissWalkCommitEditor()
-                }
-                .keyboardShortcut(.cancelAction)
+                Button("Cancel") { appState.commandCoordinator.execute(.closeSheet) }
+                .commandShortcutHint(.closeSheet, appState: appState, scope: .form, help: "Cancel this copy plan")
             }
 
             ScrollView {
@@ -211,19 +110,20 @@ struct WalkCommitEditorSheet: View {
                 Text("\(editor.walks.count) proposed \(editor.walkDisplayLabel)\(editor.walks.count == 1 ? "" : "s")")
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button("Cancel") {
-                    appState.dismissWalkCommitEditor()
-                }
-                Button("Copy To Archive") {
-                    appState.updateWalkCommitEditor(editor)
-                    appState.confirmWalkCommit()
-                }
-                .keyboardShortcut(.defaultAction)
+                Button("Cancel") { appState.commandCoordinator.execute(.closeSheet) }
+                Button("Copy To Archive") { appState.commandCoordinator.execute(.confirmSheet) }
+                .commandShortcutHint(.confirmSheet, appState: appState, scope: .form, help: "Confirm this reviewed copy plan")
                 .disabled(editor.walks.isEmpty || editor.walks.contains { $0.title.nonEmpty == nil || $0.mediaItemIDs.isEmpty })
             }
         }
         .padding(24)
         .frame(minWidth: 760, minHeight: 560)
+        .background(CommandSheetAnchor(coordinator: appState.commandCoordinator, actions: [
+            .closeSheet: .init(run: { appState.dismissWalkCommitEditor() }),
+            .confirmSheet: .init(enabled: !editor.walks.isEmpty && !editor.walks.contains { $0.title.nonEmpty == nil || $0.mediaItemIDs.isEmpty }, run: {
+                appState.updateWalkCommitEditor(editor); appState.confirmWalkCommit()
+            })
+        ]))
         .onDisappear {
             if appState.presentationState.snapshot.activeWalkCommitEditor != nil {
                 appState.updateWalkCommitEditor(editor)
@@ -345,10 +245,8 @@ struct PhotoLogEditorSheet: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("Cancel") {
-                    appState.dismissPhotoLogEditor()
-                }
-                .keyboardShortcut(.cancelAction)
+                Button("Cancel") { appState.commandCoordinator.execute(.closeSheet) }
+                .commandShortcutHint(.closeSheet, appState: appState, scope: .form, help: "Cancel these Photo Log details")
             }
 
             ScrollView {
@@ -369,34 +267,39 @@ struct PhotoLogEditorSheet: View {
                 Spacer()
                 switch editor.mode {
                 case .create:
-                    Button("Create Log") {
-                        appState.updateActivePhotoLogEditor(editor)
-                        appState.createPhotoLog(openAfterCreate: false)
-                    }
-                    .keyboardShortcut(.defaultAction)
+                    Button("Create Log") { appState.commandCoordinator.execute(.confirmSheet) }
+                    .commandShortcutHint(.confirmSheet, appState: appState, scope: .form, help: "Create this Photo Log")
                     .disabled(createDisabled)
 
-                    Button("Create And Open") {
-                        appState.updateActivePhotoLogEditor(editor)
-                        appState.createPhotoLog(openAfterCreate: true)
-                    }
+                    Button("Create And Open") { appState.commandCoordinator.execute(.confirmAndOpenSheet) }
+                    .commandShortcutHint(.confirmAndOpenSheet, appState: appState, scope: .form, help: "Create and open this Photo Log")
                     .disabled(createDisabled)
                 case .edit:
-                    Button("Save Changes") {
-                        appState.updateActivePhotoLogEditor(editor)
-                        appState.saveActivePhotoLogEdits()
-                    }
-                    .keyboardShortcut(.defaultAction)
+                    Button("Save Changes") { appState.commandCoordinator.execute(.confirmSheet) }
+                    .commandShortcutHint(.confirmSheet, appState: appState, scope: .form, help: "Save these Photo Log details")
                 }
             }
         }
         .padding(24)
         .frame(minWidth: 700, minHeight: 620)
+        .background(CommandSheetAnchor(coordinator: appState.commandCoordinator, actions: sheetActions))
         .onDisappear {
             if appState.presentationState.snapshot.activePhotoLogEditor != nil {
                 appState.updateActivePhotoLogEditor(editor)
             }
         }
+    }
+
+    private var sheetActions: [AppCommandID: SheetCommandAction] {
+        var actions: [AppCommandID: SheetCommandAction] = [.closeSheet: .init(run: { appState.dismissPhotoLogEditor() })]
+        switch editor.mode {
+        case .create:
+            actions[.confirmSheet] = .init(enabled: !createDisabled, run: { appState.updateActivePhotoLogEditor(editor); appState.createPhotoLog(openAfterCreate: false) })
+            actions[.confirmAndOpenSheet] = .init(enabled: !createDisabled, run: { appState.updateActivePhotoLogEditor(editor); appState.createPhotoLog(openAfterCreate: true) })
+        case .edit:
+            actions[.confirmSheet] = .init(run: { appState.updateActivePhotoLogEditor(editor); appState.saveActivePhotoLogEdits() })
+        }
+        return actions
     }
 
     private var metadataSection: some View {
@@ -585,10 +488,8 @@ struct PhotoLogContentsSheet: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("Close") {
-                    appState.dismissRevealedPhotoLog()
-                }
-                .keyboardShortcut(.cancelAction)
+                Button("Close") { appState.commandCoordinator.execute(.closeSheet) }
+                .commandShortcutHint(.closeSheet, appState: appState, scope: .information, help: "Close Photo Log contents")
             }
 
             if revealed.relativePaths.isEmpty {
@@ -606,6 +507,7 @@ struct PhotoLogContentsSheet: View {
         }
         .padding(24)
         .frame(minWidth: 640, minHeight: 420)
+        .background(CommandSheetAnchor(coordinator: appState.commandCoordinator, scope: .information, actions: [.closeSheet: .init(run: { appState.dismissRevealedPhotoLog() })]))
     }
 }
 
@@ -618,196 +520,6 @@ private extension View {
                 RoundedRectangle(cornerRadius: 14)
                     .stroke(Color.secondary.opacity(0.16), lineWidth: 1)
             }
-    }
-}
-
-struct ReviewKeyInputView: NSViewRepresentable {
-    let isFocused: Bool
-    let onArrow: (_ dx: Int, _ dy: Int, _ extending: Bool) -> Void
-    let onSectionArrow: (_ dx: Int, _ dy: Int) -> Void
-    let onSectionExpandCollapse: (_ expand: Bool) -> Void
-    let onSingleKey: (_ key: String) -> Void
-    let onPan: ((_ dx: Int, _ dy: Int) -> Void)?
-    let onSpace: () -> Void
-    let onOpen: () -> Void
-    let onCommandOpen: () -> Void
-    let onEscape: () -> Void
-    let onSelectAll: () -> Void
-    let onDeselectAll: () -> Void
-    let onZoomIn: () -> Void
-    let onZoomOut: () -> Void
-    let onZoomReset: () -> Void
-    let onCropVisible: () -> Void
-    let onToggleSidebar: () -> Void
-    let onToggleInspector: () -> Void
-
-    func makeNSView(context: Context) -> ReviewKeyResponderView {
-        let view = ReviewKeyResponderView()
-        view.onArrow = onArrow
-        view.onSectionArrow = onSectionArrow
-        view.onSectionExpandCollapse = onSectionExpandCollapse
-        view.onSingleKey = onSingleKey
-        view.onPan = onPan
-        view.onSpace = onSpace
-        view.onOpen = onOpen
-        view.onCommandOpen = onCommandOpen
-        view.onEscape = onEscape
-        view.onSelectAll = onSelectAll
-        view.onDeselectAll = onDeselectAll
-        view.onZoomIn = onZoomIn
-        view.onZoomOut = onZoomOut
-        view.onZoomReset = onZoomReset
-        view.onCropVisible = onCropVisible
-        view.onToggleSidebar = onToggleSidebar
-        view.onToggleInspector = onToggleInspector
-        return view
-    }
-
-    func updateNSView(_ nsView: ReviewKeyResponderView, context: Context) {
-        nsView.onArrow = onArrow
-        nsView.onSectionArrow = onSectionArrow
-        nsView.onSectionExpandCollapse = onSectionExpandCollapse
-        nsView.onSingleKey = onSingleKey
-        nsView.onPan = onPan
-        nsView.onSpace = onSpace
-        nsView.onOpen = onOpen
-        nsView.onCommandOpen = onCommandOpen
-        nsView.onEscape = onEscape
-        nsView.onSelectAll = onSelectAll
-        nsView.onDeselectAll = onDeselectAll
-        nsView.onZoomIn = onZoomIn
-        nsView.onZoomOut = onZoomOut
-        nsView.onZoomReset = onZoomReset
-        nsView.onCropVisible = onCropVisible
-        nsView.onToggleSidebar = onToggleSidebar
-        nsView.onToggleInspector = onToggleInspector
-
-        nsView.isHandlingKeys = isFocused
-        if isFocused, nsView.window?.firstResponder !== nsView {
-            DispatchQueue.main.async {
-                nsView.window?.makeFirstResponder(nsView)
-            }
-        }
-    }
-}
-
-final class ReviewKeyResponderView: NSView {
-    var isHandlingKeys = false
-    var onArrow: ((_ dx: Int, _ dy: Int, _ extending: Bool) -> Void)?
-    var onSectionArrow: ((_ dx: Int, _ dy: Int) -> Void)?
-    var onSectionExpandCollapse: ((_ expand: Bool) -> Void)?
-    var onSingleKey: ((_ key: String) -> Void)?
-    var onPan: ((_ dx: Int, _ dy: Int) -> Void)?
-    var onSpace: (() -> Void)?
-    var onOpen: (() -> Void)?
-    var onCommandOpen: (() -> Void)?
-    var onEscape: (() -> Void)?
-    var onSelectAll: (() -> Void)?
-    var onDeselectAll: (() -> Void)?
-    var onZoomIn: (() -> Void)?
-    var onZoomOut: (() -> Void)?
-    var onZoomReset: (() -> Void)?
-    var onCropVisible: (() -> Void)?
-    var onToggleSidebar: (() -> Void)?
-    var onToggleInspector: (() -> Void)?
-
-    override var acceptsFirstResponder: Bool { true }
-
-    override func keyDown(with event: NSEvent) {
-        guard isHandlingKeys else {
-            super.keyDown(with: event)
-            return
-        }
-
-        let extending = event.modifierFlags.contains(.shift)
-        let hasOptionModifier = event.modifierFlags.contains(.option)
-        let hasCommandModifier = event.modifierFlags.contains(.command)
-        let hasControlModifier = event.modifierFlags.contains(.control)
-        if let chromeShortcut = AppChromeKeyboardShortcut(
-            key: event.charactersIgnoringModifiers,
-            modifiers: event.modifierFlags
-        ) {
-            switch chromeShortcut {
-            case .toggleSidebar:
-                onToggleSidebar?()
-            case .toggleInspector:
-                onToggleInspector?()
-            }
-            return
-        }
-
-        if hasCommandModifier,
-           let chars = event.charactersIgnoringModifiers?.uppercased() {
-            if chars == "A" {
-                if event.modifierFlags.contains(.shift) {
-                    onDeselectAll?()
-                } else {
-                    onSelectAll?()
-                }
-                return
-            }
-        }
-
-        switch event.keyCode {
-        case 123:
-            if hasOptionModifier {
-                onSectionExpandCollapse?(false)
-            } else {
-                onArrow?(-1, 0, extending)
-            }
-        case 124:
-            if hasOptionModifier {
-                onSectionExpandCollapse?(true)
-            } else {
-                onArrow?(1, 0, extending)
-            }
-        case 125:
-            if hasOptionModifier {
-                onSectionArrow?(0, 1)
-            } else {
-                onArrow?(0, 1, extending)
-            }
-        case 126:
-            if hasOptionModifier {
-                onSectionArrow?(0, -1)
-            } else {
-                onArrow?(0, -1, extending)
-            }
-        case 49:
-            onSpace?()
-        case 36:
-            if hasCommandModifier || hasControlModifier {
-                onCommandOpen?()
-            } else {
-                onOpen?()
-            }
-        case 53:
-            onEscape?()
-        default:
-            guard let rawText = event.charactersIgnoringModifiers else {
-                super.keyDown(with: event)
-                return
-            }
-
-            let text = rawText.uppercased()
-            if !event.modifierFlags.intersection([.command, .control, .option]).isEmpty {
-                super.keyDown(with: event)
-            } else if rawText == "=" || rawText == "+" {
-                onZoomIn?()
-            } else if rawText == "-" || rawText == "_" {
-                onZoomOut?()
-            } else if rawText == "0" {
-                onZoomReset?()
-            } else if text == "V" {
-                onCropVisible?()
-            } else if let direction = CompareKeyboardPanDirection(key: text), let onPan {
-                onPan(direction.dx, direction.dy)
-            } else if ["S", "X", "D", "R", "A", "C"].contains(text) || (text == "Q" && onPan != nil) {
-                onSingleKey?(text)
-            } else {
-                super.keyDown(with: event)
-            }
-        }
     }
 }
 
@@ -839,6 +551,7 @@ struct FullPhotoSheet: View {
 
         ZStack {
             ReviewKeyInputView(
+                appState: appState, commandScope: .preview,
                 isFocused: true,
                 onArrow: { dx, dy, extending in
                     // While a crop is pending, arrows nudge the crop rect; Shift takes a larger step.
@@ -945,23 +658,20 @@ struct FullPhotoSheet: View {
                         appState.navigatePreview(by: -1)
                     }
                     .disabled(!appState.canNavigatePreviewBackward)
-                    .keyboardShortcut(.leftArrow, modifiers: [])
-                    .shortcutHint("Left", help: "Show the previous visible photo (Left Arrow)")
+                    .commandShortcutHint(.moveLeft, appState: appState, scope: .preview, help: "Show the previous visible photo")
 
                     Button("Next") {
                         appState.navigatePreview(by: 1)
                     }
                     .disabled(!appState.canNavigatePreviewForward)
-                    .keyboardShortcut(.rightArrow, modifiers: [])
-                    .shortcutHint("Right", help: "Show the next visible photo (Right Arrow)")
+                    .commandShortcutHint(.moveRight, appState: appState, scope: .preview, help: "Show the next visible photo")
 
-                    ZoomToolbar(zoom: $zoom)
+                    ZoomToolbar(appState: appState, scope: .preview, zoom: $zoom)
                     cropControls(for: displayItem)
                     Button("Close") {
                         dismiss()
                     }
-                    .keyboardShortcut(.cancelAction)
-                    .shortcutHint("Escape", help: "Close preview (Escape)")
+                        .commandShortcutHint(.closeSurface, appState: appState, scope: .preview, help: "Close preview")
                 }
 
                 FullPhotoPreviewCanvas(
@@ -976,7 +686,7 @@ struct FullPhotoSheet: View {
                     onManualCropSelectionChanged: { rect in
                         pendingManualCropRect = rect
                         if rect != nil {
-                            appState.statusMessage = "Crop area selected — drag to adjust, then click Crop (or press Return)."
+                            appState.statusMessage = "Crop area selected — drag to adjust, then confirm with “Crop to Selection”."
                         }
                     },
                     onManualCropRejected: { }
@@ -1016,7 +726,7 @@ struct FullPhotoSheet: View {
             .buttonStyle(.bordered)
             .controlSize(.small)
             .disabled(isSavingCrop || visibleCropRect.isEffectivelyFullFrame)
-            .shortcutHint("V", help: "Save a crop from the current zoomed view")
+            .commandShortcutHint(.cropVisible, appState: appState, scope: .preview, help: "Save a crop from the current zoomed view")
 
             if pendingManualCropRect != nil {
                 Button {
@@ -1027,7 +737,7 @@ struct FullPhotoSheet: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
                 .disabled(isSavingCrop || pendingManualCropRect?.isUsableCrop != true)
-                .help("Crop to the selected rectangle (Return)")
+                .commandShortcutHint(.activateFocused, appState: appState, scope: .preview, help: "Crop to the selected rectangle")
 
                 Button {
                     cancelManualCrop()
@@ -1036,7 +746,7 @@ struct FullPhotoSheet: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .help("Clear the crop selection (Escape)")
+                .commandShortcutHint(.closeSurface, appState: appState, scope: .preview, help: "Clear the crop selection")
             }
         }
     }
@@ -1092,7 +802,7 @@ struct FullPhotoSheet: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .disabled(!canEdit || item.selectionState.isIncluded)
-                .shortcutHint("S", help: "Select this photo for import")
+                .commandShortcutHint(.markIncluded, appState: appState, scope: .preview, help: "Select this photo for import")
 
                 Button("C") {
                     appState.markPreviewItemAsCandidate(item.id)
@@ -1100,7 +810,7 @@ struct FullPhotoSheet: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .disabled(!canEdit || item.selectionState.isCandidate)
-                .shortcutHint("C", help: "Mark this photo as candidate")
+                .commandShortcutHint(.markCandidate, appState: appState, scope: .preview, help: "Mark this photo as candidate")
 
                 Button("X") {
                     appState.excludePreviewItemFromImport(item.id)
@@ -1108,7 +818,7 @@ struct FullPhotoSheet: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .disabled(!canEdit || item.selectionState.isExcluded)
-                .shortcutHint("X", help: "Exclude this photo from import")
+                .commandShortcutHint(.markExcluded, appState: appState, scope: .preview, help: "Exclude this photo from import")
 
                 if !item.selectionState.isUndecided {
                     Button("D") {
@@ -1117,7 +827,7 @@ struct FullPhotoSheet: View {
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .disabled(!canEdit)
-                    .shortcutHint("D", help: "Clear this photo back to undecided")
+                    .commandShortcutHint(.clearTriage, appState: appState, scope: .preview, help: "Clear this photo back to undecided")
                 }
 
                 if !item.companionFiles.isEmpty {
@@ -1128,7 +838,7 @@ struct FullPhotoSheet: View {
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
                         .disabled(!canEdit)
-                        .shortcutHint("R", help: "Toggle RAW companion import for this photo")
+                        .commandShortcutHint(.toggleRAW, appState: appState, scope: .preview, help: "Toggle RAW companion import for this photo")
                     } else {
                         Button("R") {
                             appState.toggleRawForPreviewItem(item.id)
@@ -1136,7 +846,7 @@ struct FullPhotoSheet: View {
                         .buttonStyle(.bordered)
                         .controlSize(.small)
                         .disabled(!canEdit)
-                        .shortcutHint("R", help: "Toggle RAW companion import for this photo")
+                        .commandShortcutHint(.toggleRAW, appState: appState, scope: .preview, help: "Toggle RAW companion import for this photo")
                     }
                 }
             }
@@ -1247,6 +957,7 @@ struct CompareSheet: View {
 
         VStack(alignment: .leading, spacing: 18) {
             ReviewKeyInputView(
+                appState: appState, commandScope: .compare,
                 isFocused: !snapshot.items.isEmpty,
                 onArrow: { dx, dy, _ in
                     appState.moveComparisonFocus(dx: dx, dy: dy)
@@ -1325,7 +1036,7 @@ struct CompareSheet: View {
                     .toggleStyle(.switch)
                     .controlSize(.small)
                     .help("Keep compare items panned to the same relative detail area")
-                ZoomToolbar(zoom: $zoom)
+                ZoomToolbar(appState: appState, scope: .compare, zoom: $zoom)
                 Button {
                     cropFocusedVisibleArea(snapshot: snapshot)
                 } label: {
@@ -1342,7 +1053,7 @@ struct CompareSheet: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
                 .disabled(focusedCropIsSaving(in: snapshot) || (focusedVisibleCrop(in: snapshot)?.isEffectivelyFullFrame ?? true))
-                .shortcutHint("V", help: "Save a crop from the focused compare image")
+                .commandShortcutHint(.cropVisible, appState: appState, scope: .compare, help: "Save a crop from the focused compare image")
 
                 Toggle(isOn: $isManualCropEnabled) {
                     Label("Drag Crop", systemImage: "selection.pin.in.out")
@@ -1376,8 +1087,7 @@ struct CompareSheet: View {
                 Button("Close") {
                     onClose()
                 }
-                .keyboardShortcut(.cancelAction)
-                .shortcutHint("Escape", help: "Close compare (Escape)")
+                .commandShortcutHint(.closeSurface, appState: appState, scope: .compare, help: "Close compare")
             }
 
             if snapshot.items.isEmpty {
@@ -1614,7 +1324,7 @@ struct CompareItemCard: View {
                     .buttonStyle(.bordered)
                     .controlSize(.mini)
                     .disabled(item.selectionState.isIncluded)
-                    .shortcutHint("S / Cmd-I", help: "Select this item for import")
+                    .commandShortcutHint(.markIncluded, appState: appState, scope: .compare, help: "Select this item for import")
 
                     Button("C") {
                         appState.markComparisonItemAsCandidate(item.id)
@@ -1622,7 +1332,7 @@ struct CompareItemCard: View {
                     .buttonStyle(.bordered)
                     .controlSize(.mini)
                     .disabled(item.selectionState.isCandidate)
-                    .shortcutHint("C", help: "Mark this item as candidate")
+                    .commandShortcutHint(.markCandidate, appState: appState, scope: .compare, help: "Mark this item as candidate")
 
                     Button("X") {
                         appState.excludeComparisonItemFromImport(item.id)
@@ -1630,7 +1340,7 @@ struct CompareItemCard: View {
                     .buttonStyle(.bordered)
                     .controlSize(.mini)
                     .disabled(item.selectionState.isExcluded)
-                    .shortcutHint("X / Cmd-Shift-X", help: "Exclude this item from import")
+                    .commandShortcutHint(.markExcluded, appState: appState, scope: .compare, help: "Exclude this item from import")
 
                     if !item.selectionState.isUndecided {
                         Button("D") {
@@ -1638,7 +1348,7 @@ struct CompareItemCard: View {
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.mini)
-                        .shortcutHint("D / Cmd-Shift-I", help: "Clear this item back to undecided")
+                        .commandShortcutHint(.clearTriage, appState: appState, scope: .compare, help: "Clear this item back to undecided")
                     }
 
                     if !item.companionFiles.isEmpty {
@@ -1648,14 +1358,14 @@ struct CompareItemCard: View {
                             }
                             .buttonStyle(.borderedProminent)
                             .controlSize(.mini)
-                            .shortcutHint("R / Cmd-Option-R", help: "Toggle RAW companions for this compare item")
+                            .commandShortcutHint(.toggleRAW, appState: appState, scope: .compare, help: "Toggle RAW companions for this compare item")
                         } else {
                             Button("R") {
                                 appState.setImportRawCompanions(for: item, enabled: true)
                             }
                             .buttonStyle(.bordered)
                             .controlSize(.mini)
-                            .shortcutHint("R / Cmd-Option-R", help: "Toggle RAW companions for this compare item")
+                            .commandShortcutHint(.toggleRAW, appState: appState, scope: .compare, help: "Toggle RAW companions for this compare item")
                         }
                     }
                 }
@@ -1673,7 +1383,7 @@ struct CompareItemCard: View {
                 .buttonStyle(.bordered)
                 .controlSize(.mini)
                 .disabled(isSavingCrop || visibleCropRect.isEffectivelyFullFrame)
-                .shortcutHint("V", help: "Crop the visible zoomed area when this item is focused")
+                .commandShortcutHint(.cropVisible, appState: appState, scope: .compare, help: "Crop the visible zoomed area when this item is focused")
 
                 Button {
                     appState.removeItemFromComparison(item.id)
@@ -1683,7 +1393,7 @@ struct CompareItemCard: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .help("Remove this item from compare")
-                .shortcutHint("Q", help: "Remove this item from compare (Q)", alignment: .topLeading)
+                .commandShortcutHint(.removeCompareItem, appState: appState, scope: .compare, help: "Remove this item from compare (Q)", alignment: .topLeading)
             }
 
             LoadedLockedCompareImageCanvas(
@@ -1737,28 +1447,26 @@ struct CompareItemCard: View {
 }
 
 struct ZoomToolbar: View {
+    let appState: AppState
+    let scope: AppCommandScope
     @Binding var zoom: CGFloat
-    var keyboardModifiers: EventModifiers = []
 
     var body: some View {
         HStack(spacing: 8) {
             Button("−") {
                 zoom = max(0.25, zoom - 0.25)
             }
-            .keyboardShortcut("-", modifiers: keyboardModifiers)
-            .shortcutHint(keyboardModifiers.isEmpty ? "-" : "Option--", help: keyboardModifiers.isEmpty ? "Zoom out (-)" : "Zoom out (Option--)")
+            .commandShortcutHint(.zoomOut, appState: appState, scope: scope, help: "Zoom out")
 
             Button("Fit") {
                 zoom = 1
             }
-            .keyboardShortcut("0", modifiers: keyboardModifiers)
-            .shortcutHint(keyboardModifiers.isEmpty ? "0" : "Option-0", help: keyboardModifiers.isEmpty ? "Fit image to container (0)" : "Fit compare image to container (Option-0)")
+            .commandShortcutHint(.zoomReset, appState: appState, scope: scope, help: "Fit image to container")
 
             Button("+") {
                 zoom = min(4, zoom + 0.25)
             }
-            .keyboardShortcut("+", modifiers: keyboardModifiers)
-            .shortcutHint(keyboardModifiers.isEmpty ? "+" : "Option-+", help: keyboardModifiers.isEmpty ? "Zoom in (+)" : "Zoom in (Option-+)")
+            .commandShortcutHint(.zoomIn, appState: appState, scope: scope, help: "Zoom in")
 
             Text("\(Int((zoom * 100).rounded()))%")
                 .font(.caption.monospacedDigit().weight(.semibold))

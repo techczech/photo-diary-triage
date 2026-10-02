@@ -15,6 +15,7 @@ struct ContentView: View {
     @State private var walkLocation: String = ""
     @State private var walkNotes: String = ""
     @FocusState private var archiveSearchFocused: Bool
+    @FocusState private var reviewSearchFocused: Bool
 
     private let appRelease = AppRelease.current
 
@@ -31,17 +32,21 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView(columnVisibility: sidebarColumnVisibility) {
-            SidebarPaneView(
+            CommandSidebarContainer(appState: appState, content: SidebarPaneView(
                 appState: appState,
                 state: sidebarState,
                 archiveState: archiveBrowserState,
                 appRelease: appRelease
-            )
+            ))
             .navigationSplitViewColumnWidth(min: 220, ideal: 280, max: 340)
         } detail: {
             detailPane
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .background(CommandWindowAnchor(coordinator: appState.commandCoordinator, findAction: {
+            if appState.workspaceMode == .archiveView && !appState.isBrowsingArchivePhotos { archiveSearchFocused = true }
+            else { reviewSearchFocused = true }
+        }, searchAction: { archiveSearchFocused = true }))
         .navigationSplitViewStyle(.balanced)
         .inspector(isPresented: inspectorVisibility) {
             DetailsInspectorView(
@@ -86,12 +91,6 @@ struct ContentView: View {
         .frame(minWidth: 560, maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .sheet(isPresented: Binding(
-            get: { presentationState.snapshot.showKeyboardHelp },
-            set: { appState.showKeyboardHelp = $0 }
-        )) {
-            KeyboardHelpSheet()
-        }
         .alert(item: Binding(
             get: { presentationState.snapshot.startupAlert },
             set: { _ in appState.dismissStartupAlert() }
@@ -150,18 +149,7 @@ struct ContentView: View {
         .onChange(of: sidebarState.snapshot.sessionSummary?.sessionID) { _, _ in
             hydrateForm()
         }
-        .onExitCommand {
-            if appState.workspaceMode == .archiveView {
-                appState.navigateToParent()
-            } else if reviewNavigationState.snapshot.reviewGridHasFocus {
-                appState.deactivateReviewGridFocus()
-            } else {
-                appState.navigateToParent()
-            }
-        }
-        .onChange(of: archiveBrowserState.snapshot.searchFocusRevision) { _, _ in
-            archiveSearchFocused = true
-        }
+
     }
 
     private var sidebarColumnVisibility: Binding<NavigationSplitViewVisibility> {
@@ -233,6 +221,16 @@ struct ContentView: View {
             }
         }
 
+        if appState.workspaceMode != .archiveView || appState.isBrowsingArchivePhotos {
+            ToolbarItem {
+                TextField("Find photos in this view", text: Binding(
+                    get: { reviewState.snapshot.findQuery }, set: { appState.reviewSearchQuery = $0 }
+                ))
+                .textFieldStyle(.roundedBorder).frame(width: 210).focused($reviewSearchFocused)
+                .help("Find filenames and paths in the current photo view")
+            }
+        }
+
         ToolbarItemGroup {
             Button {
                 appState.openFocusedReviewItem()
@@ -258,7 +256,7 @@ struct ContentView: View {
             .help("\(inspectorState.snapshot.isVisible ? "Hide" : "Show") inspector")
 
             Button {
-                appState.showKeyboardHelp = true
+                appState.commandCoordinator.execute(.keyboardHelp)
             } label: {
                 Label("Shortcuts", systemImage: "keyboard")
             }

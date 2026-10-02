@@ -191,7 +191,7 @@ struct ReviewGridCard: View {
             }
         }
         .contentShape(RoundedRectangle(cornerRadius: 12))
-        .shortcutHint("Shift-click / Cmd-click / Double-click", help: "Click to select. Shift-click extends the selection, Command-click toggles selection, and double-click opens preview.")
+        .literalGestureHint("Shift-click / Cmd-click / Double-click", help: "Click to select. Shift-click extends the selection, Command-click toggles selection, and double-click opens preview.")
     }
 
     @ViewBuilder
@@ -201,25 +201,25 @@ struct ReviewGridCard: View {
                 .buttonStyle(.bordered)
                 .controlSize(.mini)
                 .disabled(item.selectionState.isIncluded)
-                .shortcutHint("S / Cmd-I", help: "Select this item for import (S / Cmd-I)")
+                .commandShortcutHint(.markIncluded, appState: appState, scope: .review, help: "Select this item for import")
 
             Button("C", action: markAsCandidate)
                 .buttonStyle(.bordered)
                 .controlSize(.mini)
                 .disabled(item.selectionState.isCandidate)
-                .shortcutHint("C", help: "Mark this item as a candidate (C)")
+                .commandShortcutHint(.markCandidate, appState: appState, scope: .review, help: "Mark this item as a candidate")
 
             Button("X", action: excludeFromImport)
                 .buttonStyle(.bordered)
                 .controlSize(.mini)
                 .disabled(item.selectionState.isExcluded)
-                .shortcutHint("X / Cmd-Shift-X", help: "Exclude this item from import (X / Cmd-Shift-X)")
+                .commandShortcutHint(.markExcluded, appState: appState, scope: .review, help: "Exclude this item from import")
 
             if !item.selectionState.isUndecided {
                 Button("D", action: clearTriageState)
                     .buttonStyle(.bordered)
                     .controlSize(.mini)
-                    .shortcutHint("D / Cmd-Shift-I", help: "Clear this item back to undecided (D / Cmd-Shift-I)")
+                    .commandShortcutHint(.clearTriage, appState: appState, scope: .review, help: "Clear this item back to undecided")
             }
 
             if !item.companionFiles.isEmpty {
@@ -229,14 +229,14 @@ struct ReviewGridCard: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.mini)
-                    .shortcutHint("R / Cmd-Option-R", help: "Toggle RAW companions for this item (R / Cmd-Option-R)")
+                    .commandShortcutHint(.toggleRAW, appState: appState, scope: .review, help: "Toggle RAW companions for this item")
                 } else {
                     Button("R") {
                         setIncludeRaw(true)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.mini)
-                    .shortcutHint("R / Cmd-Option-R", help: "Toggle RAW companions for this item (R / Cmd-Option-R)")
+                    .commandShortcutHint(.toggleRAW, appState: appState, scope: .review, help: "Toggle RAW companions for this item")
                 }
             }
 
@@ -358,25 +358,25 @@ struct MediaItemRow: View {
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .disabled(item.selectionState.isIncluded)
-                    .shortcutHint("S / Cmd-I", help: "Select this item for import (S / Cmd-I)")
+                    .commandShortcutHint(.markIncluded, appState: appState, scope: .review, help: "Select this item for import")
 
                 Button("C", action: markAsCandidate)
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .disabled(item.selectionState.isCandidate)
-                    .shortcutHint("C", help: "Mark this item as a candidate (C)")
+                    .commandShortcutHint(.markCandidate, appState: appState, scope: .review, help: "Mark this item as a candidate")
 
                 Button("X", action: excludeFromImport)
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .disabled(item.selectionState.isExcluded)
-                    .shortcutHint("X / Cmd-Shift-X", help: "Exclude this item from import (X / Cmd-Shift-X)")
+                    .commandShortcutHint(.markExcluded, appState: appState, scope: .review, help: "Exclude this item from import")
 
                 if !item.selectionState.isUndecided {
                     Button("D", action: clearTriageState)
                         .buttonStyle(.bordered)
                         .controlSize(.small)
-                        .shortcutHint("D / Cmd-Shift-I", help: "Clear this item back to undecided (D / Cmd-Shift-I)")
+                        .commandShortcutHint(.clearTriage, appState: appState, scope: .review, help: "Clear this item back to undecided")
                 }
 
                 if !item.companionFiles.isEmpty {
@@ -386,7 +386,7 @@ struct MediaItemRow: View {
                     ))
                     .toggleStyle(.switch)
                     .controlSize(.small)
-                    .shortcutHint("R / Cmd-Option-R", help: "Include RAW companions for this item (R / Cmd-Option-R)")
+                    .commandShortcutHint(.toggleRAW, appState: appState, scope: .review, help: "Include RAW companions for this item")
                 }
 
                 Spacer(minLength: 0)

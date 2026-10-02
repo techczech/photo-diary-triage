@@ -24,11 +24,16 @@ struct GooglePhotosReviewView: View {
             Toggle("Include material marked previously uploaded", isOn: $includeMarked)
             Text("Manual marks describe earlier uploads that this app cannot verify. They normally exclude material from this delivery.").font(.caption).foregroundStyle(.secondary)
             HStack {
-                Button("Cancel") { appState.googleDeliveryReview = nil }
+                Button("Cancel") { appState.commandCoordinator.execute(.closeSheet) }
+                    .commandShortcutHint(.closeSheet, appState: appState, scope: .form, help: "Cancel this review")
                 Spacer()
-                Button("Send these originals") { Task { await appState.confirmGoogleDelivery(review, includeMarked: includeMarked) } }.buttonStyle(.borderedProminent).disabled(appState.isDeliveringGooglePhotos)
+                Button("Send these originals") { appState.commandCoordinator.execute(.confirmGoogleDelivery) }.buttonStyle(.borderedProminent).disabled(appState.isDeliveringGooglePhotos)
             }
         }.padding(24).frame(width: 580)
+        .background(CommandSheetAnchor(coordinator: appState.commandCoordinator, actions: [
+            .closeSheet: .init(run: { appState.googleDeliveryReview = nil }),
+            .confirmGoogleDelivery: .init(enabled: !appState.isDeliveringGooglePhotos, run: { Task { await appState.confirmGoogleDelivery(review, includeMarked: includeMarked) } })
+        ]))
     }
 }
 struct GooglePhotosQueueView: View {
@@ -40,10 +45,11 @@ struct GooglePhotosQueueView: View {
             Text("Google Photos deliveries").font(.title2)
             Text("Verified badges record album membership. Google exposes no original checksum; they do not prove byte-for-byte backup recovery.").foregroundStyle(.secondary)
             HStack {
-                Button(appState.isDeliveringGooglePhotos ? "Delivering…" : "Resume / retry") { appState.startGoogleResume() }.disabled(appState.isDeliveringGooglePhotos)
-                Button("Cancel") { appState.cancelGoogleDelivery() }.disabled(!appState.isDeliveringGooglePhotos)
+                Button(appState.isDeliveringGooglePhotos ? "Delivering…" : "Resume / retry") { appState.commandCoordinator.execute(.resumeGoogleDelivery) }.disabled(appState.isDeliveringGooglePhotos)
+                Button("Cancel") { appState.commandCoordinator.execute(.cancelGoogleDelivery) }.disabled(!appState.isDeliveringGooglePhotos)
                 Spacer()
-                Button("Close") { if let onClose { onClose() } else { appState.showGoogleQueue = false } }
+                Button("Close") { appState.commandCoordinator.execute(.closeSheet) }
+                    .commandShortcutHint(.closeSheet, appState: appState, scope: .information, help: "Close the queue")
             }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 16) {
@@ -76,6 +82,9 @@ struct GooglePhotosQueueView: View {
             }
             if appState.googleDeliveryJobs.isEmpty { Text("Choose a Trip or imported Photo Log, then review its account and originals before sending.").foregroundStyle(.secondary) }
         }.padding(20).frame(minWidth: 720, minHeight: 460)
+        .background(CommandSheetAnchor(coordinator: appState.commandCoordinator, scope: .information, actions: [
+            .closeSheet: .init(run: { if let onClose { onClose() } else { appState.showGoogleQueue = false } })
+        ]))
         .alert("Allow another album creation request?", isPresented: Binding(get: { noAlbumJob != nil }, set: { if !$0 { noAlbumJob = nil } })) {
             Button("Cancel", role: .cancel) { noAlbumJob = nil }
             Button("I confirmed no album was created") { if let job = noAlbumJob { Task { await appState.confirmGoogleAlbumAbsent(jobID: job.id, accountID: job.account.id) } }; noAlbumJob = nil }

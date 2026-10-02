@@ -59,6 +59,7 @@ final class AppState: ObservableObject {
     }
     @Published var currentSession: ImportSession? {
         didSet {
+            if oldValue?.id != currentSession?.id { reviewSearchQuery = "" }
             let updateKind = currentSessionUpdateKind
             currentSessionUpdateKind = .full
             rebuildSessionCaches(clearThumbnailCache: updateKind == .full)
@@ -91,6 +92,7 @@ final class AppState: ObservableObject {
     }
     @Published var selectedSidebarNodeID: String? {
         didSet {
+            if oldValue != selectedSidebarNodeID { reviewSearchQuery = "" }
             invalidateInlineSectionCaches()
             refreshSidebarState()
             refreshReviewState()
@@ -131,6 +133,39 @@ final class AppState: ObservableObject {
             refreshSidebarState()
         }
     }
+    @Published private(set) var commandShortcutSaveError: String?
+    let archiveSidebarNavigation = ArchiveSidebarNavigation()
+    lazy var commandCoordinator = CommandKeyboardCoordinator(appState: self)
+    var isBrowsingArchivePhotos: Bool { if case .photos = archiveNavigationLevel { return true }; return false }
+    var commandReviewContextFingerprint: String {
+        [String(reviewContentCacheGeneration), String(inlineSectionCacheGeneration), String(describing: reviewFilter), String(describing: dayOrganizationMode),
+         String(describing: dayDetailDisplayMode), String(describing: settings.reviewPresentationMode), String(settings.reviewGridColumnCount)].joined(separator: "\0")
+    }
+    var commandArchiveSelectionFingerprint: String {
+        [String(describing: workspaceMode), String(describing: archiveNavigationLevel), String(describing: settings.archiveBrowseViewMode), String(describing: archiveSort), String(describing: archiveKindFilter), archiveYearFilter ?? "", archiveSearchQuery,
+         selectedArchiveEntryID ?? "", selectedArchiveWalkID ?? "", selectedArchiveSearchResultID ?? "", activePhotoLogEditor?.id.uuidString ?? "", activeWalkCommitEditor?.id.uuidString ?? ""].joined(separator: "\0")
+    }
+
+    @discardableResult
+    func setCommandShortcut(_ id: AppCommandID, override: AppShortcutOverride?) -> Bool {
+        guard settings.commandShortcutSchemaVersion == 1 else {
+            commandShortcutSaveError = "These shortcuts were saved by a newer app. Update Walkfolio before changing them."
+            return false
+        }
+        let registry = AppCommandRegistry(overrides: settings.commandShortcutOverrides)
+        let reason = override.map { registry.validate($0, for: id) } ?? registry.validateDefault(for: id)
+        if let reason { commandShortcutSaveError = reason; return false }
+        var changed = settings; changed.commandShortcutOverrides[id.rawValue] = override
+        // Publish only after the durable write; a failed save must not change dispatch.
+        do {
+            try settingsStore.save(changed)
+            settings = changed; commandShortcutSaveError = nil; commandCoordinator.objectWillChange.send(); return true
+        } catch {
+            commandShortcutSaveError = "Shortcut save failed: " + error.localizedDescription
+            statusMessage = commandShortcutSaveError!; return false
+        }
+    }
+
     @Published var showKeyboardHelp = false {
         didSet {
             refreshPresentationState()
@@ -155,6 +190,14 @@ final class AppState: ObservableObject {
         didSet {
             guard isSidebarVisible != oldValue else { return }
             handleSidebarVisibilityChanged()
+        }
+    }
+    @Published var reviewSearchQuery = "" {
+        didSet {
+            guard reviewSearchQuery != oldValue else { return }
+            invalidateReviewContentCaches(); invalidateInlineSectionCaches()
+            reconcileReviewSelectionWithVisibleItems()
+            refreshReviewState(); refreshNavigationState(); refreshInspectorState(); refreshCompareState()
         }
     }
     @Published var reviewFilter: ReviewFilter = .all {
@@ -4140,11 +4183,7 @@ final class AppState: ObservableObject {
         activePane = .sidebar
         reviewGridHasFocus = false
         reviewKeyboardTarget = .items
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            guard self.isSidebarVisible, self.activePane == .sidebar else { return }
-            self.focusSidebarFirstResponder()
-        }
+        commandCoordinator.requestFocus(scope: workspaceMode == .archiveView ? .archiveSidebar : .sourceSidebar)
     }
 
     func focusReviewSurface() {
@@ -4156,6 +4195,7 @@ final class AppState: ObservableObject {
                 reviewGridHasFocus = false
                 archiveBrowseFocusRevision &+= 1
                 refreshArchiveBrowserState()
+                commandCoordinator.requestFocus(scope: .archiveCards)
                 return
             case .photos: break
             }
@@ -4165,6 +4205,7 @@ final class AppState: ObservableObject {
         }
         reviewKeyboardTarget = .items
         activateReviewGridFocus()
+        commandCoordinator.requestFocus(scope: .review)
     }
 
     func showFlatReview() {
@@ -6578,7 +6619,7 @@ final class AppState: ObservableObject {
         let groupedSections = isGroupedReviewActive ? groupedReviewSections : []
         let canUseGroupedSectionNavigation = isGroupedReviewActive && !groupedSections.isEmpty
 
-        let snapshot = ReviewSnapshot(
+        var snapshot = ReviewSnapshot(
             breadcrumbTitles: breadcrumbTitles,
             contextMediaItemCount: contextMediaItems.count,
             detailFolderNodes: detailFolderNodes,
@@ -6611,6 +6652,7 @@ final class AppState: ObservableObject {
             canUnmarkSelectionForImport: canUnmarkSelectionForImport,
             canToggleRawForSelection: canToggleRawForSelection
         )
+        snapshot.findQuery = reviewSearchQuery
         reviewState.update(snapshot)
     }
 
@@ -6981,35 +7023,6 @@ final class AppState: ObservableObject {
         return remainingIDs[replacementIndex]
     }
 
-    private func focusSidebarFirstResponder() {
-        guard let window = NSApp.keyWindow else { return }
-        guard let contentView = window.contentViewController?.view
-            ?? (window.value(forKey: "contentView") as? NSView) else { return }
-
-        if let outlineView = firstSubview(in: contentView, matching: { $0 is NSOutlineView }) as? NSOutlineView {
-            window.makeFirstResponder(outlineView)
-            return
-        }
-
-        if let tableView = firstSubview(in: contentView, matching: { $0 is NSTableView }) as? NSTableView {
-            window.makeFirstResponder(tableView)
-        }
-    }
-
-    private func firstSubview(in root: NSView, matching predicate: (NSView) -> Bool) -> NSView? {
-        if predicate(root) {
-            return root
-        }
-
-        for subview in root.subviews {
-            if let match = firstSubview(in: subview, matching: predicate) {
-                return match
-            }
-        }
-
-        return nil
-    }
-
     private func inlineSection(matching sectionID: String, in sections: [InlineSection]) -> InlineSection? {
         for section in sections {
             if section.id == sectionID {
@@ -7049,6 +7062,11 @@ final class AppState: ObservableObject {
     }
 
     private func filterReviewItems(_ items: [MediaItem]) -> [MediaItem] {
+        let words = reviewSearchQuery.split(whereSeparator: \.isWhitespace)
+        let items = words.isEmpty ? items : items.filter { item in
+            let text = item.fileName + " " + item.relativePath
+            return words.allSatisfy { text.localizedStandardContains(String($0)) }
+        }
         switch reviewFilter {
         case .all:
             return items

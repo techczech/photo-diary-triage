@@ -9,11 +9,12 @@ struct DescriptionQueueView: View {
             Text("Archived keepers first, then Walk and Trip summaries. Successful regeneration replaces the active search description and preserves earlier machine revisions.")
                 .foregroundStyle(.secondary)
             HStack {
-                Button(appState.isDescribing ? "Describing…" : "Resume / retry") { appState.startDescriptionResume() }.disabled(appState.isDescribing)
-                Button("Cancel") { appState.cancelDescriptions() }.disabled(!appState.isDescribing)
-                Button("Discard failed batches") { Task { await appState.discardFailedDescriptions() } }.disabled(appState.isDescribing)
+                Button(appState.isDescribing ? "Describing…" : "Resume / retry") { appState.commandCoordinator.execute(.resumeDescriptions) }.disabled(appState.isDescribing)
+                Button("Cancel") { appState.commandCoordinator.execute(.cancelDescriptions) }.disabled(!appState.isDescribing)
+                Button("Discard failed batches") { appState.commandCoordinator.execute(.discardDescriptions) }.disabled(appState.isDescribing)
                 Spacer()
-                Button("Close") { if let onClose { onClose() } else { appState.showDescriptionQueue = false } }.keyboardShortcut(.cancelAction)
+                Button("Close") { appState.commandCoordinator.execute(.closeSheet) }
+                    .commandShortcutHint(.closeSheet, appState: appState, scope: .information, help: "Close the queue")
             }
             List(appState.descriptionJobs.filter { $0.state != .discarded }.reversed()) { job in
                 DisclosureGroup {
@@ -34,6 +35,9 @@ struct DescriptionQueueView: View {
             }
             if appState.descriptionJobs.isEmpty { Text("Choose archived photos, a Walk, a Trip or a year from Describe in Archive.").foregroundStyle(.secondary) }
         }.padding(20).frame(minWidth: 700, minHeight: 450)
+        .background(CommandSheetAnchor(coordinator: appState.commandCoordinator, scope: .information, actions: [
+            .closeSheet: .init(run: { if let onClose { onClose() } else { appState.showDescriptionQueue = false } })
+        ]))
     }
 }
 
