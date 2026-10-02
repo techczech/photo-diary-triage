@@ -1347,6 +1347,15 @@ final class AppState: ObservableObject {
         refreshArchiveBrowserState()
     }
 
+    var canRetryCurrentArchiveSearch: Bool {
+        workspaceMode == .archiveView && hasArchiveSearchQuery && !archiveSearchIsLoading
+    }
+
+    func retryCurrentArchiveSearch() {
+        guard canRetryCurrentArchiveSearch else { return }
+        updateArchiveSearch(archiveSearchQuery)
+    }
+
     func updateArchiveSearch(_ query: String) {
         let changed = query != archiveSearchQuery
         if changed {
@@ -2197,7 +2206,8 @@ final class AppState: ObservableObject {
         }
     }
 
-    func saveCurrentLogDetailsAndStartNext(title: String, location: String, notes: String) {
+    func saveCurrentLogDetailsAndStartNext(title: String, location: String, notes: String, sessionID: UUID? = nil) {
+        if let sessionID, currentSession?.id != sessionID { return }
         if let currentSession {
             guard allowEditingCopyInputs(currentSession) else { return }
             let updated = sessionMutationCoordinator.sessionByUpdatingWalkMetadata(currentSession, title: title, location: location, notes: notes)
@@ -2965,8 +2975,8 @@ final class AppState: ObservableObject {
         }
     }
 
-    func updateWalkMetadata(title: String, location: String, notes: String) {
-        guard let currentSession else { return }
+    func updateWalkMetadata(title: String, location: String, notes: String, sessionID: UUID? = nil) {
+        guard let currentSession, sessionID == nil || currentSession.id == sessionID else { return }
         guard save(sessionMutationCoordinator.sessionByUpdatingWalkMetadata(currentSession, title: title, location: location, notes: notes)) else { return }
         refreshArchiveIndexAfterMetadataEditIfNeeded()
     }
@@ -3041,8 +3051,10 @@ final class AppState: ObservableObject {
         }
     }
 
-    func retryArchiveLocationSave() async {
-        guard !isSavingLocation, case .archive(let target) = locationAssignmentContext?.origin else { return }
+    func retryArchiveLocationSave(context captured: LocationAssignmentContext? = nil) async {
+        guard !isSavingLocation, let context = captured ?? locationAssignmentContext,
+              context.archiveRoot.standardizedFileURL == settings.archiveRoot.standardizedFileURL,
+              case .archive(let target) = context.origin else { return }
         isSavingLocation = true
         defer { isSavingLocation = false }
         let root = settings.archiveRoot

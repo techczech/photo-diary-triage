@@ -123,3 +123,28 @@ Keep this item `implementation_in_progress`; do not install/report complete unti
 - Final Astra review, full suite, signed bundle/body verification, closed installation,
   exact-version DTC return checks and complete report/index updates remain.
 - Original native/real-copy/OneDrive/LM Studio/Google acceptance remains required.
+
+
+## Captured local control checkpoint — 2026-10-02
+
+- Full suite: 505 tests / 2 suites, 30.799 s; 58 command test functions total.
+- Source, Settings, workspace, Finder and retry commands registered; 15 new keyless IDs.
+- Log details/start-next capture UUID and draft; per-Log contents/details/membership/
+  add-marked/delete/continue retain UUID and imported membership locks.
+- Location save/clear/retry/map-centre and Trip edit/save/use-Walk/cancel controls retain
+  canonical targets, root and drafts. Canonical Trip replacement resets editing.
+- Nearest native container owns a shared field editor, independent of registration
+  order. Native text, selection and IME are protected in every added editor scope.
+- Button capabilities retain issuing authority generation/window registration; target
+  and draft changes replace the exact lease. Reattachment rebuilds current buttons;
+  retained old callbacks, hidden panes and modal overlays cannot mutate editors.
+- Root round trip: 1 test / 2 red issues; hidden ancestor: 1 / 3 red issues. Narrow
+  layout: 1 / 5 red issues; proposed-width SwiftUI measurement corrects clipped fields.
+- Evidence: /private/tmp/walkfolio-keyboard-local-final-full.log;
+  walkfolio-keyboard-local-before.log, walkfolio-keyboard-local-authority-before.log,
+  walkfolio-keyboard-local-authority-layout-after.log (red layout),
+  walkfolio-keyboard-local-layout-after.log, walkfolio-keyboard-local-hidden-before.log.
+- Hidden layout at 260/320/420 points; no headed visual acceptance. Astra local source
+  review clear. Remaining proposal/crop/Google/view/menu/help/release work still active.
+- Target remains 0.7.16/152 on codex/walkfolio-command-layer. No bundle or install.
+  Installed 0.7.15/151 remains closed; original native/real-copy/provider gates open.

@@ -188,51 +188,62 @@ private struct PhotoLogActionGrid: View {
     let log: PhotoLogSummary
 
     var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 82), spacing: 6)], alignment: .leading, spacing: 6) {
-            if !log.isCurrentSession {
-                Button("Continue") {
-                    appState.openPhotoLog(log.sessionID)
+        let sessionID = log.sessionID
+        CommandLocalSurface(coordinator: appState.commandCoordinator, scope: .photoLogActions,
+            contextKey: sessionID.uuidString, actions: [
+                .openPhotoLog: .init(enabled: !log.isCurrentSession, run: { appState.openPhotoLog(sessionID) }),
+                .showPhotoLogContents: .init(run: { appState.showPhotoLogContents(sessionID) }),
+                .editPhotoLogDetails: .init(run: { appState.presentPhotoLogEditor(sessionID) }),
+                .editPhotoLogMembership: .init(enabled: !log.isMembershipLocked, run: { appState.editPhotoLogMembership(sessionID) }),
+                .addMarkedToPhotoLog: .init(enabled: appState.canAddCurrentSourceDecisions(to: sessionID), run: { appState.addCurrentSourceDecisions(to: sessionID) }),
+                .deletePhotoLog: .init(enabled: !log.isMembershipLocked, run: { appState.deletePhotoLog(sessionID) })
+            ]) { commands in
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 82), spacing: 6)], alignment: .leading, spacing: 6) {
+                if !log.isCurrentSession {
+                    Button("Continue") {
+                        commands.run(.openPhotoLog)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .help("Open this photo log to continue marking S/C/X and copy included files.")
                 }
-                .buttonStyle(.borderedProminent)
-                .help("Open this photo log to continue marking S/C/X and copy included files.")
-            }
 
-            Button("Contents") {
-                appState.showPhotoLogContents(log.sessionID)
-            }
-            .buttonStyle(.bordered)
-            .help("Show the files owned by this photo log.")
-
-            Button(PhotoLogStatusPolicy.detailsActionTitle) {
-                appState.presentPhotoLogEditor(log.sessionID)
-            }
-            .buttonStyle(.bordered)
-            .help(PhotoLogStatusPolicy.detailsHelp)
-
-            Button(PhotoLogStatusPolicy.editLogActionTitle) {
-                appState.editPhotoLogMembership(log.sessionID)
-            }
-            .buttonStyle(.bordered)
-            .disabled(log.isMembershipLocked)
-            .help(log.membershipLockMessage ?? PhotoLogStatusPolicy.editLogHelp)
-
-            if appState.canAddCurrentSourceDecisions(to: log.sessionID) {
-                Button("Add Marked") {
-                    appState.addCurrentSourceDecisions(to: log.sessionID)
+                Button("Contents") {
+                    commands.run(.showPhotoLogContents)
                 }
-                .buttonStyle(.borderedProminent)
-                .help("Add the current source-inbox S/C/X choices to this photo log.")
-            }
+                .buttonStyle(.bordered)
+                .help("Show the files owned by this photo log.")
 
-            Button("Delete") {
-                appState.deletePhotoLog(log.sessionID)
+                Button(PhotoLogStatusPolicy.detailsActionTitle) {
+                    commands.run(.editPhotoLogDetails)
+                }
+                .buttonStyle(.bordered)
+                .help(PhotoLogStatusPolicy.detailsHelp)
+
+                Button(PhotoLogStatusPolicy.editLogActionTitle) {
+                    commands.run(.editPhotoLogMembership)
+                }
+                .buttonStyle(.bordered)
+                .disabled(log.isMembershipLocked)
+                .help(log.membershipLockMessage ?? PhotoLogStatusPolicy.editLogHelp)
+
+                if appState.canAddCurrentSourceDecisions(to: log.sessionID) {
+                    Button("Add Marked") {
+                        commands.run(.addMarkedToPhotoLog)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .help("Add the current source-inbox S/C/X choices to this photo log.")
+                }
+
+                Button("Delete") {
+                    commands.run(.deletePhotoLog)
+                }
+                .buttonStyle(.bordered)
+                .tint(.red)
+                .disabled(log.isMembershipLocked)
+                .help(log.isMembershipLocked ? "Copied or cleaned logs cannot be deleted from here." : "Delete this photo log and return uncopied photos to the source inbox.")
             }
-            .buttonStyle(.bordered)
-            .tint(.red)
-            .disabled(log.isMembershipLocked)
-            .help(log.isMembershipLocked ? "Copied or cleaned logs cannot be deleted from here." : "Delete this photo log and return uncopied photos to the source inbox.")
+            .controlSize(.small)
         }
-        .controlSize(.small)
     }
 }
 

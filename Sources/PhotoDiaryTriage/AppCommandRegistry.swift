@@ -66,7 +66,23 @@ struct AppShortcutOverride: Codable, Hashable, Sendable {
 }
 
 enum AppCommandScope: String, CaseIterable, Hashable, Sendable {
-    case main, settings, editor, review, preview, compare, archiveCards, archiveSidebar, sourceSidebar, commandPanel, helpPanel, shortcutCapture, form, formEditor, information
+    case main, settings, editor, review, preview, compare, archiveCards, archiveSidebar, sourceSidebar, commandPanel, helpPanel, shortcutCapture, form, formEditor, information, settingsEditor
+    case logDetails, logDetailsEditor, location, locationEditor, tripLabel, tripLabelEditor, photoLogActions
+
+    var isTextEditing: Bool {
+        [.editor, .settingsEditor, .formEditor, .logDetailsEditor, .locationEditor, .tripLabelEditor].contains(self)
+    }
+    var textEditingScope: Self {
+        switch self {
+        case .form: .formEditor
+        case .settings: .settingsEditor
+        case .logDetails: .logDetailsEditor
+        case .location: .locationEditor
+        case .tripLabel: .tripLabelEditor
+        case .information: .information
+        default: .editor
+        }
+    }
 }
 
 struct AppCommandBinding: Hashable, Sendable {
@@ -187,6 +203,25 @@ enum AppCommandID: String, CaseIterable, Codable, Hashable, Sendable {
     case confirmGoogleDelivery
     case resumeGoogleDelivery
     case cancelGoogleDelivery
+    case chooseHistoricalSource
+    case openDefaultSource
+    case reloadSource
+    case importSyncedPhotoLogs
+    case refreshDescriptionModels
+    case showCamera
+    case showPhotoLogs
+    case showArchive
+    case showArchiveMap
+    case retryArchiveSearch
+    case retryArchiveFolderLoad
+    case openSelectedFolderInFinder
+    case toggleHistoricalDateSource
+    case chooseOneDrivePictures
+    case useArchiveForOneDrivePictures
+    case saveLogDetails, saveLogAndStartNext
+    case openPhotoLog, showPhotoLogContents, editPhotoLogDetails, editPhotoLogMembership, addMarkedToPhotoLog, deletePhotoLog
+    case saveLocation, clearLocation, retryLocationSave, pinLocationAtMapCentre
+    case editTripLabel, saveTripLabel, useWalkLocations, cancelTripLabelEdit
 }
 
 @MainActor
@@ -199,6 +234,7 @@ struct AppCommandDefinition: Identifiable {
     let enabled: (AppState) -> Bool
     let run: (AppState) -> Void
     var needsSurfaceHandler: Bool = false
+    var commitsDraft: Bool = false
 }
 
 @MainActor
@@ -219,7 +255,7 @@ struct AppCommandRegistry {
     static let contextualCommands: Set<AppCommandID> = [.openArchive, .organiseFolder, .moveWalk, .open, .viewOriginal,
         .markIncluded, .markExcluded, .markCandidate, .clearTriage, .toggleRAW, .createPhotoLog, .newPhotoLog, .compare,
         .describeSelection, .regenerateDescriptions, .describeTrip, .describeYear, .deliverTrip, .deliverPhotoLog,
-        .markPreviousUpload, .clearPreviousUpload, .cropVisible, .removeCompareItem, .confirmSheet, .confirmAndOpenSheet, .closeSheet, .confirmGoogleDelivery]
+        .markPreviousUpload, .clearPreviousUpload, .cropVisible, .removeCompareItem, .confirmSheet, .confirmAndOpenSheet, .closeSheet, .confirmGoogleDelivery, .saveLogDetails, .saveLogAndStartNext, .openPhotoLog, .showPhotoLogContents, .editPhotoLogDetails, .editPhotoLogMembership, .addMarkedToPhotoLog, .deletePhotoLog, .saveLocation, .clearLocation, .retryLocationSave, .pinLocationAtMapCentre, .editTripLabel, .saveTripLabel, .useWalkLocations, .cancelTripLabelEdit]
 
     static let commands: [AppCommandDefinition] = {
         let mainScopes = Self.mainScopes, imageScopes = Self.imageScopes, allScopes = Self.allScopes
@@ -329,18 +365,54 @@ struct AppCommandRegistry {
             .init(id: .paletteRun, title: "Run highlighted command", task: "Keyboard context", scopes: [.commandPanel], defaults: [.init(.init(key: "return", modifiers: []), scopes: [.commandPanel])], enabled: { _ in true }, run: { _ in }, needsSurfaceHandler: true),
             .init(id: .closeCommandPanel, title: "Close command panel", task: "Keyboard context", scopes: [.commandPanel, .helpPanel], defaults: [.init(.init(key: "escape", modifiers: []), scopes: [.commandPanel, .helpPanel])], enabled: { _ in true }, run: { _ in }, needsSurfaceHandler: true),
             .init(id: .cancelShortcutCapture, title: "Cancel shortcut change", task: "Commands", scopes: [.shortcutCapture], defaults: [.init(.init(key: "escape"), scopes: [.shortcutCapture])], enabled: { _ in true }, run: { _ in }, needsSurfaceHandler: true),
-            .init(id: .confirmSheet, title: "Confirm current form", task: "Current form", scopes: [.form, .formEditor], defaults: [.init(.init(key: "return", modifiers: [.command]), scopes: [.form, .formEditor]), .init(.init(key: "return"), scopes: [.form])], enabled: { _ in true }, run: { _ in }, needsSurfaceHandler: true),
-            .init(id: .confirmAndOpenSheet, title: "Confirm and open", task: "Current form", scopes: [.form, .formEditor], defaults: [], enabled: { _ in true }, run: { _ in }, needsSurfaceHandler: true),
+            .init(id: .confirmSheet, title: "Confirm current form", task: "Current form", scopes: [.form, .formEditor], defaults: [.init(.init(key: "return", modifiers: [.command]), scopes: [.form, .formEditor]), .init(.init(key: "return"), scopes: [.form])], enabled: { _ in true }, run: { _ in }, needsSurfaceHandler: true, commitsDraft: true),
+            .init(id: .confirmAndOpenSheet, title: "Confirm and open", task: "Current form", scopes: [.form, .formEditor], defaults: [], enabled: { _ in true }, run: { _ in }, needsSurfaceHandler: true, commitsDraft: true),
             .init(id: .closeSheet, title: "Close or cancel current sheet", task: "Current form", scopes: [.form, .formEditor, .information], defaults: [.init(.init(key: "escape"), scopes: [.form, .formEditor, .information])], enabled: { _ in true }, run: { _ in }, needsSurfaceHandler: true),
-            .init(id: .confirmGoogleDelivery, title: "Send the reviewed originals to Google Photos", task: "Google Photos", scopes: [.form, .formEditor], defaults: [], enabled: { s in s.googleDeliveryReview != nil && !s.isDeliveringGooglePhotos }, run: { _ in }, needsSurfaceHandler: true),
+            .init(id: .confirmGoogleDelivery, title: "Send the reviewed originals to Google Photos", task: "Google Photos", scopes: [.form, .formEditor], defaults: [], enabled: { s in s.googleDeliveryReview != nil && !s.isDeliveringGooglePhotos }, run: { _ in }, needsSurfaceHandler: true, commitsDraft: true),
             .init(id: .resumeGoogleDelivery, title: "Resume or retry Google Photos delivery", task: "Google Photos", scopes: mainScopes.union([.information]), defaults: [], enabled: { s in !s.isDeliveringGooglePhotos }, run: { s in s.startGoogleResume() }),
             .init(id: .cancelGoogleDelivery, title: "Cancel running Google Photos delivery", task: "Google Photos", scopes: mainScopes.union([.information]), defaults: [], enabled: { s in s.isDeliveringGooglePhotos }, run: { s in s.cancelGoogleDelivery() }),
+            .init(id: .chooseHistoricalSource, title: "Choose historical source folder…", task: "Sources", scopes: mainScopes, defaults: [], enabled: { _ in true }, run: { s in s.pickSourceFolder(historical: true) }),
+            .init(id: .openDefaultSource, title: "Open default source folder", task: "Sources", scopes: mainScopes, defaults: [], enabled: { _ in true }, run: { s in s.openDefaultSourceWorkspace() }),
+            .init(id: .reloadSource, title: "Reload current source folder", task: "Sources", scopes: mainScopes, defaults: [], enabled: { s in s.sidebarState.snapshot.canReloadSourceWorkspace }, run: { s in s.reloadCurrentSourceWorkspace() }),
+            .init(id: .importSyncedPhotoLogs, title: "Import synced Photo Log state", task: "Recovery", scopes: [.settings, .settingsEditor], defaults: [], enabled: { _ in true }, run: { s in s.importOneDrivePhotoLogState() }),
+            .init(id: .refreshDescriptionModels, title: "Refresh local description models", task: "Descriptions", scopes: [.settings, .settingsEditor], defaults: [], enabled: { s in !s.isRefreshingLMStudioModels }, run: { s in Task { await s.refreshLMStudioModels() } }),
+            .init(id: .showCamera, title: "Show Camera and source triage", task: "Navigation", scopes: mainScopes, defaults: [], enabled: { _ in true }, run: { s in s.setWorkspaceMode(.cameraTriage) }),
+            .init(id: .showPhotoLogs, title: "Show Photo Logs", task: "Navigation", scopes: mainScopes, defaults: [], enabled: { _ in true }, run: { s in s.openPhotoLogLibrary() }),
+            .init(id: .showArchive, title: "Show Archive", task: "Navigation", scopes: mainScopes, defaults: [], enabled: { _ in true }, run: { s in s.setWorkspaceMode(.archiveView) }),
+            .init(id: .showArchiveMap, title: "Show Archive Map", task: "Archive", scopes: mainScopes, defaults: [], enabled: { s in s.workspaceMode == .archiveView }, run: { s in s.setArchiveBrowseViewMode(.map) }),
+            .init(id: .retryArchiveSearch, title: "Retry current Archive search", task: "Recovery", scopes: mainScopes, defaults: [], enabled: { s in s.canRetryCurrentArchiveSearch }, run: { s in s.retryCurrentArchiveSearch() }),
+            .init(id: .retryArchiveFolderLoad, title: "Reload current Archive photo folder", task: "Recovery", scopes: mainScopes, defaults: [], enabled: { s in s.workspaceMode == .archiveView && s.isBrowsingArchivePhotos }, run: { s in s.retryArchiveFolderLoad() }),
+            .init(id: .openSelectedFolderInFinder, title: "Open selected folder in Finder", task: "Navigation", scopes: mainScopes, defaults: [], enabled: { s in s.canOpenSelectedBrowserFolder }, run: { s in s.openSelectedBrowserFolder() }),
+            .init(id: .toggleHistoricalDateSource, title: "Change historical folder date source", task: "Sources", scopes: mainScopes, defaults: [], enabled: { s in s.workspaceMode == .cameraTriage && s.hasHistoricalSources }, run: { s in s.toggleHistoricalFolderDates() }),
+            .init(id: .chooseOneDrivePictures, title: "Choose OneDrive Pictures root…", task: "App", scopes: [.settings, .settingsEditor], defaults: [], enabled: { _ in true }, run: { s in s.pickOneDrivePicturesRoot() }),
+            .init(id: .useArchiveForOneDrivePictures, title: "Use Archive root for OneDrive Pictures", task: "App", scopes: [.settings, .settingsEditor], defaults: [], enabled: { _ in true }, run: { s in s.setOneDrivePicturesRoot(s.settings.archiveRoot) }),
         ]
+        func local(_ id: AppCommandID, _ title: String, _ task: String, _ scopes: Set<AppCommandScope>, save: Bool = false, commitsDraft: Bool = false) {
+            result.append(.init(id: id, title: title, task: task, scopes: scopes,
+                defaults: save ? [.init(.init(key: "return", modifiers: [.command]), scopes: scopes)] : [],
+                enabled: { _ in true }, run: { _ in }, needsSurfaceHandler: true, commitsDraft: save || commitsDraft))
+        }
+        local(.saveLogDetails, "Save edited Log details", "Photo Logs", [.logDetails, .logDetailsEditor], save: true)
+        local(.saveLogAndStartNext, "Save edited Log and start the next", "Photo Logs", [.logDetails, .logDetailsEditor], commitsDraft: true)
+        local(.openPhotoLog, "Continue this Photo Log", "Photo Logs", [.photoLogActions])
+        local(.showPhotoLogContents, "Show this Photo Log's contents", "Photo Logs", [.photoLogActions])
+        local(.editPhotoLogDetails, "Edit this Photo Log's details", "Photo Logs", [.photoLogActions])
+        local(.editPhotoLogMembership, "Edit this Photo Log's membership", "Photo Logs", [.photoLogActions])
+        local(.addMarkedToPhotoLog, "Add marked source photos to this Log", "Photo Logs", [.photoLogActions])
+        local(.deletePhotoLog, "Delete this Photo Log…", "Photo Logs", [.photoLogActions])
+        local(.saveLocation, "Save edited location", "Locations", [.location, .locationEditor], save: true)
+        local(.clearLocation, "Clear this location assignment", "Locations", [.location, .locationEditor])
+        local(.retryLocationSave, "Retry this unfinished location save", "Locations", [.location, .locationEditor])
+        local(.pinLocationAtMapCentre, "Pin this location at the map centre", "Locations", [.location, .locationEditor])
+        local(.editTripLabel, "Edit this Trip's location label", "Locations", [.tripLabel, .tripLabelEditor])
+        local(.saveTripLabel, "Save edited Trip location label", "Locations", [.tripLabel, .tripLabelEditor], save: true)
+        local(.useWalkLocations, "Use Walk locations for this Trip", "Locations", [.tripLabel, .tripLabelEditor])
+        local(.cancelTripLabelEdit, "Cancel Trip label editing", "Locations", [.tripLabel, .tripLabelEditor])
         func alias(_ id: AppCommandID, _ key: String, _ mods: ShortcutModifiers = [], scopes: Set<AppCommandScope>) {
             guard let index = result.firstIndex(where: { $0.id == id }) else { return }
             let old = result[index]
             result[index] = .init(id: old.id, title: old.title, task: old.task, scopes: old.scopes,
-                defaults: old.defaults + [.init(.init(key:key,modifiers:mods),scopes:scopes)], enabled: old.enabled, run: old.run, needsSurfaceHandler: old.needsSurfaceHandler)
+                defaults: old.defaults + [.init(.init(key:key,modifiers:mods),scopes:scopes)], enabled: old.enabled, run: old.run, needsSurfaceHandler: old.needsSurfaceHandler, commitsDraft: old.commitsDraft)
         }
         alias(.toggleInspector, "i", [.command,.option], scopes: allScopes)
         alias(.keyboardHelp, "/", [.command,.shift], scopes: allScopes)
@@ -369,7 +441,7 @@ struct AppCommandRegistry {
         let claims = claims(for: event, scope: scope); return claims.count == 1 ? claims[0] : nil
     }
     private static func preservesTextInput(_ shortcut: AppShortcut, for command: AppCommandDefinition) -> Bool {
-        guard !command.scopes.isDisjoint(with: [.editor, .formEditor, .commandPanel, .helpPanel, .shortcutCapture]) else { return true }
+        guard command.scopes.contains(where: { $0.isTextEditing || [.information, .commandPanel, .helpPanel, .shortcutCapture].contains($0) }) else { return true }
         // Only these existing pane keys are grammar while a search field is editing.
         let grammar: [AppCommandID: String] = [.palettePrevious: "up", .paletteNext: "down", .paletteRun: "return", .closeCommandPanel: "escape", .cancelShortcutCapture: "escape", .closeSheet: "escape"]
         if shortcut.modifiers.isEmpty, grammar[command.id] == shortcut.key { return true }

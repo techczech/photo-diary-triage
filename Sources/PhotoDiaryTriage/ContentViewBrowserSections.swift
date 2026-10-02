@@ -77,7 +77,7 @@ struct ToolbarModeControls: View {
         HStack(spacing: 10) {
             Picker("Mode", selection: Binding(
                 get: { appState.workspaceMode },
-                set: { appState.setWorkspaceMode($0) }
+                set: { mode in appState.commandCoordinator.executeWindowControl(mode == .cameraTriage ? .showCamera : (mode == .photoLogs ? .showPhotoLogs : .showArchive)) }
             )) {
                 // Text-only: macOS toolbar segmented controls drop Label titles and show
                 // bare icons, which proved unreadable (user feedback 2026-07-05).
@@ -90,7 +90,7 @@ struct ToolbarModeControls: View {
             .labelsHidden()
 
             Button {
-                appState.openSelectedBrowserFolder()
+                appState.commandCoordinator.executeWindowControl(.openSelectedFolderInFinder)
             } label: {
                 Label("Open in Finder", systemImage: "folder")
             }
@@ -134,7 +134,7 @@ struct BrowserOrReviewPaneView: View {
                             ContentUnavailableView {
                                 Label("Archive folder unavailable", systemImage: "exclamationmark.triangle")
                             } description: { Text(message) } actions: {
-                                Button("Retry") { appState.retryArchiveFolderLoad() }
+                                RegisteredWindowControl(id: .retryArchiveFolderLoad, title: "Retry", appState: appState)
                                 Button("Back") { appState.navigateToParent() }
                             }
                         case .loaded where state.snapshot.contextMediaItemCount > 0:
@@ -145,7 +145,7 @@ struct BrowserOrReviewPaneView: View {
                             } description: {
                                 Text("No supported photos are available in this folder's current Archive Index.")
                             } actions: {
-                                Button("Refresh folder") { appState.retryArchiveFolderLoad() }
+                                RegisteredWindowControl(id: .retryArchiveFolderLoad, title: "Refresh folder", appState: appState)
                                 Button("Back") { appState.navigateToParent() }
                             }
                         case .idle:

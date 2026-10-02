@@ -668,3 +668,30 @@ private final class NativeCommandFixture {
     #expect(coordinator.registry.displayedShortcuts(.confirmSheet, scope: .formEditor) == "⌘↩")
     #expect(coordinator.registry.displayedShortcuts(.confirmSheet, scope: .form).contains("↩"))
 }
+
+
+@MainActor
+@Test func sourceAndSettingsActionsAreDiscoverableKeylessAndUseOwnedDispatch() throws {
+    let groups: [(AppCommandScope, [String])] = [(.main, ["chooseHistoricalSource", "openDefaultSource", "reloadSource", "showCamera", "showPhotoLogs", "showArchive", "showArchiveMap", "retryArchiveSearch", "retryArchiveFolderLoad", "openSelectedFolderInFinder", "toggleHistoricalDateSource"]),
+        (.settings, ["importSyncedPhotoLogs", "refreshDescriptionModels", "chooseOneDrivePictures", "useArchiveForOneDrivePictures"])]
+    for (scope, names) in groups {
+        let f = try NativeCommandFixture(scope: scope); defer { f.close() }
+        let ids = try names.map { try #require(AppCommandID(rawValue: $0)) }
+        let surface = CommandPaneResponderView(frame: .zero); f.window.contentView!.addSubview(surface)
+        var ran: [AppCommandID] = []
+        let lease = CommandSurfaceLease(view: surface, token: UUID(), scope: scope, active: true,
+            supports: { ids.contains($0) }, availability: { _ in true }, run: { ran.append($0); return true })
+        f.state.commandCoordinator.register(lease); f.window.makeFirstResponder(surface)
+        for id in ids {
+            #expect(f.state.commandCoordinator.registry.bindings(id).isEmpty)
+            let origin = try #require(f.state.commandCoordinator.invocation(in: f.window))
+            let palette = try #require(f.state.commandCoordinator.panels.present(.palette, from: origin))
+            #expect(palette.commands.contains { $0.id == id })
+            #expect(f.state.commandCoordinator.unavailableReason(id, invocation: origin) == nil)
+            palette.highlighted = id; f.state.commandCoordinator.panels.runHighlighted(palette)
+            #expect(ran.last == id)
+            #expect(f.state.commandCoordinator.panels.sessions.isEmpty)
+        }
+        #expect(ran == ids)
+    }
+}
