@@ -15,12 +15,14 @@ private func descriptionFixture(_ root: URL, title: String = "Morning", day: Int
 }
 private actor DescriptionFixtureClient: DescriptionGenerating {
     var calls = 0
+    var modelAction: (@Sendable (LMStudioConfiguration) async throws -> [String])?
     var fail = false
     var textOverride: String?
     var action: (@Sendable (LMStudioPrompt) async throws -> Void)?
     init(fail: Bool = false, text: String? = nil, action: (@Sendable (LMStudioPrompt) async throws -> Void)? = nil) { self.fail = fail; self.textOverride = text; self.action = action }
     func setAction(_ action: @escaping @Sendable (LMStudioPrompt) async throws -> Void) { self.action = action }
-    func models(configuration: LMStudioConfiguration) async throws -> [String] { ["fixture-vision"] }
+    func setModelAction(_ action: @escaping @Sendable (LMStudioConfiguration) async throws -> [String]) { modelAction = action }
+    func models(configuration: LMStudioConfiguration) async throws -> [String] { if let modelAction { return try await modelAction(configuration) }; return ["fixture-vision"] }
     func complete(configuration: LMStudioConfiguration, prompt: LMStudioPrompt) async throws -> LMStudioCompletion {
         calls += 1
         if let action { try await action(prompt) }
@@ -443,4 +445,256 @@ func descriptionsFailedChildRefreshCannotPublishANewlyDatedStaleOverview(_ failW
     let client = DescriptionFixtureClient(), queue = ArchiveDescriptionQueue(archiveRoot: imported.session.archiveRoot, machineRole: .mainArchive, client: client)
     await #expect(throws: (any Error).self) { try await queue.enqueue(targets: [photoDescriptionTarget(imported)], configuration: descriptionConfiguration) }
     #expect(await client.calls == 0)
+}
+
+private actor DescriptionTestBarrier {
+    var entered = false, released = false
+    var entryWaiters: [CheckedContinuation<Void, Never>] = [], releaseWaiters: [CheckedContinuation<Void, Never>] = []
+    func stop() async {
+        guard !released else { return }; entered = true
+        for waiter in entryWaiters { waiter.resume() }; entryWaiters = []
+        await withCheckedContinuation { releaseWaiters.append($0) }
+    }
+    func waitForEntry() async { if !entered { await withCheckedContinuation { entryWaiters.append($0) } } }
+    func release() { released = true; for waiter in releaseWaiters { waiter.resume() }; releaseWaiters = [] }
+}
+private actor GatedDescriptionQueue: ArchiveDescriptionQueuing {
+    enum Phase { case enqueue, jobs, run, cancel, discard }
+    let base: ArchiveDescriptionQueue, gate: DescriptionTestBarrier, phase: Phase, failRead: Bool
+    var runs = 0, cancels = 0
+    init(_ base: ArchiveDescriptionQueue, gate: DescriptionTestBarrier, phase: Phase, failRead: Bool = false) {
+        self.base = base; self.gate = gate; self.phase = phase; self.failRead = failRead
+    }
+    func jobs() async throws -> [ArchiveDescriptionJob] {
+        let value = try await base.jobs()
+        if phase == .jobs { await gate.stop(); if failRead { throw CocoaError(.fileReadUnknown) } }
+        return value
+    }
+    func enqueue(targets: [(DescriptionTargetKind, String)], configuration: LMStudioConfiguration, regenerate: Bool) async throws -> [ArchiveDescriptionJob] {
+        let value = try await base.enqueue(targets: targets, configuration: configuration, regenerate: regenerate)
+        if phase == .enqueue { await gate.stop() }; return value
+    }
+    func run(jobIDs: Set<UUID>?, progress: (@Sendable ([ArchiveDescriptionJob]) async -> Void)?) async throws {
+        runs += 1; try await base.run(jobIDs: jobIDs, progress: progress)
+        if phase == .run { await gate.stop() }
+    }
+    func cancel() async {
+        cancels += 1
+        if phase == .cancel && cancels == 1 { await gate.stop() }
+        await base.cancel()
+    }
+    func discardFailed() async throws {
+        if phase == .discard { await gate.stop() }
+        try await base.discardFailed()
+    }
+}
+@MainActor
+private func descriptionTestApp(_ imported: ImportResult, root: URL, client: DescriptionFixtureClient, queue: any ArchiveDescriptionQueuing) -> AppState {
+    var settings = AppSettings.default(); settings.archiveRoot = imported.session.archiveRoot; settings.oneDrivePicturesRoot = settings.archiveRoot
+    settings.lmStudioConfiguration = descriptionConfiguration
+    let app = AppState(testing: true, testingSettings: settings, testingSupportRoot: root.appendingPathComponent("support"), testingDescriptionClient: client)
+    app.testingDescriptionQueue = queue; app.setWorkspaceMode(.archiveView); return app
+}
+
+@Test @MainActor func cancellingDescriptionPreparationCannotAutomaticallyRestartTheQueue() async throws {
+    let root = try makeTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+    let imported = try await descriptionFixture(root), client = DescriptionFixtureClient(), gate = DescriptionTestBarrier()
+    let base = ArchiveDescriptionQueue(archiveRoot: imported.session.archiveRoot, machineRole: .mainArchive, client: client)
+    let queue = GatedDescriptionQueue(base, gate: gate, phase: .enqueue)
+    let app = descriptionTestApp(imported, root: root, client: client, queue: queue)
+    let task = Task { await app.enqueueDescriptions(targets: [photoDescriptionTarget(imported)]) }
+    await gate.waitForEntry(); app.cancelDescriptions(); await gate.release(); await task.value
+    #expect(await client.calls == 0); #expect(await queue.runs == 0); #expect(!app.isDescribing)
+    #expect(try await base.jobs().first?.state == .pending)
+    await app.resumeDescriptions()
+    #expect(await client.calls == 1); #expect(try await base.jobs().first?.state == .committed)
+}
+
+@Test @MainActor func staleDescriptionPreparationReadCannotPublishOrResumeAfterRootRoundTrip() async throws {
+    let root = try makeTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+    let imported = try await descriptionFixture(root), client = DescriptionFixtureClient(), gate = DescriptionTestBarrier()
+    let base = ArchiveDescriptionQueue(archiveRoot: imported.session.archiveRoot, machineRole: .mainArchive, client: client)
+    let queue = GatedDescriptionQueue(base, gate: gate, phase: .jobs)
+    let app = descriptionTestApp(imported, root: root, client: client, queue: queue)
+    let task = Task { await app.enqueueDescriptions(targets: [photoDescriptionTarget(imported)]) }
+    await gate.waitForEntry(); app.setArchiveRoot(root.appendingPathComponent("B")); app.setArchiveRoot(imported.session.archiveRoot)
+    app.descriptionJobs = []; app.showDescriptionQueue = false; app.statusMessage = "Current context sentinel"
+    await gate.release(); await task.value
+    #expect(app.descriptionJobs.isEmpty); #expect(!app.showDescriptionQueue); #expect(app.statusMessage == "Current context sentinel")
+    #expect(await client.calls == 0); #expect(await queue.runs == 0); #expect(!app.isDescribing)
+}
+
+@Test @MainActor func staleDescriptionResumeReadCannotPublishAfterRootRoundTrip() async throws {
+    let root = try makeTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+    let imported = try await descriptionFixture(root), client = DescriptionFixtureClient(), gate = DescriptionTestBarrier()
+    let base = ArchiveDescriptionQueue(archiveRoot: imported.session.archiveRoot, machineRole: .mainArchive, client: client)
+    try await base.enqueue(targets: [photoDescriptionTarget(imported)], configuration: descriptionConfiguration)
+    let app = descriptionTestApp(imported, root: root, client: client, queue: GatedDescriptionQueue(base, gate: gate, phase: .jobs))
+    let task = Task { await app.resumeDescriptions() }
+    await gate.waitForEntry(); app.setArchiveRoot(root.appendingPathComponent("B")); app.setArchiveRoot(imported.session.archiveRoot)
+    app.descriptionJobs = []; app.statusMessage = "Current resume sentinel"
+    await gate.release(); await task.value
+    #expect(app.descriptionJobs.isEmpty); #expect(app.statusMessage == "Current resume sentinel"); #expect(!app.isDescribing)
+    #expect(await client.calls == 1) // A's legitimate result remains saved; B receives no substituted work.
+}
+
+@Test(arguments: [false, true]) @MainActor func staleDescriptionQueueLoadCannotPublishSuccessOrFailure(_ failure: Bool) async throws {
+    let root = try makeTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+    let imported = try await descriptionFixture(root), client = DescriptionFixtureClient(), gate = DescriptionTestBarrier()
+    let base = ArchiveDescriptionQueue(archiveRoot: imported.session.archiveRoot, machineRole: .mainArchive, client: client)
+    try await base.enqueue(targets: [photoDescriptionTarget(imported)], configuration: descriptionConfiguration)
+    let app = descriptionTestApp(imported, root: root, client: client, queue: GatedDescriptionQueue(base, gate: gate, phase: .jobs, failRead: failure))
+    let task = Task { await app.loadDescriptionQueue() }
+    await gate.waitForEntry(); app.setArchiveRoot(root.appendingPathComponent("B")); app.setArchiveRoot(imported.session.archiveRoot)
+    app.descriptionJobs = []; app.showDescriptionQueue = false; app.statusMessage = "Current load sentinel"
+    await gate.release(); await task.value
+    #expect(app.descriptionJobs.isEmpty); #expect(!app.showDescriptionQueue); #expect(app.statusMessage == "Current load sentinel")
+}
+
+@Test func staleDescriptionQueueCannotDiscardDurableFailedRequests() async throws {
+    let root = try makeTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+    let imported = try await descriptionFixture(root), flag = DescriptionContextFlag()
+    let queue = ArchiveDescriptionQueue(archiveRoot: imported.session.archiveRoot, machineRole: .mainArchive, client: DescriptionFixtureClient(fail: true), contextIsCurrent: { flag.get() })
+    try await queue.enqueue(targets: [photoDescriptionTarget(imported)], configuration: descriptionConfiguration); try await queue.run()
+    let before = try await queue.jobs().map { ($0.id, $0.state) }
+    flag.invalidate()
+    await #expect(throws: CancellationError.self) { try await queue.discardFailed() }
+    let after = try await queue.jobs()
+    #expect(after.map(\.id) == before.map { $0.0 }); #expect(after.map(\.state) == before.map { $0.1 })
+}
+
+@Test @MainActor func descriptionResumeReservesItsOperationBeforeScheduling() async throws {
+    let root = try makeTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+    let imported = try await descriptionFixture(root), client = DescriptionFixtureClient(), gate = DescriptionTestBarrier()
+    let base = ArchiveDescriptionQueue(archiveRoot: imported.session.archiveRoot, machineRole: .mainArchive, client: client)
+    try await base.enqueue(targets: [photoDescriptionTarget(imported)], configuration: descriptionConfiguration)
+    let queue = GatedDescriptionQueue(base, gate: gate, phase: .run)
+    let app = descriptionTestApp(imported, root: root, client: client, queue: queue)
+    app.startDescriptionResume(); #expect(app.isDescribing)
+    app.startDescriptionResume(); await gate.waitForEntry(); #expect(await queue.runs == 1)
+    await gate.release()
+    for _ in 0..<50 where app.isDescribing { try await Task.sleep(for: .milliseconds(10)) }
+    #expect(!app.isDescribing); #expect(await client.calls == 1)
+}
+
+@Test @MainActor func yearDescriptionRetainsIssuedConfigurationAcrossIndexEnumeration() async throws {
+    let root = try makeTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+    let imported = try await descriptionFixture(root), client = DescriptionFixtureClient(), gate = DescriptionTestBarrier()
+    let base = ArchiveDescriptionQueue(archiveRoot: imported.session.archiveRoot, machineRole: .mainArchive, client: client)
+    let app = descriptionTestApp(imported, root: root, client: client, queue: base)
+    let rows = try ArchiveCatalogueBuilder().readIndexEntries(archiveRoot: imported.session.archiveRoot)
+    app.setArchiveYearFilter(try #require(rows.first?.year))
+    app.testingDescriptionYearReader = { _ in await gate.stop(); return rows }
+    let task = Task { await app.describeCurrentYear() }
+    await gate.waitForEntry(); app.setLMStudio(baseURL: "http://localhost:4321/v1", model: "replacement-model")
+    await gate.release(); await task.value
+    let jobs = try await base.jobs()
+    #expect(jobs.count == 3); #expect(jobs.allSatisfy { $0.configuration == descriptionConfiguration && $0.state == .committed })
+    #expect(app.settings.lmStudioConfiguration.model == "replacement-model"); #expect(await client.calls == 3)
+}
+
+@Test @MainActor func registeredDescriptionRequestCapturesTheChosenTripBeforeScheduling() async throws {
+    let root = try makeTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+    let a = try await descriptionFixture(root), b = try await descriptionFixture(root, title: "Other", day: 35)
+    let client = DescriptionFixtureClient(), base = ArchiveDescriptionQueue(archiveRoot: a.session.archiveRoot, machineRole: .mainArchive, client: client)
+    let app = descriptionTestApp(a, root: root, client: client, queue: base)
+    let catalogue = try ArchiveCatalogueBuilder().build(archiveRoot: a.session.archiveRoot, supportedExtensions: ["jpg"])
+    app.testingInstallArchiveCatalogue(catalogue)
+    let entryA = try #require(catalogue.entries.first { $0.archiveRelativePath == a.tripManifests[0].folderRelativePath }), entryB = try #require(catalogue.entries.first { $0.archiveRelativePath == b.tripManifests[0].folderRelativePath })
+    app.selectArchiveEntry(entryA.id); AppCommandRegistry.definition(.describeTrip).run(app)
+    #expect(app.isDescribing); app.selectArchiveEntry(entryB.id)
+    for _ in 0..<100 where app.isDescribing { try await Task.sleep(for: .milliseconds(10)) }
+    #expect(!app.isDescribing)
+    #expect(TripManifestStore().loadTripManifest(folder: a.tripManifests[0].folder, oneDrivePicturesRoot: a.session.archiveRoot).descriptions != nil)
+    #expect(TripManifestStore().loadTripManifest(folder: b.tripManifests[0].folder, oneDrivePicturesRoot: a.session.archiveRoot).descriptions == nil)
+    #expect(app.archiveBrowserState.snapshot.selectedEntryID == entryB.id); #expect(await client.calls == 3)
+}
+
+@Test @MainActor func repeatedDescriptionCancellationWaitsForEveryAcknowledgementBeforeResume() async throws {
+    let root = try makeTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+    let imported = try await descriptionFixture(root), client = DescriptionFixtureClient(), gate = DescriptionTestBarrier()
+    let base = ArchiveDescriptionQueue(archiveRoot: imported.session.archiveRoot, machineRole: .mainArchive, client: client)
+    let queue = GatedDescriptionQueue(base, gate: gate, phase: .cancel)
+    let app = descriptionTestApp(imported, root: root, client: client, queue: queue)
+    app.cancelDescriptions(); await gate.waitForEntry()
+    app.cancelDescriptions(); app.startDescriptionResume()
+    try await Task.sleep(for: .milliseconds(40))
+    #expect(await queue.runs == 0); #expect(app.isDescribing); #expect(await queue.cancels == 1)
+    await gate.release()
+    for _ in 0..<50 where app.isDescribing { try await Task.sleep(for: .milliseconds(10)) }
+    #expect(await queue.cancels == 2); #expect(await queue.runs == 1); #expect(!app.isDescribing)
+}
+
+@Test(arguments: [false, true]) @MainActor func descriptionSettingsQueueOpenerRequiresCurrentSuccessfulLoad(_ failure: Bool) async throws {
+    let root = try makeTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+    let imported = try await descriptionFixture(root), client = DescriptionFixtureClient(), gate = DescriptionTestBarrier()
+    let base = ArchiveDescriptionQueue(archiveRoot: imported.session.archiveRoot, machineRole: .mainArchive, client: client)
+    let app = descriptionTestApp(imported, root: root, client: client, queue: GatedDescriptionQueue(base, gate: gate, phase: .jobs, failRead: failure))
+    var opened = 0
+    let actions = descriptionSettingsCommandActions(appState: app, showQueue: { opened += 1 })
+    actions[.descriptionQueue]?.run(); await gate.waitForEntry()
+    if !failure { app.setArchiveRoot(root.appendingPathComponent("B")); app.setArchiveRoot(imported.session.archiveRoot) }
+    app.showDescriptionQueue = false; await gate.release(); try await Task.sleep(for: .milliseconds(40))
+    #expect(opened == 0); #expect(!app.showDescriptionQueue)
+    app.testingDescriptionQueue = base
+    descriptionSettingsCommandActions(appState: app, showQueue: { opened += 1 })[.descriptionQueue]?.run()
+    for _ in 0..<50 where opened == 0 { try await Task.sleep(for: .milliseconds(10)) }
+    #expect(opened == 1); #expect(!app.showDescriptionQueue)
+}
+
+@Test(arguments: [false, true]) @MainActor func staleModelRefreshCannotPublishAfterConfigurationRoundTrip(_ failure: Bool) async throws {
+    let root = try makeTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+    let imported = try await descriptionFixture(root), client = DescriptionFixtureClient(), gate = DescriptionTestBarrier()
+    let app = descriptionTestApp(imported, root: root, client: client, queue: ArchiveDescriptionQueue(archiveRoot: imported.session.archiveRoot, machineRole: .mainArchive, client: client))
+    await client.setModelAction { _ in await gate.stop(); if failure { throw CocoaError(.fileReadUnknown) }; return ["obsolete-model"] }
+    let task = Task { await app.refreshLMStudioModels() }; await gate.waitForEntry()
+    app.setLMStudio(baseURL: "http://localhost:4321/v1"); app.setLMStudio(baseURL: descriptionConfiguration.baseURL)
+    app.lmStudioModels = ["current-model"]; app.statusMessage = "Current model sentinel"
+    await gate.release(); await task.value
+    #expect(app.lmStudioModels == ["current-model"]); #expect(app.statusMessage == "Current model sentinel"); #expect(!app.isRefreshingLMStudioModels)
+    await client.setModelAction { _ in ["fresh-model"] }; await app.refreshLMStudioModels()
+    #expect(app.lmStudioModels == ["fresh-model"])
+}
+
+@Test @MainActor func cancellingDescriptionDiscardPreservesDurableRequestsUntilFreshConfirmation() async throws {
+    let root = try makeTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+    let imported = try await descriptionFixture(root), client = DescriptionFixtureClient(fail: true), gate = DescriptionTestBarrier()
+    let base = ArchiveDescriptionQueue(archiveRoot: imported.session.archiveRoot, machineRole: .mainArchive, client: client)
+    try await base.enqueue(targets: [photoDescriptionTarget(imported)], configuration: descriptionConfiguration); try await base.run()
+    #expect(try await base.jobs().first?.state == .failed)
+    let app = descriptionTestApp(imported, root: root, client: client, queue: GatedDescriptionQueue(base, gate: gate, phase: .discard))
+    let task = Task { await app.discardFailedDescriptions() }
+    await gate.waitForEntry(); app.cancelDescriptions(); await gate.release(); await task.value
+    #expect(try await base.jobs().first?.state == .failed); #expect(!app.isDescribing)
+    app.testingDescriptionQueue = base; await app.discardFailedDescriptions()
+    #expect(try await base.jobs().first?.state == .discarded); #expect(!app.isDescribing)
+}
+
+@Test func interruptedDescriptionDiscardRetainsWholeBatchIntentAndNeverResumesPendingParents() async throws {
+    let root = try makeTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+    let imported = try await descriptionFixture(root), archive = imported.session.archiveRoot, flag = DescriptionContextFlag()
+    let client = DescriptionFixtureClient(action: { _ in try await Task.sleep(for: .seconds(5)) })
+    let queue = ArchiveDescriptionQueue(archiveRoot: archive, machineRole: .mainArchive, client: client, contextIsCurrent: { flag.get() }, persist: { job, root in
+        try ArchiveOperationRecovery(archiveRoot: root).save(job, kind: "description", sessionID: job.id)
+        if job.state == .discarded { flag.invalidate() } // Stop after the first durable discard.
+    })
+    let batch = try await queue.enqueue(targets: [(.trip, imported.tripManifests[0].folderRelativePath!)], configuration: descriptionConfiguration)
+    let task = Task { try await queue.run() }
+    for _ in 0..<1000 { if await client.calls > 0 { break }; try await Task.sleep(for: .milliseconds(1)) }
+    await queue.cancel(); try await task.value; await client.setAction { _ in }
+    #expect(try await queue.jobs().map(\.state) == [.cancelled, .pending, .pending])
+    await #expect(throws: CancellationError.self) { try await queue.discardFailed() }
+    let recovery = ArchiveOperationRecovery(archiveRoot: archive)
+    let rawStates = try batch.map { value in
+        let recorded = try recovery.load(ArchiveDescriptionJob.self, kind: "description", sessionID: value.id)
+        let job = try #require(recorded); return job.state
+    }
+    #expect(rawStates == [.discarded, .pending, .pending])
+    let fresh = ArchiveDescriptionQueue(archiveRoot: archive, machineRole: .mainArchive, client: client)
+    #expect(try await fresh.jobs().allSatisfy { $0.state == .discarded })
+    try await fresh.run(); #expect(await client.calls == 1)
+    #expect(try await fresh.jobs().allSatisfy { $0.state == .discarded })
+    try await fresh.discardFailed()
+    #expect(try batch.allSatisfy { try recovery.load(ArchiveDescriptionJob.self, kind: "description", sessionID: $0.id)?.state == .discarded })
+    #expect(try await fresh.enqueue(targets: [(.trip, imported.tripManifests[0].folderRelativePath!)], configuration: descriptionConfiguration).count == 3)
 }

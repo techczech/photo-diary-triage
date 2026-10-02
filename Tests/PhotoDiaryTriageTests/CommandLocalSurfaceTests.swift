@@ -328,3 +328,72 @@ private struct LocalLayoutFixtureView: View {
     container.isHidden = false
     handle.run(.saveLogDetails); #expect(count == 1)
 }
+
+@MainActor @Test func settingsRootAndBackupCommandsAreAvailableWithoutBorrowingMainWindowScope() throws {
+    let f = try LocalSurfaceFixture(); defer { f.close() }
+    let coordinator = f.state.commandCoordinator
+    coordinator.unregisterWindow(f.token); coordinator.register(window: f.window, token: f.token, scope: .settings)
+    let origin = try #require(coordinator.invocation(in: f.window))
+    for id: AppCommandID in [.chooseArchiveRoot, .exportBackup, .importBackup, .descriptionQueue] {
+        #expect(AppCommandRegistry.definition(id).scopes.contains(.settings))
+        #expect(AppCommandRegistry.definition(id).scopes.contains(.settingsEditor))
+        #expect(coordinator.unavailableReason(id, invocation: origin) == nil)
+    }
+    let chooseDefault = try #require(AppCommandID(rawValue: "chooseDefaultSourceRoot"))
+    #expect(coordinator.unavailableReason(chooseDefault, invocation: origin) == nil)
+    let editor = NSTextView(frame: NSRect(x: 10, y: 10, width: 250, height: 100)); editor.string = "Backup and model settings"; f.window.contentView!.addSubview(editor)
+    f.window.makeFirstResponder(editor)
+    #expect(!f.window.performKeyEquivalent(with: f.event("a", modifiers: [.command])))
+    #expect(!f.window.isVisible)
+}
+
+@MainActor @Test func settingsFieldEditorRetainsItsActualLocalCommandOwner() throws {
+    let f = try LocalSurfaceFixture(); defer { f.close() }
+    let coordinator = f.state.commandCoordinator
+    coordinator.unregisterWindow(f.token); coordinator.register(window: f.window, token: f.token, scope: .settings)
+    let surface = CommandLocalSurfaceView(frame: f.window.contentView!.bounds); f.window.contentView!.addSubview(surface)
+    var openedLocally = 0
+    surface.configure(coordinator: coordinator, scope: .settings, contextKey: "Local AI tab", actions: [.descriptionQueue: .init(run: { openedLocally += 1 })])
+    let field = NSTextField(string: "Model draft"); field.frame = NSRect(x: 10, y: 10, width: 240, height: 28); surface.addSubview(field); field.selectText(nil)
+    let origin = try #require(coordinator.invocation(in: f.window)); #expect(origin.scope == .settingsEditor); #expect(origin.lease != nil)
+    let assigned = f.state.setCommandShortcut(.descriptionQueue, override: .init(shortcut: .init(key: "n", modifiers: [.command, .option]))); #expect(assigned)
+    #expect(f.window.performKeyEquivalent(with: f.event("n", modifiers: [.command, .option])))
+    #expect(openedLocally == 1); #expect(!f.state.showDescriptionQueue)
+    #expect(!f.window.performKeyEquivalent(with: f.event("a", modifiers: [.command])))
+}
+
+@MainActor @Test func actualDescriptionQueueContainsSelectableTextAndOwnsItsCloseCommand() throws {
+    let f = try LocalSurfaceFixture(); defer { f.close() }; f.state.commandCoordinator.unregisterWindow(f.token)
+    f.window.setContentSize(NSSize(width: 800, height: 560)); var closed = false
+    let host = NSHostingView(rootView: DescriptionQueueView(appState: f.state, onClose: { closed = true }))
+    host.frame = f.window.contentView!.bounds; host.autoresizingMask = [.width, .height]; f.window.contentView!.addSubview(host); host.layoutSubtreeIfNeeded()
+    func surfaces(_ view: NSView) -> [CommandLocalSurfaceView] { ((view as? CommandLocalSurfaceView).map { [$0] } ?? []) + view.subviews.flatMap(surfaces) }
+    let surface = try #require(surfaces(host).first)
+    let text = NSTextView(frame: NSRect(x: 20, y: 20, width: 240, height: 80)); text.string = "Selectable saved description"; text.isEditable = false; text.isSelectable = true; surface.addSubview(text)
+    f.window.makeFirstResponder(text)
+    let origin = try #require(f.state.commandCoordinator.invocation(in: f.window))
+    #expect(origin.scope == .information); #expect(origin.lease?.view === surface)
+    #expect(f.state.commandCoordinator.unavailableReason(.resumeDescriptions, invocation: origin) == nil)
+    #expect(f.state.commandCoordinator.unavailableReason(.cancelDescriptions, invocation: origin) != nil)
+    #expect(!f.window.performKeyEquivalent(with: f.event("a", modifiers: [.command])))
+    #expect(!f.window.performKeyEquivalent(with: f.event("c", modifiers: [.command])))
+    #expect(f.window.performKeyEquivalent(with: f.event("\u{1b}", code: 53))); #expect(closed)
+    #expect(!f.window.isVisible); host.removeFromSuperview()
+}
+
+@MainActor @Test func actualDescriptionSettingsUsesAvailableHeightAndCapturesItsLocalSurface() throws {
+    let f = try LocalSurfaceFixture(); defer { f.close() }
+    f.state.commandCoordinator.unregisterWindow(f.token); f.state.commandCoordinator.register(window: f.window, token: f.token, scope: .settings)
+    f.window.setContentSize(NSSize(width: 580, height: 380))
+    let host = NSHostingView(rootView: DescriptionSettingsView(appState: f.state))
+    host.frame = f.window.contentView!.bounds; host.autoresizingMask = [.width, .height]; f.window.contentView!.addSubview(host); host.layoutSubtreeIfNeeded()
+    func surfaces(_ view: NSView) -> [CommandLocalSurfaceView] { ((view as? CommandLocalSurfaceView).map { [$0] } ?? []) + view.subviews.flatMap(surfaces) }
+    let surface = try #require(surfaces(host).first)
+    #expect(surface.bounds.height >= 370 && surface.bounds.height <= 390)
+    #expect(surface.bounds.width >= 570 && surface.bounds.width <= 590)
+    let field = NSTextField(string: "Local AI model"); field.frame = NSRect(x: 10, y: 10, width: 240, height: 28); surface.addSubview(field); field.selectText(nil)
+    let origin = try #require(f.state.commandCoordinator.invocation(in: f.window))
+    #expect(origin.scope == .settingsEditor); #expect(origin.lease?.view === surface)
+    #expect(f.state.commandCoordinator.unavailableReason(.descriptionQueue, invocation: origin) == nil)
+    #expect(!f.window.isVisible); host.removeFromSuperview()
+}

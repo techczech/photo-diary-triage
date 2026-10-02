@@ -100,18 +100,15 @@ establish their mouse/keyboard agreement. Do not bundle/install or mark this ite
 - Preview/Compare: manual crop toggle/save/cancel, Compare columns/pan lock, shared
   zoom strip, explicit Download to view targeting the displayed/focused photograph.
 - Review Map: local presentation handler for the review Map button.
-- Settings: default SSD/Archive root controls and backup export/import use registry
-  routes; existing command scopes must admit the actual Settings/editor owner.
-- Descriptions: Describe selected, Regenerate, Trip/year and queue buttons in
-  DescriptionQueueView; Settings queue opener must retain its own presentation owner.
 - Main toolbar/Inspector: sidebar, Open, Compare, Inspector and selection/triage menus;
   inspector show/hide controls. Use actual local targets where actions offer a row.
 - Source/import: New Log, Copy, Open Archive destination, Confirm Backup and Cleanup
   in ContentViewSections and ContentInspectorWorkflowViews.
 - Browser: Back/Return to search, Expand/Collapse All, grid size actions, selection/
   triage controls, thumbnail Prepare/Cancel; Archive Clear filters.
-- Audit asynchronous command preparation across Task scheduling: capture actual clicked
-  selection before launch, including description and Google review preparation.
+- Image completion ownership: preserve saved crop A without stealing focus/Preview
+  from B after navigation; gate current-context publication and index refresh. Explicit
+  Download to view must retain the actual displayed/focused item and its presentation.
 - Menus/help: verify native refresh and inherited scoped bindings; rendered native
   menu behaviour is an acceptance candidate, not established by source declarations.
 - Final complete inventory/Astra review, full suite, signed bundle/body comparison,
@@ -182,3 +179,38 @@ cover this hierarchy, stale ancestors, siblings, disabled shadowing and collisio
   focused review clear. No native menu acceptance, bundle/install, headed launch,
   live archive, real authorisation, private delivery or watcher. Target remains
   0.7.16/152; installed 0.7.15/151 verified closed. Remaining inventory above is active.
+
+## Description and command preparation checkpoint — 2026-10-03
+
+- Full suite: 550 tests / 2 suites, 38.279 s. 103 additions since installed
+  0.7.15: 76 command-file functions, 14 new Google callback functions and 13 new
+  description functions. Twenty additions in this continuation.
+- Registry preparation captures selection/account/root/model before Task scheduling.
+  Changed Log/entry/map Walk cannot supply another review or local upload mark.
+  Map selection identity is now part of the authority fingerprint.
+- Description requests capture paths/year and model configuration synchronously and
+  reserve one owned operation through preparation, jobs, progress and automatic run.
+  Cancellation revisions span preparation; repeated Cancel acknowledgements are
+  chained before fresh Resume. Awaited jobs/errors cannot publish into a root round trip.
+- Discard has a retained task and synchronous ownership; cancellation reaches durable
+  write guards. A first discarded receipt records whole-batch intent: unfinished siblings
+  remain logically inactive across reloads; committed results remain committed; explicit
+  retry completes the raw receipts. Partial Cancel cannot strand pending parents or
+  accidentally Resume a discarded batch. No recovery schema change.
+- Year enumeration retains the issued model/endpoint. Model refresh success/error and
+  retained Settings controls reject endpoint/configuration round trips.
+- Actual description queue and Local AI Settings contain their controls. Local queue
+  presentation requires a successful current read. Real Settings field editors retain
+  their nearest local lease while native Select All/Copy and IME protections remain.
+- Default SSD/Archive root, app backup and Archive Describe buttons route through the
+  shared registry. Settings/editor scopes admit their actual owner; Form tab height is
+  measured at 580x380 in hidden native hosting. No file panels or real model/provider requests.
+- Before-fix evidence: changed selection 2 tests/4 issues; description ownership
+  6 tests/14 issues; repeated Cancel 1/3; map target 1/1; Settings scopes 1/13;
+  hosted ownership 4/3; model round trip 1 parameterised/3; cancelled Discard 1/1;
+  interrupted batch 1/2 with the recovery repair deliberately removed, then restored.
+- Final: /private/tmp/walkfolio-description-command-final-full.log. Astra final focused
+  source/test review clear. Tests use synthetic canonical photos, fake model/provider
+  boundaries and hidden windows; no live data, authorisation or headed interaction.
+- Target remains 0.7.16/152, unbundled/uninstalled; installed 0.7.15/151 verified closed.
+  Remaining image/view/toolbar/import/browser/menu/release work above stays active.

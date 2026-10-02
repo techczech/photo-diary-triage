@@ -248,7 +248,10 @@ final class CommandKeyboardCoordinator: ObservableObject {
         }
         else if window.sheetParent != nil && lease == nil { scope = .editor }
         else { scope = lease?.scope ?? registration.scope }
-        let retained = scope == .editor || scope == .settingsEditor ? nil : lease
+        // An actual containing Settings/editor surface owns its field editor too.
+        // Generic window text has no lease; native editing still limits commands
+        // through the effective editor scope and the registry's text protections.
+        let retained = lease
         return .init(window: window, scope: scope, lease: retained, state: state, windowRegistrationID: registration.instanceID,
             surfaces: retained.map { surfaceChain(for: $0, editing: scope.isTextEditing) })
     }

@@ -238,7 +238,15 @@ struct ArchiveDescriptionRepository: Sendable {
     }
 }
 
-actor ArchiveDescriptionQueue {
+protocol ArchiveDescriptionQueuing: Sendable {
+    func jobs() async throws -> [ArchiveDescriptionJob]
+    func enqueue(targets: [(DescriptionTargetKind, String)], configuration: LMStudioConfiguration, regenerate: Bool) async throws -> [ArchiveDescriptionJob]
+    func run(jobIDs: Set<UUID>?, progress: (@Sendable ([ArchiveDescriptionJob]) async -> Void)?) async throws
+    func cancel() async
+    func discardFailed() async throws
+}
+
+actor ArchiveDescriptionQueue: ArchiveDescriptionQueuing {
     let archiveRoot: URL
     let machineRole: ArchiveMachineRole
     let client: any DescriptionGenerating
@@ -257,6 +265,18 @@ actor ArchiveDescriptionQueue {
         self.contextIsCurrent = contextIsCurrent; self.persist = persist
     }
     func jobs() throws -> [ArchiveDescriptionJob] {
+        let recorded = try recordedJobs()
+        // Discard targets the complete failed batch. Its first durable discarded
+        // receipt records that intent even if cancellation interrupts later writes.
+        // Completed revisions remain active; unfinished parents must not resume.
+        let discardedBatches = Set(recorded.filter { $0.state == .discarded }.compactMap(\.batchID))
+        return recorded.map { job in
+            var value = job
+            if value.state != .committed, value.batchID.map(discardedBatches.contains) == true { value.state = .discarded }
+            return value
+        }
+    }
+    private func recordedJobs() throws -> [ArchiveDescriptionJob] {
         let recovery = ArchiveOperationRecovery(archiveRoot: archiveRoot)
         guard FileManager.default.fileExists(atPath: recovery.root.path) else { return [] }
         guard recovery.root.resolvingSymlinksInPath().standardizedFileURL == archiveRoot.resolvingSymlinksInPath().appendingPathComponent(".walkfolio-recovery").standardizedFileURL else { throw ArchiveFileVerification.failure("The description queue cannot use linked recovery storage.") }
@@ -309,18 +329,24 @@ actor ArchiveDescriptionQueue {
             created.append(job)
         }
         guard !created.isEmpty else { return [] }
+        guard contextIsCurrent(), !Task.isCancelled else { throw CancellationError() }
         let plan = DescriptionBatchPlan(id: batchID, jobs: created)
         try ArchiveOperationRecovery(archiveRoot: archiveRoot).save(plan, kind: "description-plan", sessionID: plan.id)
-        for job in created { try persist(job, archiveRoot) }
+        for job in created {
+            guard contextIsCurrent(), !Task.isCancelled else { throw CancellationError() }
+            try persist(job, archiveRoot)
+        }
         return created
     }
     func cancel() { cancelled = true; activeRequest?.cancel() }
     func discardFailed() throws {
+        guard contextIsCurrent(), !Task.isCancelled else { throw CancellationError() }
         guard !running else { throw ArchiveFileVerification.failure("Cancel the running descriptions first.") }
-        let all = try jobs()
-        let failedBatches = Set(all.filter { [.failed, .cancelled].contains($0.state) }.compactMap(\.batchID))
+        let all = try recordedJobs()
+        let failedBatches = Set(all.filter { [.failed, .cancelled, .discarded].contains($0.state) }.compactMap(\.batchID))
         for var job in all where job.state != .committed && job.state != .discarded &&
             ([.failed, .cancelled].contains(job.state) || job.batchID.map(failedBatches.contains) == true) {
+            guard contextIsCurrent(), !Task.isCancelled else { throw CancellationError() }
             job.state = .discarded; try persist(job, archiveRoot)
         }
     }

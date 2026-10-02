@@ -5,7 +5,7 @@ struct PhotoDiaryCommands: Commands {
     @ObservedObject var appState: AppState
     var body: some Commands {
         CommandGroup(after: .newItem) {
-            commands([.chooseSource, .chooseHistoricalSource, .openDefaultSource, .reloadSource, .chooseArchiveRoot, .migrateLayout, .backfillThumbnails, .rebuildIndex, .exportBackup, .importBackup])
+            commands([.chooseSource, .chooseDefaultSourceRoot, .chooseHistoricalSource, .openDefaultSource, .reloadSource, .chooseArchiveRoot, .migrateLayout, .backfillThumbnails, .rebuildIndex, .exportBackup, .importBackup])
         }
         CommandGroup(replacing: .appSettings) { RegisteredCommandButton(id: .settings, appState: appState) }
         CommandMenu("Archive") {
