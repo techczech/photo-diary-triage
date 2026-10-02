@@ -1,341 +1,52 @@
+import AppKit
 import SwiftUI
 
 struct PhotoDiaryCommands: Commands {
     @ObservedObject var appState: AppState
-
     var body: some Commands {
         CommandGroup(after: .newItem) {
-            Button("Choose Source Folder…") {
-                appState.pickSourceFolder()
-            }
-            .keyboardShortcut("o", modifiers: [.command])
-
-            Button("Set Archive Root…") {
-                appState.pickArchiveRoot()
-            }
-
-            Button("Migrate Archive Layout…") {
-                appState.migrateArchiveLayoutInteractively()
-            }
-
-            Button("Backfill Archive Index Thumbnails…") {
-                appState.backfillArchiveIndexThumbnailsInteractively()
-            }
-            .disabled(!appState.canWriteArchiveIndex || appState.archiveBackfillIsRunning)
-            .help(appState.canWriteArchiveIndex ? "Generate missing Archive Index thumbnails." : appState.archiveIndexWriteHelp)
-
-            Button("Rebuild Archive Index…") {
-                appState.rebuildArchiveIndexInteractively()
-            }
-            .disabled(!appState.canWriteArchiveIndex)
-            .help(appState.canWriteArchiveIndex ? "Rebuild the derived Archive Index from manifests." : appState.archiveIndexWriteHelp)
-
-            Button("Export Backup…") {
-                appState.exportBackup()
-            }
-
-            Button("Import Backup…") {
-                appState.importBackup()
-            }
+            commands([.chooseSource, .chooseArchiveRoot, .migrateLayout, .backfillThumbnails, .rebuildIndex, .exportBackup, .importBackup])
         }
-
+        CommandGroup(replacing: .appSettings) { RegisteredCommandButton(id: .settings, appState: appState) }
         CommandMenu("Archive") {
-            Button("Show Timeline") {
-                appState.setArchiveBrowseViewMode(.timeline)
-            }
-            .keyboardShortcut("1", modifiers: [.command])
-            .disabled(appState.workspaceMode != .archiveView)
-
-            Button("Show Contact Sheet") {
-                appState.setArchiveBrowseViewMode(.contactSheet)
-            }
-            .keyboardShortcut("2", modifiers: [.command])
-            .disabled(appState.workspaceMode != .archiveView)
-
-            Button("Search the Archive") {
-                appState.requestArchiveSearchFocus()
-            }
-            .keyboardShortcut("f", modifiers: [.command, .shift])
-            .disabled(appState.workspaceMode != .archiveView)
-
-            Button("Open Selected Archive Entry") {
-                appState.openSelectedArchiveItem()
-            }
-            .disabled(appState.workspaceMode != .archiveView || !appState.canOpenSelectedArchiveItem)
-
-            Button("Organise Selected Folder as a Trip…") {
-                appState.organiseSelectedUnorganisedFolder()
-            }
-            .disabled(appState.workspaceMode != .archiveView || !appState.canOrganiseSelectedUnorganisedFolder)
-
-            Button("Prepare Thumbnails for Current Folder…") {
-                appState.prepareCurrentArchiveFolderThumbnailsInteractively()
-            }
-            .disabled(!appState.canPrepareCurrentArchiveFolderThumbnails || appState.archiveBackfillIsRunning)
-
-            Divider()
-
-            Button(appState.settings.showArchivePreviews ? "Hide Archive Photo Previews" : "Show Archive Photo Previews") {
-                appState.setShowArchivePreviews(!appState.settings.showArchivePreviews)
-            }
-            .disabled(appState.workspaceMode != .archiveView)
-
-            Button("Refresh Archive Catalogue") {
-                appState.reloadArchiveCatalogue()
-            }
-            .disabled(appState.workspaceMode != .archiveView)
-
-            Button("Cancel Archive Thumbnail Backfill") {
-                appState.cancelArchiveIndexThumbnailBackfill()
-            }
-            .disabled(!appState.archiveBackfillIsRunning)
+            commands([.timeline, .contactSheet, .searchArchive, .openArchive, .organiseFolder, .prepareThumbnails, .toggleCovers, .refreshArchive, .cancelBackfill])
         }
-
+        CommandMenu("Review") {
+            commands([.focusSidebar, .focusReview, .toggleSidebar, .toggleInspector, .flatReview, .groupedReview, .gridLayout, .listLayout,
+                      .filterAll, .filterIncluded, .filterCandidate, .filterExcluded, .filterUndecided, .filterCropped])
+        }
+        CommandMenu("Grouping") {
+            commands([.groupDays, .groupDaysBursts, .groupDaysClusters, .groupDaysClustersBursts, .expandAll, .collapseAll, .previousGroup, .nextGroup, .expandGroup, .collapseGroup])
+        }
         CommandMenu("Triage") {
-            Button("Focus Sidebar Navigation") {
-                appState.focusSidebarNavigation()
-            }
-            .keyboardShortcut("1", modifiers: [.command, .control])
-
-            Button("Focus Review Grid") {
-                appState.focusReviewSurface()
-            }
-            .keyboardShortcut("2", modifiers: [.command, .control])
-            .disabled(!appState.canFocusReviewSurface)
-
-            Button(appState.isDetailsInspectorVisible ? "Hide Inspector" : "Show Inspector") {
-                appState.toggleDetailsInspector()
-            }
-            .keyboardShortcut("i", modifiers: [.command, .option])
-
-            Divider()
-
-            Button("Flat Review") {
-                appState.showFlatReview()
-            }
-            .keyboardShortcut("3", modifiers: [.command])
-            .disabled(!appState.canFocusReviewSurface)
-
-            Button("Grouped Review") {
-                appState.showGroupedReview()
-            }
-            .keyboardShortcut("4", modifiers: [.command])
-            .disabled(!appState.canUseGroupedReviewMode)
-
-            Button("Grid Layout") {
-                appState.setReviewPresentationMode(.grid)
-            }
-            .keyboardShortcut("g", modifiers: [.command, .option])
-
-            Button("List Layout") {
-                appState.setReviewPresentationMode(.list)
-            }
-            .keyboardShortcut("l", modifiers: [.command, .option])
-
-            Divider()
-
-            Button("Show All Photos") {
-                appState.setReviewFilter(.all)
-            }
-            .keyboardShortcut("a", modifiers: [.command, .control])
-
-            Button("Show Included Photos") {
-                appState.setReviewFilter(.included)
-            }
-            .keyboardShortcut("i", modifiers: [.command, .control])
-
-            Button("Show Candidate Photos") {
-                appState.setReviewFilter(.candidate)
-            }
-            .keyboardShortcut("c", modifiers: [.command, .control])
-
-            Button("Show Excluded Photos") {
-                appState.setReviewFilter(.excluded)
-            }
-            .keyboardShortcut("x", modifiers: [.command, .control])
-
-            Button("Show Undecided Photos") {
-                appState.setReviewFilter(.undecided)
-            }
-            .keyboardShortcut("u", modifiers: [.command, .control])
-
-            Button("Show Cropped Photos") {
-                appState.setReviewFilter(.cropped)
-            }
-
-            Divider()
-
-            Button("Days Grouping") {
-                appState.setDayOrganizationMode(.days)
-            }
-            .keyboardShortcut("1", modifiers: [.command, .control])
-            .disabled(!appState.canUseGroupedReviewMode)
-
-            Button("Days + Bursts Grouping") {
-                appState.setDayOrganizationMode(.daysAndBursts)
-            }
-            .keyboardShortcut("2", modifiers: [.command, .control])
-            .disabled(!appState.canUseGroupedReviewMode)
-
-            Button("Days + Clusters Grouping") {
-                appState.setDayOrganizationMode(.daysAndClusters)
-            }
-            .keyboardShortcut("3", modifiers: [.command, .control])
-            .disabled(!appState.canUseGroupedReviewMode)
-
-            Button("Days + Clusters + Bursts Grouping") {
-                appState.setDayOrganizationMode(.daysClustersAndBursts)
-            }
-            .keyboardShortcut("4", modifiers: [.command, .control])
-            .disabled(!appState.canUseGroupedReviewMode)
-
-            Button("Expand All Groups") {
-                appState.expandAllInlineSections()
-            }
-            .keyboardShortcut("]", modifiers: [.command, .option])
-            .disabled(!appState.canExpandAllGroupedSections)
-
-            Button("Collapse All Groups") {
-                appState.collapseAllInlineSections()
-            }
-            .keyboardShortcut("[", modifiers: [.command, .option])
-            .disabled(!appState.canCollapseAllGroupedSections)
-
-            Button("Previous Group") {
-                appState.focusPreviousInlineSection()
-            }
-            .keyboardShortcut(.upArrow, modifiers: [.command, .option])
-            .disabled(!appState.canUseGroupedSectionNavigation)
-
-            Button("Next Group") {
-                appState.focusNextInlineSection()
-            }
-            .keyboardShortcut(.downArrow, modifiers: [.command, .option])
-            .disabled(!appState.canUseGroupedSectionNavigation)
-
-            Button("Expand Focused Group") {
-                appState.expandFocusedInlineSection()
-            }
-            .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
-            .disabled(!appState.canUseGroupedSectionNavigation)
-
-            Button("Collapse Focused Group") {
-                appState.collapseFocusedInlineSection()
-            }
-            .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
-            .disabled(!appState.canUseGroupedSectionNavigation)
-
-            Divider()
-
-            Button("Select Selection For Import") {
-                appState.markCurrentSelectionForImport()
-            }
-            .keyboardShortcut("i", modifiers: [.command])
-            .disabled(!appState.canMarkSelectionForImport)
-
-            Button("Exclude Selection From Import") {
-                appState.excludeCurrentSelectionFromImport()
-            }
-            .keyboardShortcut("x", modifiers: [.command, .shift])
-            .disabled(!appState.canExcludeSelectionFromImport)
-
-            Button("Mark Selection As Candidate") {
-                appState.markCurrentSelectionAsCandidate()
-            }
-            .disabled(!appState.canMarkSelectionAsCandidate)
-
-            Button("Clear Selection To Undecided") {
-                appState.unmarkCurrentSelectionForImport()
-            }
-            .keyboardShortcut("I", modifiers: [.command, .shift])
-            .disabled(!appState.canUnmarkSelectionForImport)
-
-            Button("Toggle RAW Companion Import") {
-                appState.toggleRawForCurrentMediaSelection()
-            }
-            .keyboardShortcut("r", modifiers: [.command, .option])
-            .disabled(!appState.canToggleRawForSelection)
-
-            Button("Create Photo Log…") {
-                appState.presentPhotoLogCreation()
-            }
-            .keyboardShortcut("w", modifiers: [.command, .shift])
-            .disabled(!appState.canPresentPhotoLogCreation)
-
-            Button("Start New Photo Log") {
-                appState.startNewPhotoLogSession()
-            }
-            .disabled(!appState.canStartNewPhotoLogSession)
-
-            Button("Compare Selection") {
-                appState.openComparisonForCurrentSelection()
-            }
-            .keyboardShortcut("c", modifiers: [.command, .shift])
-            .disabled(!appState.canOpenComparison)
-
-            Divider()
-
-            Button("Open") {
-                appState.openCurrentSelection()
-            }
-            .keyboardShortcut(.return, modifiers: [.command])
-            .disabled(!appState.canOpenCurrentSelection)
-
-            Button("Download Selected Archive Photo to View") {
-                appState.downloadBlockedArchiveSelectionToView()
-            }
-            .keyboardShortcut("d", modifiers: [.command, .shift])
-            .disabled(!appState.canDownloadBlockedArchiveSelectionToView)
-
-            Button("Go Up") {
-                appState.navigateToParent()
-            }
-            .keyboardShortcut(.upArrow, modifiers: [.command])
-            .disabled(!appState.canNavigateToParent)
-
-            Button("Deselect All") {
-                appState.clearCurrentSelection()
-            }
-            .keyboardShortcut("a", modifiers: [.command, .shift])
-            .disabled(!appState.canClearCurrentSelection)
-
-            Divider()
-
-            Button("Copy Included Files Into Archive") {
-                appState.commitImport()
-            }
-            .keyboardShortcut("m", modifiers: [.command, .shift])
-            .disabled(!appState.canCommitImport)
-
-            Button("Open Copied Archive Folder") {
-                appState.openArchiveDestinationForCurrentSession()
-            }
-            .disabled(!appState.canOpenArchiveDestination)
-
-            Button("Move Selected Walk to Trip…") {
-                appState.moveSelectedArchiveWalkToTrip()
-            }
-            .keyboardShortcut("t", modifiers: [.command, .shift])
-            .disabled(!appState.canMoveSelectedArchiveWalkToTrip)
-
-            Button("Confirm Backup And Enable Cleanup") {
-                appState.markBackupConfirmed()
-            }
-            .keyboardShortcut("b", modifiers: [.command, .shift])
-            .disabled(!appState.canConfirmBackup)
-
-            Button("Clean Imported Files From Source SSD") {
-                appState.cleanupImportedSources()
-            }
-            .keyboardShortcut("k", modifiers: [.command, .shift])
-            .disabled(!appState.canCleanupImportedSources)
+            commands([.markIncluded, .markExcluded, .markCandidate, .clearTriage, .toggleRAW, .createPhotoLog, .newPhotoLog, .compare, .open, .viewOriginal, .goUp, .selectAll, .deselectAll])
         }
-
-        CommandGroup(after: .help) {
-            Button("Keyboard Shortcuts") {
-                appState.showKeyboardHelp = true
-            }
-            .keyboardShortcut("?", modifiers: [.command, .shift])
+        CommandMenu("Copy") { commands([.copyIncluded, .openDestination, .moveWalk, .confirmBackup, .cleanupSource]) }
+        CommandMenu("Descriptions") {
+            commands([.describeSelection, .regenerateDescriptions, .describeTrip, .describeYear, .descriptionQueue, .resumeDescriptions, .cancelDescriptions, .discardDescriptions])
         }
+        CommandMenu("Google Photos") { commands([.deliverTrip, .deliverPhotoLog, .markPreviousUpload, .clearPreviousUpload, .googleQueue]) }
+        CommandMenu("Commands") { commands([.palette, .contextActions, .find]) }
+        CommandGroup(after: .help) { RegisteredCommandButton(id: .keyboardHelp, appState: appState) }
+    }
+    @ViewBuilder private func commands(_ ids: [AppCommandID]) -> some View {
+        ForEach(ids, id: \.self) { RegisteredCommandButton(id: $0, appState: appState) }
+    }
+}
+
+struct RegisteredCommandButton: View {
+    let id: AppCommandID
+    @ObservedObject var appState: AppState
+    @Environment(\.openSettings) private var openSettings
+    var body: some View {
+        let coordinator = appState.commandCoordinator
+        let origin = NSApp?.keyWindow.flatMap { coordinator.invocation(in: $0) }
+        let binding = coordinator.registry.bindings(id).first { binding in origin.map { binding.scopes.contains($0.scope) } ?? true }
+        let button = Button(AppCommandRegistry.definition(id).title) {
+            coordinator.execute(id, invocation: NSApp?.keyWindow.flatMap { coordinator.invocation(in: $0) }, settingsOpener: { openSettings() })
+        }
+        .disabled(id != .settings && coordinator.unavailableReason(id, invocation: origin) != nil)
+        if let binding { button.keyboardShortcut(binding.shortcut.menuKey, modifiers: binding.shortcut.modifiers.swiftUI) }
+        else { button }
     }
 }

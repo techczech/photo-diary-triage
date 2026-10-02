@@ -473,6 +473,7 @@ struct ReviewItemSnapshotIndex: Equatable, Sendable {
 }
 
 struct ReviewSnapshot: Equatable, Sendable {
+    var findQuery = ""
     let breadcrumbTitles: [String]
     let contextMediaItemCount: Int
     let detailFolderNodes: [BrowserNode]

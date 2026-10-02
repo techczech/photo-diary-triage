@@ -494,6 +494,8 @@ struct AppSettings: Codable, Hashable, Sendable {
     var showArchivePreviews: Bool
     var lmStudioConfiguration = LMStudioConfiguration()
     var googlePhotosClientID = ""
+    var commandShortcutSchemaVersion = 1
+    var commandShortcutOverrides: [String: AppShortcutOverride] = [:]
 
     static func `default`(fileManager: FileManager = .default) -> AppSettings {
         let libraryRoot = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -605,6 +607,8 @@ struct AppSettings: Codable, Hashable, Sendable {
         archiveBrowseViewMode = try container.decodeIfPresent(ArchiveBrowseViewMode.self, forKey: .archiveBrowseViewMode) ?? defaults.archiveBrowseViewMode
         showArchivePreviews = try container.decodeIfPresent(Bool.self, forKey: .showArchivePreviews) ?? defaults.showArchivePreviews
         googlePhotosClientID = try container.decodeIfPresent(String.self, forKey: .googlePhotosClientID) ?? ""
+        commandShortcutSchemaVersion = try container.decodeIfPresent(Int.self, forKey: .commandShortcutSchemaVersion) ?? 1
+        commandShortcutOverrides = try container.decodeIfPresent([String: AppShortcutOverride].self, forKey: .commandShortcutOverrides) ?? [:]
         lmStudioConfiguration = try container.decodeIfPresent(LMStudioConfiguration.self, forKey: .lmStudioConfiguration) ?? defaults.lmStudioConfiguration
     }
 
@@ -628,6 +632,8 @@ struct AppSettings: Codable, Hashable, Sendable {
         try container.encode(showArchivePreviews, forKey: .showArchivePreviews)
         try container.encode(lmStudioConfiguration, forKey: .lmStudioConfiguration)
         try container.encode(googlePhotosClientID, forKey: .googlePhotosClientID)
+        try container.encode(commandShortcutSchemaVersion, forKey: .commandShortcutSchemaVersion)
+        try container.encode(commandShortcutOverrides, forKey: .commandShortcutOverrides)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -649,6 +655,8 @@ struct AppSettings: Codable, Hashable, Sendable {
         case showArchivePreviews
         case lmStudioConfiguration
         case googlePhotosClientID
+        case commandShortcutSchemaVersion
+        case commandShortcutOverrides
     }
 
     private enum LegacyCodingKeys: String, CodingKey {

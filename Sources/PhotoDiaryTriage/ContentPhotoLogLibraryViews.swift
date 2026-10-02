@@ -20,7 +20,7 @@ struct PhotoLogLibraryPane: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .shortcutHint("Cmd-Shift-W", help: "Create a photo log from the current scope (Cmd-Shift-W)")
+                .commandShortcutHint(.createPhotoLog, appState: appState, scope: .review, help: "Create a photo log from the current scope")
                 .disabled(!canPresentPhotoLogCreation)
 
                 Spacer(minLength: 8)

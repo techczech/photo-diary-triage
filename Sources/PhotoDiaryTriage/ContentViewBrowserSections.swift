@@ -229,19 +229,19 @@ struct InlineDaySectionsPaneView: View {
                 }
                 .pickerStyle(.segmented)
                 .frame(maxWidth: 520)
-                .shortcutHint("Cmd-Ctrl-1..4", help: "Change grouped review organization (Cmd-Control-1 through Cmd-Control-4)")
+                .commandShortcutHint([.groupDays, .groupDaysBursts, .groupDaysClusters, .groupDaysClustersBursts], appState: appState, scope: .review, help: "Choose how photos are grouped")
 
                 Spacer()
 
                 Button("Expand All") {
                     appState.expandAllInlineSections()
                 }
-                .shortcutHint("Cmd-Option-]", help: "Expand all grouped sections (Cmd-Option-])")
+                .commandShortcutHint(.expandAll, appState: appState, scope: .review, help: "Expand all grouped sections")
 
                 Button("Collapse All") {
                     appState.collapseAllInlineSections()
                 }
-                .shortcutHint("Cmd-Option-[", help: "Collapse all grouped sections (Cmd-Option-[)")
+                .commandShortcutHint(.collapseAll, appState: appState, scope: .review, help: "Collapse all grouped sections")
             }
 
             ScrollViewReader { proxy in
@@ -311,6 +311,7 @@ struct ReviewPaneView: View {
             GeometryReader { proxy in
                 ZStack(alignment: .topLeading) {
                     ReviewKeyInputView(
+                        appState: appState,
                         isFocused: navigation.reviewGridHasFocus,
                         onArrow: { dx, dy, extending in
                             appState.handleReviewArrowKey(dx: dx, dy: dy, extending: extending)
@@ -481,7 +482,7 @@ struct ReviewPaneView: View {
         } label: {
             Label(state.snapshot.dayDetailDisplayMode == .sections ? "Grouped" : "Flat", systemImage: "rectangle.grid.2x2")
         }
-        .shortcutHint("Cmd-3 / Cmd-4", help: "Switch between flat review and grouped review (Cmd-3 / Cmd-4)")
+        .commandShortcutHint([.flatReview, .groupedReview], appState: appState, scope: .review, help: "Switch between flat review and grouped review")
     }
 
     private var groupedOrganizationMenu: some View {
@@ -495,7 +496,7 @@ struct ReviewPaneView: View {
         } label: {
             Label(compactOrganizationTitle(state.snapshot.dayOrganizationMode), systemImage: "calendar")
         }
-        .shortcutHint("Cmd-Ctrl-1..4", help: "Change grouped review organization (Cmd-Control-1 through Cmd-Control-4)")
+        .commandShortcutHint([.groupDays, .groupDaysBursts, .groupDaysClusters, .groupDaysClustersBursts], appState: appState, scope: .review, help: "Choose how photos are grouped")
     }
 
     private var reviewFilterMenu: some View {
@@ -509,7 +510,7 @@ struct ReviewPaneView: View {
         } label: {
             Label("Filter: \(state.snapshot.reviewFilter.title)", systemImage: "line.3.horizontal.decrease.circle")
         }
-        .shortcutHint("Cmd-Ctrl-A / I / C / X / U", help: "Filter review items to all, included, candidate, excluded, or undecided photos.")
+        .commandShortcutHint([.filterAll, .filterIncluded, .filterCandidate, .filterExcluded, .filterUndecided], appState: appState, scope: .review, help: "Filter review items to all, included, candidate, excluded, or undecided photos.")
     }
 
     private var reviewPresentationMenu: some View {
@@ -523,7 +524,7 @@ struct ReviewPaneView: View {
         } label: {
             Label(state.snapshot.reviewPresentationMode.rawValue.capitalized, systemImage: state.snapshot.reviewPresentationMode == .grid ? "square.grid.3x3" : "list.bullet")
         }
-        .shortcutHint("Cmd-Option-G / L", help: "Switch between grid and list layout (Cmd-Option-G / Cmd-Option-L)")
+        .commandShortcutHint([.gridLayout, .listLayout], appState: appState, scope: .review, help: "Switch between grid and list layout")
     }
 
     private var sizeControls: some View {
@@ -534,7 +535,7 @@ struct ReviewPaneView: View {
             } label: {
                 Image(systemName: "minus")
             }
-            .shortcutHint("-", help: "Show fewer review columns (-)")
+            .commandShortcutHint(.zoomOut, appState: appState, scope: .review, help: "Show fewer review columns (-)")
             .disabled(state.snapshot.reviewGridPreferredColumnCount <= 1)
 
             Text("\(state.snapshot.reviewGridPreferredColumnCount)")
@@ -547,7 +548,7 @@ struct ReviewPaneView: View {
             } label: {
                 Image(systemName: "plus")
             }
-            .shortcutHint("+", help: "Show more review columns (+)")
+            .commandShortcutHint(.zoomIn, appState: appState, scope: .review, help: "Show more review columns (+)")
             .disabled(state.snapshot.reviewGridPreferredColumnCount >= ReviewGridMetrics.maxSuggestedColumns)
 
             Button {
@@ -556,7 +557,7 @@ struct ReviewPaneView: View {
             } label: {
                 Image(systemName: "arrow.counterclockwise")
             }
-            .shortcutHint("0", help: "Reset review columns (0)")
+            .commandShortcutHint(.zoomReset, appState: appState, scope: .review, help: "Reset review columns (0)")
             .disabled(state.snapshot.reviewGridPreferredColumnCount == ReviewGridMetrics.defaultRequestedColumnCount())
         }
         .buttonStyle(.bordered)
@@ -621,7 +622,7 @@ struct ReviewPaneView: View {
                 Image(systemName: "arrow.down.right.and.arrow.up.left")
             }
             .help("Expand all groups")
-            .shortcutHint("Cmd-Option-]", help: "Expand all grouped sections (Cmd-Option-])")
+            .commandShortcutHint(.expandAll, appState: appState, scope: .review, help: "Expand all grouped sections")
 
             Button {
                 appState.collapseAllInlineSections()
@@ -630,7 +631,7 @@ struct ReviewPaneView: View {
                 Image(systemName: "arrow.up.left.and.arrow.down.right")
             }
             .help("Collapse all groups")
-            .shortcutHint("Cmd-Option-[", help: "Collapse all grouped sections (Cmd-Option-[)")
+            .commandShortcutHint(.collapseAll, appState: appState, scope: .review, help: "Collapse all grouped sections")
         }
         .buttonStyle(.bordered)
     }
@@ -973,7 +974,7 @@ private struct GroupedReviewSectionNodeView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .shortcutHint("Up / Down / Left / Right", help: isExpanded ? "Collapse this group. When the group header is focused, use Left Arrow to collapse and Up or Down to move between groups." : "Expand this group. When the group header is focused, use Right Arrow to expand and Up or Down to move between groups.")
+                .commandShortcutHint([.moveUp, .moveDown, .moveLeft, .moveRight], appState: appState, scope: .review, help: isExpanded ? "Collapse this focused group or move between groups" : "Expand this focused group or move between groups")
             } else {
                 HStack(spacing: 8) {
                     Text(section.title)
@@ -986,7 +987,7 @@ private struct GroupedReviewSectionNodeView: View {
                 .onTapGesture {
                     appState.focusInlineSection(section.id, scrollIntoView: false)
                 }
-                .shortcutHint("Up / Down / Left / Right", help: "Focus this group for keyboard navigation. Use Up or Down to move between groups and Left or Right to collapse or expand.")
+                .commandShortcutHint([.moveUp, .moveDown, .moveLeft, .moveRight], appState: appState, scope: .review, help: "Focus this group for keyboard navigation")
             }
 
             Spacer()

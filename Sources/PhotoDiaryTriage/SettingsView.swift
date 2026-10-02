@@ -6,6 +6,7 @@ struct SettingsView: View {
 
     var body: some View {
         TabView {
+            CommandShortcutSettingsView(appState: appState)
             Form {
                 Section("SSD Source") {
                     Text(appState.settings.defaultSourceRootDisplayPath)
@@ -205,6 +206,7 @@ struct SettingsView: View {
         .sheet(isPresented: $showLocalDescriptionQueue) { DescriptionQueueView(appState: appState, onClose: { showLocalDescriptionQueue = false }) }
         .scenePadding()
         .frame(width: 620, height: 430)
+        .background(CommandWindowAnchor(coordinator: appState.commandCoordinator, scope: .settings))
     }
 
     private var burstThresholdBinding: Binding<Double> {

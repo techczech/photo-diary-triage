@@ -4,13 +4,19 @@ import SwiftUI
 struct ArchiveSidebarView: View {
     let appState: AppState
     @ObservedObject var state: ArchiveBrowserState
+    @ObservedObject private var navigation: ArchiveSidebarNavigation
+    init(appState: AppState, state: ArchiveBrowserState) {
+        self.appState = appState; self.state = state
+        _navigation = ObservedObject(wrappedValue: appState.archiveSidebarNavigation)
+    }
 
     var body: some View {
         let snapshot = state.snapshot
+        ScrollViewReader { proxy in
         List {
             Section {
                 archiveFilterRow(
-                    title: "Archive",
+                    id: .home, title: "Archive",
                     systemImage: "photo.stack",
                     isSelected: snapshot.kindFilter == .all && snapshot.yearFilter == nil
                 ) {
@@ -21,7 +27,7 @@ struct ArchiveSidebarView: View {
 
             Section("Entry type") {
                 archiveFilterRow(
-                    title: "All entries",
+                    id: .allEntries, title: "All entries",
                     systemImage: "square.stack.3d.up",
                     count: snapshot.totalEntryCount,
                     isSelected: snapshot.kindFilter == .all
@@ -29,7 +35,7 @@ struct ArchiveSidebarView: View {
                     appState.setArchiveKindFilter(.all)
                 }
                 archiveFilterRow(
-                    title: "Trips",
+                    id: .trips, title: "Trips",
                     systemImage: "figure.walk",
                     count: snapshot.tripCount,
                     isSelected: snapshot.kindFilter == .trips
@@ -37,7 +43,7 @@ struct ArchiveSidebarView: View {
                     appState.setArchiveKindFilter(.trips)
                 }
                 archiveFilterRow(
-                    title: "Unorganised folders",
+                    id: .folders, title: "Unorganised folders",
                     systemImage: "folder",
                     count: snapshot.unorganisedFolderCount,
                     isSelected: snapshot.kindFilter == .unorganisedFolders
@@ -48,7 +54,7 @@ struct ArchiveSidebarView: View {
 
             Section("Year filters") {
                 archiveFilterRow(
-                    title: "All years",
+                    id: .allYears, title: "All years",
                     systemImage: "calendar",
                     count: snapshot.yearFilters.reduce(0) { $0 + $1.count },
                     isSelected: snapshot.yearFilter == nil
@@ -57,7 +63,7 @@ struct ArchiveSidebarView: View {
                 }
                 ForEach(snapshot.yearFilters) { year in
                     archiveFilterRow(
-                        title: year.year,
+                        id: .year(year.year), title: year.year,
                         systemImage: nil,
                         count: year.count,
                         isSelected: snapshot.yearFilter == year.year
@@ -92,16 +98,23 @@ struct ArchiveSidebarView: View {
             .padding(10)
             .background(.bar)
         }
+        .onAppear { navigation.reconcile(years: snapshot.yearFilters.map(\.year)) }
+        .onChange(of: snapshot.yearFilters.map(\.year)) { _, years in navigation.reconcile(years: years) }
+        .onChange(of: navigation.cursor) { _, row in proxy.scrollTo(row, anchor: .center) }
+        }
     }
 
     private func archiveFilterRow(
+        id: ArchiveSidebarRowID,
         title: String,
         systemImage: String?,
         count: Int? = nil,
         isSelected: Bool,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
+        Button {
+            navigation.select(id); action(); appState.focusSidebarNavigation()
+        } label: {
             HStack(spacing: 8) {
                 if let systemImage {
                     Image(systemName: systemImage)
@@ -121,6 +134,8 @@ struct ArchiveSidebarView: View {
             .padding(.vertical, 2)
         }
         .buttonStyle(.plain)
+        .overlay { RoundedRectangle(cornerRadius: 4).stroke(navigation.cursor == id ? Color.accentColor.opacity(0.65) : .clear, lineWidth: 1) }
+        .id(id)
         .listRowBackground(isSelected ? Color.accentColor.opacity(0.14) : Color.clear)
     }
 
@@ -129,7 +144,6 @@ struct ArchiveSidebarView: View {
 struct ArchiveMainPaneView: View {
     let appState: AppState
     @ObservedObject var state: ArchiveBrowserState
-    @FocusState private var hasKeyboardFocus: Bool
 
     var body: some View {
         let snapshot = state.snapshot
@@ -177,7 +191,7 @@ struct ArchiveMainPaneView: View {
                             openFolder: appState.openArchiveMapFolder)
                     } else if !snapshot.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         ArchiveSearchResultsView(appState: appState, snapshot: snapshot, layout: layout,
-                            focusCards: { hasKeyboardFocus = true })
+                            focusCards: { appState.focusReviewSurface() })
                     } else if snapshot.viewMode == .timeline {
                         archiveTimeline(snapshot)
                     } else {
@@ -186,32 +200,14 @@ struct ArchiveMainPaneView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .focusable()
-            .focused($hasKeyboardFocus)
-            .onAppear {
-                hasKeyboardFocus = true
-            }
-            .onChange(of: snapshot.browseFocusRevision) { _, _ in hasKeyboardFocus = true }
-            .onMoveCommand { direction in
-                guard hasKeyboardFocus else { return }
-                switch direction {
-                case .up:
-                    appState.moveArchiveSelection(horizontal: 0, vertical: -1, contactSheetColumns: layout.columnCount)
-                case .down:
-                    appState.moveArchiveSelection(horizontal: 0, vertical: 1, contactSheetColumns: layout.columnCount)
-                case .left:
-                    appState.moveArchiveSelection(horizontal: -1, vertical: 0, contactSheetColumns: layout.columnCount)
-                case .right:
-                    appState.moveArchiveSelection(horizontal: 1, vertical: 0, contactSheetColumns: layout.columnCount)
-                default:
-                    break
-                }
-            }
-            .onKeyPress(.return) {
-                guard hasKeyboardFocus else { return .ignored }
-                appState.openSelectedArchiveItem()
-                return .handled
-            }
+            .background(CommandPaneInputView(coordinator: appState.commandCoordinator, scope: .archiveCards, handlers: [
+                .moveLeft: { appState.moveArchiveSelection(horizontal: -1, vertical: 0, contactSheetColumns: layout.columnCount) },
+                .moveRight: { appState.moveArchiveSelection(horizontal: 1, vertical: 0, contactSheetColumns: layout.columnCount) },
+                .moveUp: { appState.moveArchiveSelection(horizontal: 0, vertical: -1, contactSheetColumns: layout.columnCount) },
+                .moveDown: { appState.moveArchiveSelection(horizontal: 0, vertical: 1, contactSheetColumns: layout.columnCount) },
+                .activateFocused: { appState.openSelectedArchiveItem() },
+                .closeSurface: { appState.navigateToParent() }
+            ]).frame(width: 1, height: 1))
         }
         .environment(\.archiveCoverContext, snapshot.coverContext)
     }
@@ -269,8 +265,8 @@ struct ArchiveMainPaneView: View {
                                     showPreview: snapshot.showPreviews,
                                     isSelected: snapshot.selectedEntryID == entry.id,
                                     onSelect: {
-                                        hasKeyboardFocus = true
                                         appState.selectArchiveEntry(entry.id)
+                                        appState.focusReviewSurface()
                                     },
                                     onOpen: {
                                         appState.selectArchiveEntry(entry.id)
@@ -326,8 +322,8 @@ struct ArchiveMainPaneView: View {
                                         showPreview: snapshot.showPreviews,
                                         isSelected: snapshot.selectedEntryID == entry.id,
                                         onSelect: {
-                                        hasKeyboardFocus = true
                                         appState.selectArchiveEntry(entry.id)
+                                        appState.focusReviewSurface()
                                     },
                                         onOpen: {
                                             appState.selectArchiveEntry(entry.id)
@@ -370,7 +366,6 @@ struct ArchiveMainPaneView: View {
 struct ArchiveTripPaneView: View {
     let appState: AppState
     @ObservedObject var state: ArchiveBrowserState
-    @FocusState private var hasKeyboardFocus: Bool
 
     var body: some View {
         let snapshot = state.snapshot
@@ -423,8 +418,8 @@ struct ArchiveTripPaneView: View {
                                         showPreview: snapshot.showPreviews,
                                         isSelected: snapshot.selectedWalkID == walk.id
                                     ) {
-                                        hasKeyboardFocus = true
                                         appState.selectArchiveWalk(walk.id)
+                                        appState.focusReviewSurface()
                                     } onOpen: {
                                         appState.selectArchiveWalk(walk.id)
                                         appState.openSelectedArchiveItem()
@@ -441,30 +436,14 @@ struct ArchiveTripPaneView: View {
                     }
                 }
             }
-            .focusable()
-            .focused($hasKeyboardFocus)
-            .onAppear { hasKeyboardFocus = true }
-            .onChange(of: snapshot.browseFocusRevision) { _, _ in hasKeyboardFocus = true }
-            .onMoveCommand { direction in
-                guard hasKeyboardFocus else { return }
-                switch direction {
-                case .up:
-                    appState.moveArchiveSelection(horizontal: 0, vertical: -1, contactSheetColumns: layout.columnCount)
-                case .down:
-                    appState.moveArchiveSelection(horizontal: 0, vertical: 1, contactSheetColumns: layout.columnCount)
-                case .left:
-                    appState.moveArchiveSelection(horizontal: -1, vertical: 0, contactSheetColumns: layout.columnCount)
-                case .right:
-                    appState.moveArchiveSelection(horizontal: 1, vertical: 0, contactSheetColumns: layout.columnCount)
-                default:
-                    break
-                }
-            }
-            .onKeyPress(.return) {
-                guard hasKeyboardFocus else { return .ignored }
-                appState.openSelectedArchiveItem()
-                return .handled
-            }
+            .background(CommandPaneInputView(coordinator: appState.commandCoordinator, scope: .archiveCards, handlers: [
+                .moveLeft: { appState.moveArchiveSelection(horizontal: -1, vertical: 0, contactSheetColumns: layout.columnCount) },
+                .moveRight: { appState.moveArchiveSelection(horizontal: 1, vertical: 0, contactSheetColumns: layout.columnCount) },
+                .moveUp: { appState.moveArchiveSelection(horizontal: 0, vertical: -1, contactSheetColumns: layout.columnCount) },
+                .moveDown: { appState.moveArchiveSelection(horizontal: 0, vertical: 1, contactSheetColumns: layout.columnCount) },
+                .activateFocused: { appState.openSelectedArchiveItem() },
+                .closeSurface: { appState.navigateToParent() }
+            ]).frame(width: 1, height: 1))
         }
         .environment(\.archiveCoverContext, snapshot.coverContext)
     }
