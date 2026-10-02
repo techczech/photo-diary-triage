@@ -2,7 +2,7 @@
 
 item_id: PDT-2026-07-03-097
 title: Walkfolio 1.0 — archive manager with a strong triage component, complete
-status: approved_for_implementation
+status: pending_native_and_provider_validation
 target_release_version: 1.0.0
 target_feature_slug: walkfolio-1-0
 
@@ -161,5 +161,8 @@ and [docs/adr/0002](../../docs/adr/0002-archive-index-derived-jsonl-in-pinned-fo
 
 ## Status
 
-Approved by user 2026-07-03 (scope + name: Walkfolio). Implementation starts with WP0.
-Standing gate: 0.2.51 map-fix test (item -096).
+Approved by user 2026-07-03 (scope + name: Walkfolio). The whole scope remains committed.
+
+As of 2026-10-02, Walkfolio 0.7.11 build 147 covers the implementation work packages with 350 passing fixture tests. Reports 100–107 and planning/development-plan-walkfolio-reliability.md record the recovery, Travel, Map, canonical locations, historical triage, Trip labels, descriptions and Google Photos evidence. The full synthetic camera/phone journey passes.
+
+The earlier map test was not silently treated as user acceptance. Current native Map/navigation and the original real-copy historical/migration, real Google test-account and whole-app acceptance criteria remain open in the consolidated 0.7.11 return check. No package or success condition has been dropped; 1.0 is not declared accepted from fixtures alone.

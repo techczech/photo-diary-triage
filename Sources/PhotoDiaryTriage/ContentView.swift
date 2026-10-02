@@ -213,6 +213,7 @@ struct ContentView: View {
                     .help(appState.historicalDateSummary)
             }
         }
+        ToolbarItem { GooglePhotosControls(appState: appState) }
         if appState.workspaceMode == .archiveView {
             ToolbarItem { ArchiveDescriptionControls(appState: appState) }
             ToolbarItem {

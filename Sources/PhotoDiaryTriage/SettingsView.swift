@@ -179,6 +179,8 @@ struct SettingsView: View {
                 }
             }.formStyle(.grouped).tabItem { Label("Local AI", systemImage: "text.bubble") }
 
+            GooglePhotosSettingsView(appState: appState).tabItem { Label("Google Photos", systemImage: "cloud") }
+
             Form {
                 Section("Backup") {
                     Text("Export and restore saved settings and session memory.")

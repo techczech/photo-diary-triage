@@ -174,6 +174,8 @@ struct ReviewGridCard: View {
                 ReviewCopyStatusBadge(copyStatus: copyStatus)
             }
 
+            if let badge = item.googlePhotos?.badge { Label(badge, systemImage: "cloud").font(.caption2).foregroundStyle(.secondary) }
+
             if let cropRelationship = item.cropRelationship {
                 CropRelationshipBadge(relationship: cropRelationship) {
                     appState.openCropLinkedPreview(for: item.id)
@@ -320,7 +322,9 @@ struct MediaItemRow: View {
                         ReviewCopyStatusBadge(copyStatus: copyStatus)
                     }
 
-                    if let cropRelationship = item.cropRelationship {
+                    if let badge = item.googlePhotos?.badge { Label(badge, systemImage: "cloud").font(.caption2).foregroundStyle(.secondary) }
+
+            if let cropRelationship = item.cropRelationship {
                         CropRelationshipBadge(relationship: cropRelationship) {
                             appState.openCropLinkedPreview(for: item.id)
                         }

@@ -9,7 +9,9 @@ updated: 2026-10-02
 
 ## Current release
 
-Version **0.7.10, build 146** adds on-demand local descriptions and a recoverable historical queue alongside canonical Trip location labels to historical-folder triage and confirmed Copy recovery to the archive recovery and index-only browsing improvements. Copies are verified by SHA-256; interrupted imports reuse recorded destinations; cleanup checks every selected original and RAW companion before deleting a source. Existing Walk notes and membership survive appended imports, and metadata edits update canonical manifests.
+Version **0.7.11, build 147** adds reviewed Google Photos delivery with resumable uploads, durable membership and explicit recovery. It also completes the independent reliability work on imports, canonical locations, historical triage, index-only Travel and on-demand local descriptions. All 350 automated tests pass; native and real-provider acceptance remain open.
+
+Copies are verified by SHA-256; interrupted imports reuse recorded destinations; cleanup checks every selected original and RAW companion before deleting a source. Existing Walk notes and membership survive appended imports, and metadata edits update canonical manifests.
 
 Archive moves and layout migration record their plans before changing files. Canonical paths are rewritten without changing human notes or source provenance. Historical folders and hidden material are retained. The derived index publishes complete generations and detects incomplete synchronisation.
 
@@ -37,11 +39,19 @@ In Settings, configure the LM Studio endpoint and choose a model explicitly. Ref
 - Prepare persistent 512-pixel thumbnails for one open archive folder, with progress, cancellation, serial downloads, eviction and a 15 GB free-space floor.
 - Keep source cleanup behind verification, backup confirmation and the main archive machine role.
 
+## Google Photos
+
+Configure a Google Desktop OAuth client ID in Settings and enable the Photos Library API in its Google project. Store the optional client credential through the secure field if the configured client requires it. Connect the intended account explicitly. From Archive, review a canonical Trip; from an imported Photo Log, review its archived originals. The review shows the account, album and captured material before **Send these originals**. RAW companions and generated crops are excluded. No automatic delivery starts during Triage or startup.
+
+The queue offers cancellation, explicit Resume and reconciliation when an album response is unknown. Inspect each candidate album before choosing it; an empty listing alone does not establish that creation failed. Retrying reuses captured bytes, known media and canonical bindings. Membership badges survive rebuild and Travel browsing. **Mark previously uploaded** records your own recollection for older material the API cannot inspect; it is distinct from verified membership. Neither status grants source cleanup permission.
+
+Travel delivery requires resident originals with their exact Download to view grants. It does not download photographs. Travel badge changes update the current view and canonical metadata; other machines await Main index publication. Account changes stop captured work. Transient upload handles stay on this Mac; portable canonical receipts remain beside the archive.
+
 ## Completion goals
 
-The approved 1.0 scope remains open. Google Photos delivery still requires implementation. Descriptions pass injected provider and recovery tests; real local-model quality and native controls remain to be checked. No LM Studio server was available during development.
+The approved 1.0 implementation scope is covered by the current app and fixture tests. The complete camera/phone → Walks/Trip → locations/descriptions → rebuilt search/Map/Travel → verified mock album journey passes. Real Google test-account delivery, local-model quality, native controls and OneDrive behaviour still need acceptance checks. No LM Studio server was available during development.
 
-The [development goals and acceptance tests](planning/development-plan-walkfolio-reliability.md) explain the intended complete workflow, current evidence and the order of independent development. [CONTEXT.md](CONTEXT.md), [PRD.md](PRD.md) and [DESIGN.md](DESIGN.md) hold the domain and product rules.
+The [development goals and acceptance tests](planning/development-plan-walkfolio-reliability.md) explain the original aims, current evidence and remaining acceptance. [CONTEXT.md](CONTEXT.md), [PRD.md](PRD.md) and [DESIGN.md](DESIGN.md) hold the domain and product rules.
 
 ## Development
 

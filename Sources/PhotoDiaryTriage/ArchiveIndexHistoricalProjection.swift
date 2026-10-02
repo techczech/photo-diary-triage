@@ -25,7 +25,7 @@ extension ArchiveIndexStore {
                 archiveRelativePath: folder.archiveRelativePath, date: folder.startDate.map(DateFormatting.iso8601.string(from:)),
                 title: folder.title, location: folder.location, exifSummary: nil, aiDescription: nil,
                 thumbnailPath: folder.coverThumbnailPath, walkPath: nil, tripPath: nil,
-                endDate: folder.endDate.map(DateFormatting.iso8601.string(from:)), photoCount: sorted.count))
+                endDate: folder.endDate.map(DateFormatting.iso8601.string(from:)), photoCount: sorted.count, googlePhotos: try historicalGoogleRecord(folder: archiveRoot.appendingPathComponent(folder.archiveRelativePath))))
         }
         return rows
     }

@@ -70,6 +70,7 @@ extension ArchiveIndexStore {
                 if let position = positions[crop.1] {
                     rows[position].cropRelationship = relationship(.crop, latest: crop)
                     rows[position].isDerivedPhoto = true
+                    rows[position].googlePhotos = nil
                 }
             }
         }

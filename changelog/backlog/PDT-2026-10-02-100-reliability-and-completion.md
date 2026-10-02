@@ -45,8 +45,8 @@ No tested failure can silently delete the only source, duplicate an interrupted 
 
 ## Current status
 
-Authorised by Dominik's 2 October request to proceed independently. Astra source audit confirms safety defects. Claude consultation is subject to automatic approval review. Baseline build compiles with installed Swift 6.4; test runtime configuration is being verified.
+Authorised by Dominik's 2 October request to proceed independently. Objectives were reconstructed from the original decisions and the approved whole-scope completion plan. Astra reviewed each implementation slice; Claude Opus reviewed a public-source recovery packet. No private packet was externally sent.
 
 ## Checkpoint
 
-0.7.4 safety foundation implemented and verified with 225 passing tests. Full completion remains active in planning/development-plan-walkfolio-reliability.md; index-only travel browsing is next.
+Walkfolio 0.7.11 build 147 is installed and verified while closed. The full suite passes 350 tests, versus 190 initially. Recovery, index-only Travel, Map, contextual locations, historical processing, Trip labels, on-demand descriptions and reviewed Google Photos delivery are implemented. The integrated camera/phone archive journey passes. The complete scope remains committed; native controls, real-copy historical/migration acceptance, OneDrive, local-model quality and a real Google test-account delivery remain in the consolidated exact-version return check. No live archive or private-photo delivery occurred. See planning/development-plan-walkfolio-reliability.md and reports 100–107.

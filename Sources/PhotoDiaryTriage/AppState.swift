@@ -455,9 +455,14 @@ final class AppState: ObservableObject {
         static let presentation = PendingRefreshKinds(rawValue: 1 << 5)
     }
 
-    init(testing: Bool = false, testingSettings: AppSettings? = nil, testingSupportRoot: URL? = nil, testingImportCoordinator: (any ImportCoordinating)? = nil, testingSessionStore: (any SessionPersisting)? = nil, testingDescriptionClient: (any DescriptionGenerating)? = nil) {
+    init(testing: Bool = false, testingSettings: AppSettings? = nil, testingSupportRoot: URL? = nil, testingImportCoordinator: (any ImportCoordinating)? = nil, testingSessionStore: (any SessionPersisting)? = nil, testingDescriptionClient: (any DescriptionGenerating)? = nil, testingGoogleCredentials: (any GooglePhotosCredentials)? = nil, testingGoogleClient: (any GooglePhotosDelivering)? = nil, testingGoogleSecrets: (any GooglePhotosSecretStoring)? = nil) {
         self.fileManager = .default
         self.descriptionClient = testingDescriptionClient ?? LMStudioDescriptionClient()
+        let googleSecrets = testingGoogleSecrets ?? GooglePhotosKeychain()
+        let googleAuth = GooglePhotosAuthentication(secrets: googleSecrets)
+        self.googleSecrets = googleSecrets; self.googleAuthentication = googleAuth
+        self.googleCredentials = testingGoogleCredentials ?? googleAuth
+        self.googleClient = testingGoogleClient ?? GooglePhotosClient(credentials: testingGoogleCredentials ?? googleAuth)
         thumbnailImageCache.countLimit = 512
         thumbnailImageCache.totalCostLimit = 256 * 1024 * 1024
         self.sourceWorkspaceFolderResolver = SourceWorkspaceFolderResolver(fileManager: self.fileManager)
@@ -1103,7 +1108,7 @@ final class AppState: ObservableObject {
 
                 switch result {
                 case .success(let catalogue):
-                    self.archiveCatalogue = catalogue
+                    self.archiveCatalogue = self.googleProjectedCatalogue(catalogue)
                     self.archiveCatalogueError = nil
                     self.reconcileArchiveSelection()
                     let entryNoun = catalogue.entries.count == 1 ? "entry" : "entries"
@@ -1221,6 +1226,282 @@ final class AppState: ObservableObject {
         selectedArchiveEntryID = entryID
         activePane = .media
         refreshArchiveBrowserState()
+    }
+
+    @Published var googleAccount: GooglePhotosAccount?
+    @Published var googleDeliveryJobs: [GooglePhotosDeliveryJob] = []
+    @Published var googleAlbumCandidates: [UUID: [GooglePhotosAlbum]] = [:]
+    @Published var googleDeliveryReview: GooglePhotosDeliveryReview?
+    @Published var showGoogleQueue = false
+    @Published var isDeliveringGooglePhotos = false
+    @Published var isConnectingGooglePhotos = false
+    private let googleAuthentication: GooglePhotosAuthentication
+    private let googleCredentials: any GooglePhotosCredentials
+    private let googleClient: any GooglePhotosDelivering
+    private let googleSecrets: any GooglePhotosSecretStoring
+    private let googleContext = GooglePhotosContextCounter()
+    private var googleQueue: GooglePhotosDeliveryQueue?
+    private var googleQueueKey: String?
+    private var googleDeliveryTask: Task<Void, Never>?
+    private var googleDeliveryOperationID: UUID?
+    private var googleDeliveryCancellation = 0
+    private var googleFactsOverlay: [String: GooglePhotosRecord] = [:]
+    private var googleFactsRoot: URL?
+    private var googleSignInTask: Task<Void, Never>?
+
+    private var googleRepository: GooglePhotosDeliveryRepository {
+        .init(archiveRoot: settings.archiveRoot, machineRole: settings.archiveMachineRole, picturesRoot: settings.oneDrivePicturesRoot)
+    }
+    func setGooglePhotosClientID(_ value: String) {
+        guard value != settings.googlePhotosClientID else { return }
+        settings.googlePhotosClientID = value; googleContext.invalidate(); cancelGoogleDelivery(); cancelGoogleSignIn()
+        googleAccount = nil; googleDeliveryReview = nil; persistSettings()
+    }
+    func saveGoogleClientSecret(_ value: String) async {
+        do { try await googleAuthentication.storeClientSecret(value, clientID: settings.googlePhotosClientID); statusMessage = "Google client credential saved in Keychain." }
+        catch { statusMessage = error.localizedDescription }
+    }
+    func loadGoogleAccount() async {
+        let clientID = settings.googlePhotosClientID
+        do {
+            let account = try await googleCredentials.account()
+            guard settings.googlePhotosClientID == clientID else { return }
+            googleAccount = account?.clientID == clientID ? account : nil
+            statusMessage = googleAccount == nil ? "Connect a Google account using the configured Desktop client." : "Google Photos account loaded. Delivery requires reviewing the account, album and originals."
+        } catch { statusMessage = "Google account unavailable: " + error.localizedDescription }
+    }
+    func startGoogleSignIn() {
+        guard !isConnectingGooglePhotos, !isDeliveringGooglePhotos else { return }
+        isConnectingGooglePhotos = true
+        let clientID = settings.googlePhotosClientID
+        googleContext.invalidate()
+        googleSignInTask = Task {
+            defer { isConnectingGooglePhotos = false; googleSignInTask = nil }
+            do {
+                let account = try await googleAuthentication.connect(clientID: clientID)
+                guard clientID == settings.googlePhotosClientID else { return }
+                googleAccount = account; googleContext.invalidate(); statusMessage = "Google Photos connected to " + account.displayName + "."
+            } catch { statusMessage = "Google sign-in stopped: " + error.localizedDescription }
+        }
+    }
+    func cancelGoogleSignIn() { googleSignInTask?.cancel() }
+    func disconnectGooglePhotos() async {
+        googleContext.invalidate(); cancelGoogleDelivery(); googleDeliveryReview = nil
+        do { try await googleAuthentication.disconnect(); googleAccount = nil; statusMessage = "Google Photos disconnected on this Mac. Remote albums and receipts are retained." }
+        catch { statusMessage = error.localizedDescription }
+    }
+    private func currentGoogleQueue() -> GooglePhotosDeliveryQueue {
+        let generation = ArchiveByteReadPolicyContext.shared.generation, accountGeneration = googleContext.generation
+        let key = "\(generation)-\(accountGeneration)"
+        if let googleQueue, googleQueueKey == key { return googleQueue }
+        let context = googleContext
+        let queue = GooglePhotosDeliveryQueue(archiveRoot: settings.archiveRoot, credentials: googleCredentials, client: googleClient, secrets: googleSecrets,
+            repository: googleRepository, contextIsCurrent: { ArchiveByteReadPolicyContext.shared.generation == generation && context.generation == accountGeneration })
+        googleQueue = queue; googleQueueKey = key; return queue
+    }
+    var canDeliverGooglePhotoLog: Bool {
+        guard let log = currentSession, log.sessionKind == .walkDraft else { return false }
+        return log.mediaItems.contains { $0.destinationURL != nil && $0.lifecycleState.isImportedOrBeyond && $0.recognisedArchiveCopy != true && $0.cropRelationship?.isCrop != true }
+    }
+    func reviewGoogleTrip() async {
+        guard let path = descriptionTripPath, !isDeliveringGooglePhotos else { return }
+        let repository = googleRepository, generation = ArchiveByteReadPolicyContext.shared.generation
+        do {
+            let scope = try await Task.detached { try repository.trip(path: path) }.value
+            guard generation == ArchiveByteReadPolicyContext.shared.generation else { return }
+            await reviewGoogleScope(scope)
+        } catch { statusMessage = "Could not review Google Photos delivery: " + error.localizedDescription }
+    }
+    func reviewGooglePhotoLog() async {
+        guard canDeliverGooglePhotoLog, let log = currentSession else { return }
+        let repository = googleRepository
+        do {
+            let paths = log.mediaItems.filter { $0.lifecycleState.isImportedOrBeyond && $0.cropRelationship?.isCrop != true && $0.recognisedArchiveCopy != true }.compactMap { item in
+                item.destinationURL.flatMap { ArchiveIndexStore.archiveRelativePath(for: $0, archiveRoot: settings.archiveRoot) }
+            }
+            let scope = try repository.photoLog(id: log.id, title: log.walkMetadata.title.nonEmpty ?? "Photo Log", paths: paths)
+            await reviewGoogleScope(scope)
+        } catch { statusMessage = "Could not review Photo Log delivery: " + error.localizedDescription }
+    }
+    func reviewGoogleScope(_ scope: GooglePhotosDeliveryScope) async {
+        let root = settings.archiveRoot, generation = ArchiveByteReadPolicyContext.shared.generation, repository = googleRepository
+        do {
+            guard let account = try await googleCredentials.account(), account.clientID == settings.googlePhotosClientID else { throw ArchiveFileVerification.failure("Connect the intended Google account in Settings first.") }
+            guard generation == ArchiveByteReadPolicyContext.shared.generation else { return }
+            let bytes = try scope.photos.reduce(Int64(0)) { total, target in
+                let url = try ArchiveIndexMediaLoader().indexedURL(target.path, archiveRoot: root)
+                return total + Int64((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+            }
+            googleAccount = account
+            googleDeliveryReview = .init(scope: scope, account: account, archiveRoot: root, generation: generation,
+                photoCount: scope.photos.count, totalBytes: bytes, existingAlbum: try repository.binding(scope: scope, account: account)?.album)
+        } catch { statusMessage = "Could not review delivery: " + error.localizedDescription }
+    }
+    func confirmGoogleDelivery(_ review: GooglePhotosDeliveryReview, includeMarked: Bool = false) async {
+        guard !isDeliveringGooglePhotos, review.archiveRoot.standardizedFileURL == settings.archiveRoot.standardizedFileURL,
+              review.generation == ArchiveByteReadPolicyContext.shared.generation, review.account.clientID == settings.googlePhotosClientID else { statusMessage = "Archive or account settings changed. Review the delivery again."; return }
+        let queue = currentGoogleQueue(), operation = UUID(), cancellation = googleDeliveryCancellation
+        googleDeliveryOperationID = operation
+        isDeliveringGooglePhotos = true; googleDeliveryReview = nil
+        let task = Task { [self] in
+            defer {
+                if googleDeliveryOperationID == operation { isDeliveringGooglePhotos = false; googleDeliveryTask = nil; googleDeliveryOperationID = nil }
+            }
+            do {
+                let job = try await queue.enqueue(scope: review.scope, expectedAccount: review.account, includeMarked: includeMarked)
+                try Task.checkCancellation()
+                guard cancellation == googleDeliveryCancellation else { throw CancellationError() }
+                googleDeliveryJobs = try await queue.jobs(); showGoogleQueue = true
+                try Task.checkCancellation()
+                guard cancellation == googleDeliveryCancellation else { throw CancellationError() }
+                isDeliveringGooglePhotos = false
+                await resumeGoogleDelivery(jobIDs: [job.id])
+            } catch { statusMessage = error is CancellationError ? "Google Photos preparation cancelled. No automatic delivery will start." : "Could not queue delivery: " + error.localizedDescription }
+        }
+        googleDeliveryTask = task
+        await withTaskCancellationHandler(operation: { await task.value }, onCancel: { task.cancel() })
+    }
+
+    func loadGoogleDeliveryQueue(show: Bool = true) async {
+        guard !isDeliveringGooglePhotos else { if show { showGoogleQueue = true }; return }
+        let queue = currentGoogleQueue(), generation = ArchiveByteReadPolicyContext.shared.generation
+        do {
+            let jobs = try await queue.jobs(); guard generation == ArchiveByteReadPolicyContext.shared.generation else { return }
+            googleDeliveryJobs = jobs; if show { showGoogleQueue = true }
+        } catch { statusMessage = "Delivery queue unavailable: " + error.localizedDescription }
+    }
+    func resumeGoogleDelivery(jobIDs: Set<UUID>? = nil) async {
+        guard !isDeliveringGooglePhotos else { return }
+        let queue = currentGoogleQueue(), generation = ArchiveByteReadPolicyContext.shared.generation
+        isDeliveringGooglePhotos = true; defer { isDeliveringGooglePhotos = false }
+        do {
+            try await queue.run(jobIDs: jobIDs) { [weak self] jobs in
+                await MainActor.run { guard let self, generation == ArchiveByteReadPolicyContext.shared.generation else { return }; self.googleDeliveryJobs = jobs }
+            }
+            guard generation == ArchiveByteReadPolicyContext.shared.generation else { return }
+            googleDeliveryJobs = try await queue.jobs()
+            guard generation == ArchiveByteReadPolicyContext.shared.generation else { return }
+            statusMessage = "Google Photos: \(googleDeliveryJobs.filter { $0.state == .completed }.count) completed deliveries; other saved jobs may need retry or reconciliation."
+            let targets = googleDeliveryJobs.flatMap { $0.photos.map(\.target) }
+            try refreshGoogleDisplayedFacts(targets: targets, scopes: googleDeliveryJobs.map(\.scope), ignoreUnavailable: true)
+            if settings.archiveMachineRole == .mainArchive { reloadArchiveCatalogue() }
+        } catch { statusMessage = "Google Photos delivery stopped: " + error.localizedDescription }
+    }
+    func startGoogleResume() {
+        guard !isDeliveringGooglePhotos, googleDeliveryTask == nil else { return }
+        let operation = UUID(); googleDeliveryOperationID = operation
+        googleDeliveryTask = Task { await resumeGoogleDelivery(); if googleDeliveryOperationID == operation { googleDeliveryTask = nil; googleDeliveryOperationID = nil } }
+    }
+    func cancelGoogleDelivery() { googleDeliveryCancellation &+= 1; googleDeliveryTask?.cancel(); let queue = googleQueue; Task { await queue?.cancel() } }
+    func loadGoogleAlbumCandidates(jobID: UUID) async {
+        do { let candidates = try await currentGoogleQueue().candidates(jobID: jobID); googleAlbumCandidates[jobID] = candidates; statusMessage = candidates.isEmpty ? "No candidate album is visible. An empty listing does not establish that creation failed; check Google Photos before allowing another request." : "Choose the intended album explicitly before resuming." }
+        catch { statusMessage = "Album reconciliation failed: " + error.localizedDescription }
+    }
+    func adoptGoogleAlbum(albumID: String, jobID: UUID) async {
+        do { try await currentGoogleQueue().adopt(albumID: albumID, jobID: jobID); googleAlbumCandidates[jobID] = nil; await loadGoogleDeliveryQueue(show: false); statusMessage = "Album recorded. Resume this captured delivery when ready." }
+        catch { statusMessage = "Album reconciliation failed: " + error.localizedDescription }
+    }
+    func confirmGoogleAlbumAbsent(jobID: UUID, accountID: String) async {
+        do { try await currentGoogleQueue().confirmNoAlbumCreated(jobID: jobID, expectedAccountID: accountID); await loadGoogleDeliveryQueue(show: false); statusMessage = "Your confirmation is recorded. Resume may create the requested album." }
+        catch { statusMessage = error.localizedDescription }
+    }
+    func abandonGoogleDelivery(jobID: UUID) async {
+        do { try await currentGoogleQueue().abandon(jobID: jobID); await loadGoogleDeliveryQueue(show: false) }
+        catch { statusMessage = "Could not stop delivery: " + error.localizedDescription }
+    }
+    var canMarkGoogleMaterial: Bool { !contextualDescriptionTargets.isEmpty || (workspaceMode == .archiveView && archiveNavigationLevel == .archive && selectedArchiveEntry?.kind == .unorganisedFolder) }
+    func markGoogleMaterial(clear: Bool) async {
+        let repository = googleRepository, generation = ArchiveByteReadPolicyContext.shared.generation
+        do {
+            if contextualDescriptionTargets.isEmpty, workspaceMode == .archiveView, archiveNavigationLevel == .archive, let folder = selectedArchiveEntry, folder.kind == .unorganisedFolder {
+                try repository.markHistorical(path: folder.archiveRelativePath, note: "Marked by the user as uploaded before Walkfolio; not API verified.", clear: clear)
+                if settings.archiveMachineRole == .mainArchive { try await ArchiveIndexMutationQueue.shared.refreshHistoricalGoogleRecord(path: folder.archiveRelativePath, archiveRoot: repository.archiveRoot, policy: archiveIndexWritePolicy)
+                    guard generation == ArchiveByteReadPolicyContext.shared.generation, repository.archiveRoot == settings.archiveRoot else { return }
+                    reloadArchiveCatalogue()
+                }
+                guard generation == ArchiveByteReadPolicyContext.shared.generation, repository.archiveRoot == settings.archiveRoot else { return }
+                let record = try ArchiveIndexStore().historicalGoogleRecord(folder: repository.archiveRoot.appendingPathComponent(folder.archiveRelativePath)) ?? .init()
+                setGoogleFactsOverlay(record, path: folder.archiveRelativePath)
+                applyGoogleFactsToDisplayedState()
+                statusMessage = "Historical upload mark saved; the folder remains unorganised."
+                return
+            }
+            let targets = try contextualDescriptionTargets.map { try repository.canonical.snapshot(kind: $0.0, path: $0.1).target }
+            for target in targets { try repository.mark(target, note: "Marked by the user as uploaded before Walkfolio; not API verified.", clear: clear) }
+            guard generation == ArchiveByteReadPolicyContext.shared.generation else { return }
+            if settings.archiveMachineRole == .mainArchive {
+                let walks = try targets.filter { $0.kind != .trip }.map { target -> URL in let url = try ArchiveIndexMediaLoader().indexedURL(target.path, archiveRoot: settings.archiveRoot); return target.kind == .photo ? url.deletingLastPathComponent() : url }
+                let trips = try targets.filter { $0.kind == .trip }.map { try ArchiveIndexMediaLoader().indexedURL($0.path, archiveRoot: settings.archiveRoot) }
+                try await ArchiveIndexMutationQueue.shared.replaceWalkFolders(walks, archiveRoot: settings.archiveRoot, policy: archiveIndexWritePolicy, tripFolders: trips)
+                guard generation == ArchiveByteReadPolicyContext.shared.generation, repository.archiveRoot == settings.archiveRoot else { return }
+                reloadArchiveCatalogue()
+            }
+            try refreshGoogleDisplayedFacts(targets: targets)
+            statusMessage = clear ? "Previous-upload marks cleared; verified receipts retained." : "Marked previously uploaded. This is your record, not API verification or cleanup proof."
+        } catch { statusMessage = "Could not save previous-upload marks: " + error.localizedDescription }
+    }
+
+    private func setGoogleFactsOverlay(_ record: GooglePhotosRecord, path: String) {
+        if googleFactsRoot != settings.archiveRoot { googleFactsOverlay = [:]; googleFactsRoot = settings.archiveRoot }
+        googleFactsOverlay[path] = record
+    }
+    private func refreshGoogleDisplayedFacts(targets: [DescriptionReference], scopes: [GooglePhotosDeliveryScope] = [], ignoreUnavailable: Bool = false) throws {
+        let repository = googleRepository
+        for target in Set(targets) {
+            do { setGoogleFactsOverlay(try GooglePhotosRecord.read(in: repository.canonical.text(target)) ?? .init(), path: target.path) }
+            catch { if !ignoreUnavailable { throw error } }
+        }
+        for scope in scopes where scope.kind == .trip {
+            do { setGoogleFactsOverlay(try GooglePhotosRecord.read(in: repository.ownerText(scope)) ?? .init(), path: scope.path) }
+            catch { if !ignoreUnavailable { throw error } }
+        }
+        applyGoogleFactsToDisplayedState()
+    }
+    private func googleProjectedItem(_ original: MediaItem) -> MediaItem {
+        var item = original
+        if item.cropRelationship?.isCrop == true { item.googlePhotos = nil; return item }
+        guard googleFactsRoot == settings.archiveRoot,
+              let path = item.archiveRelativePath ?? item.destinationURL.flatMap({ ArchiveIndexStore.archiveRelativePath(for: $0, archiveRoot: settings.archiveRoot) }),
+              let record = googleFactsOverlay[path] else { return item }
+        item.googlePhotos = record.badge == nil ? nil : record; return item
+    }
+    private func googleProjectedCatalogue(_ input: ArchiveCatalogue) -> ArchiveCatalogue {
+        guard googleFactsRoot == settings.archiveRoot else { return input }
+        var catalogue = input
+        for i in catalogue.entries.indices {
+            let entry = catalogue.entries[i]
+            if var record = googleFactsOverlay[entry.archiveRelativePath] {
+                if entry.kind == .trip {
+                    let ids = Set(catalogue.photos.filter { $0.tripPath == entry.archiveRelativePath && !$0.isDerivedPhoto }.compactMap(\.mediaItemID))
+                    record.memberships.removeAll { !ids.contains($0.photoID) }
+                }
+                catalogue.entries[i].googlePhotos = record.badge == nil ? nil : record
+            }
+        }
+        for key in catalogue.walksByTripPath.keys {
+            for i in catalogue.walksByTripPath[key]!.indices {
+                let path = catalogue.walksByTripPath[key]![i].archiveRelativePath
+                var displayed = catalogue.walksByTripPath[key]![i].googlePhotos ?? .init()
+                if let record = googleFactsOverlay[path] { displayed.manualMarks = record.manualMarks }
+                let originals = catalogue.photos.filter { $0.walkPath == path && !$0.isDerivedPhoto }
+                let ids = Set(originals.compactMap(\.mediaItemID))
+                displayed.memberships.removeAll { !ids.contains($0.photoID) }
+                for photo in originals {
+                    for receipt in googleFactsOverlay[photo.archiveRelativePath]?.memberships ?? [] where receipt.photoID == photo.mediaItemID { displayed.add(receipt) }
+                }
+                catalogue.walksByTripPath[key]![i].googlePhotos = displayed.badge == nil ? nil : displayed
+            }
+        }
+        return catalogue
+    }
+    private func applyGoogleFactsToDisplayedState() {
+        archiveCatalogue = googleProjectedCatalogue(archiveCatalogue)
+        for key in Array(archiveMediaCache.keys) { archiveMediaCache[key] = archiveMediaCache[key]?.map(googleProjectedItem) }
+        if var session = currentSession {
+            session.mediaItems = session.mediaItems.map(googleProjectedItem)
+            setCurrentSession(session, updateKind: .sessionOnly); persistCurrentSession(immediately: true)
+        }
+        refreshAllUIState()
     }
 
     @Published var descriptionJobs: [ArchiveDescriptionJob] = []
@@ -6906,7 +7187,7 @@ final class AppState: ObservableObject {
                         item.metadata.latitude = photo.latitude; item.metadata.longitude = photo.longitude
                         return item
                     }
-                    let sortedItems = MediaItemSort.sorted(projectedItems)
+                    let sortedItems = MediaItemSort.sorted(projectedItems.map(self.googleProjectedItem))
                     self.archiveMediaCache[loadResult.nodeID] = sortedItems
                     self.requestInitialArchiveThumbnails(for: sortedItems)
                     self.preheatDisplayImages(for: sortedItems.map(\.id), limit: 6)

@@ -480,6 +480,7 @@ private struct ArchiveTimelineRow: View {
                     Label("\(entry.walkCount) Walk\(entry.walkCount == 1 ? "" : "s")", systemImage: "figure.walk")
                 }
                 Label("\(entry.photoCount) photo\(entry.photoCount == 1 ? "" : "s")", systemImage: "photo")
+                if let badge = entry.googlePhotos?.coverageBadge(total: entry.originalPhotoCount ?? entry.photoCount) { Label(badge, systemImage: "cloud").font(.caption) }
                 if let onOrganise {
                     Button("Organise as a Trip…", action: onOrganise)
                         .buttonStyle(.borderless)
@@ -540,6 +541,7 @@ private struct ArchiveContactTile: View {
             Text(ArchiveDateText.range(start: entry.startDate, end: entry.endDate))
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            if let badge = entry.googlePhotos?.coverageBadge(total: entry.originalPhotoCount ?? entry.photoCount) { Text(badge).font(.caption).foregroundStyle(.secondary) }
             Text(entry.kind == .trip
                 ? "\(entry.walkCount) Walk\(entry.walkCount == 1 ? "" : "s") · \(entry.photoCount) photos"
                 : "\(entry.photoCount) photos · \(entry.archiveRelativePath.replacingOccurrences(of: "/", with: " / "))")
@@ -594,6 +596,7 @@ private struct ArchiveWalkCard: View {
             Label("\(walk.photoCount) photo\(walk.photoCount == 1 ? "" : "s")", systemImage: "photo")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            if let badge = walk.googlePhotos?.coverageBadge(total: walk.originalPhotoCount ?? walk.photoCount) { Label(badge, systemImage: "cloud").font(.caption) }
         }
         .padding(7)
         .contentShape(Rectangle())
