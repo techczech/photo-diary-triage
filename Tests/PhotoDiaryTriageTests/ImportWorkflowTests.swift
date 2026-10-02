@@ -229,7 +229,9 @@ import Testing
     )
     item.destinationURL = archiveRoot.appendingPathComponent("2026/03/example/IMG_0005.jpg")
 
-    let session = makeTestSession(sourceRoot: sourceRoot, archiveRoot: archiveRoot, items: [item])
+    try writeTestFile(item.destinationURL!, contents: "cleanup-source")
+    try writeTestFile(companion.destinationURL!, contents: "cleanup-companion")
+    let session = makeTestSession(sourceRoot: sourceRoot, archiveRoot: archiveRoot, items: [item], backupConfirmedAt: Date())
     let cleaned = try await ImportCoordinator().cleanupImportedSources(in: session)
     let cleanedItem = try requireSingleMediaItem(in: cleaned)
     let cleanedCompanion = try requireSingleCompanion(in: cleanedItem)

@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// Migrates app-written archive folders from the legacy layout
@@ -12,7 +13,7 @@ struct ArchiveLayoutMigrator {
         self.fileManager = fileManager
     }
 
-    struct WalkPlan: Equatable {
+    struct WalkPlan: Equatable, Codable {
         var yearName: String
         var oldMonthName: String
         var newMonthName: String
@@ -26,6 +27,7 @@ struct ArchiveLayoutMigrator {
     }
 
     struct Plan {
+        var archiveRoot: URL?
         var walks: [WalkPlan] = []
         var skipped: [(URL, String)] = []
         /// Legacy month folders that should be removed once emptied.
@@ -49,10 +51,24 @@ struct ArchiveLayoutMigrator {
     static let v2MonthPattern = #"^(\d{2})-(\p{L}+)"#
     static let legacyWalkPattern = #"^(\d{2})-(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)-(.+)$"#
 
+    private struct Recovery: Codable {
+        var walks: [WalkPlan]
+        var months: [URL]
+        var complete = false
+    }
+    private static let recoveryID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+
     // MARK: - Planning
 
     func plan(archiveRoot: URL) -> Plan {
-        var plan = Plan()
+        var plan = Plan(archiveRoot: archiveRoot)
+        do {
+            if let saved = try ArchiveOperationRecovery(archiveRoot: archiveRoot).load(Recovery.self, kind: "migration", sessionID: Self.recoveryID), !saved.complete {
+                plan.walks = saved.walks
+                plan.legacyMonthURLs = saved.months
+                return plan
+            }
+        } catch { plan.skipped.append((archiveRoot, "unreadable migration recovery: \(error.localizedDescription)")); return plan }
         for yearURL in subdirectories(of: archiveRoot) {
             let yearName = yearURL.lastPathComponent
             guard yearName.range(of: #"^(19|20)\d\d$"#, options: .regularExpression) != nil else { continue }
@@ -80,6 +96,15 @@ struct ArchiveLayoutMigrator {
                         if isLegacyMonth {
                             plan.skipped.append((walkURL, "unrecognised walk folder in legacy month"))
                         }
+                        continue
+                    }
+                    let manifest = walkURL.appendingPathComponent("\(walkName).md")
+                    guard let text = try? String(contentsOf: manifest, encoding: .utf8),
+                          let identityLine = text.components(separatedBy: "## Notes")[0].components(separatedBy: "\n").first(where: { $0.hasPrefix("- Session ID: `") }),
+                          UUID(uuidString: String(identityLine.dropFirst(15).dropLast())) != nil,
+                          let archiveLine = text.components(separatedBy: "## Notes")[0].components(separatedBy: "\n").first(where: { $0.hasPrefix("- Archive folder: `") }),
+                          URL(fileURLWithPath: String(archiveLine.dropFirst(19).dropLast())).resolvingSymlinksInPath().standardizedFileURL.path == walkURL.resolvingSymlinksInPath().standardizedFileURL.path else {
+                        plan.skipped.append((walkURL, "no verified app-written Walk manifest (historical material retained)"))
                         continue
                     }
                     let day = match[0]
@@ -113,10 +138,16 @@ struct ArchiveLayoutMigrator {
 
     func execute(_ plan: Plan) -> ExecutionResult {
         var result = ExecutionResult()
-
+        guard let root = plan.archiveRoot else { result.failures = ["Missing migration archive root."]; return result }
+        let lock: ArchiveMutationLock
+        do {
+            lock = try ArchiveMutationLock(archiveRoot: root)
+            try ArchiveOperationRecovery(archiveRoot: root).save(Recovery(walks: plan.walks, months: plan.legacyMonthURLs), kind: "migration", sessionID: Self.recoveryID)
+        } catch { result.failures = [error.localizedDescription]; return result }
+        defer { withExtendedLifetime(lock) {} }
         for walk in plan.walks {
             do {
-                let counts = try migrate(walk)
+                let counts = try migrate(walk, archiveRoot: root)
                 result.migratedWalks += 1
                 result.renamedFiles += counts.renamedFiles
                 result.rewrittenTextFiles += counts.rewrittenTextFiles
@@ -125,16 +156,18 @@ struct ArchiveLayoutMigrator {
             }
         }
 
-        for monthURL in plan.legacyMonthURLs {
-            let remaining = (try? fileManager.contentsOfDirectory(at: monthURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
-            if remaining.isEmpty {
-                do {
-                    try fileManager.removeItem(at: monthURL)
+        for monthURL in plan.legacyMonthURLs where fileManager.fileExists(atPath: monthURL.path) {
+            do {
+                let remaining = try fileManager.contentsOfDirectory(at: monthURL, includingPropertiesForKeys: nil)
+                if remaining.isEmpty {
+                    guard Darwin.rmdir(monthURL.path) == 0 else { throw CocoaError(.fileWriteNoPermission) }
                     result.removedLegacyMonthFolders += 1
-                } catch {
-                    result.failures.append("remove \(monthURL.path): \(error.localizedDescription)")
                 }
-            }
+            } catch { result.failures.append("remove \(monthURL.path): \(error.localizedDescription)") }
+        }
+        if result.failures.isEmpty {
+            do { try ArchiveOperationRecovery(archiveRoot: root).save(Recovery(walks: plan.walks, months: plan.legacyMonthURLs, complete: true), kind: "migration", sessionID: Self.recoveryID) }
+            catch { result.failures.append(error.localizedDescription) }
         }
 
         return result
@@ -149,7 +182,21 @@ struct ArchiveLayoutMigrator {
                 problems.append("missing migrated folder: \(walk.newWalkURL.path)")
                 continue
             }
-            let contents = (try? fileManager.contentsOfDirectory(at: walk.newWalkURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+            let contents: [URL]
+            do {
+                contents = try fileManager.contentsOfDirectory(at: walk.newWalkURL, includingPropertiesForKeys: nil)
+                if let root = plan.archiveRoot {
+                    let operation = ArchiveFolderOperation(archiveRoot: root, fileManager: fileManager)
+                    guard let record = try operation.recorded(for: walk.oldWalkURL), record.complete else {
+                        problems.append("unfinished migration: \(walk.newWalkURL.path)"); continue
+                    }
+                    for change in record.changes {
+                        if try String(contentsOf: walk.newWalkURL.appendingPathComponent(change.name), encoding: .utf8) != change.replacement {
+                            problems.append("unverified sidecar: \(change.name)")
+                        }
+                    }
+                }
+            } catch { problems.append(error.localizedDescription); continue }
             for file in contents where file.lastPathComponent.hasPrefix(walk.oldStemBase) {
                 problems.append("legacy-named file survived: \(file.path)")
             }
@@ -160,52 +207,32 @@ struct ArchiveLayoutMigrator {
         return problems
     }
 
-    private func migrate(_ walk: WalkPlan) throws -> (renamedFiles: Int, rewrittenTextFiles: Int) {
-        // 1. Move the walk folder into the (possibly new) v2 month folder.
-        let newMonthURL = walk.newWalkURL.deletingLastPathComponent()
-        try fileManager.createDirectory(at: newMonthURL, withIntermediateDirectories: true)
-        if walk.oldWalkURL.standardizedFileURL != walk.newWalkURL.standardizedFileURL {
-            try fileManager.moveItem(at: walk.oldWalkURL, to: walk.newWalkURL)
-        }
-
-        // 2. Rename files: media stems (walkname-NNN…) get the date-bearing stem base;
-        //    the walk manifest and session log follow the new walk folder name.
-        var renamedFiles = 0
-        let contents = try fileManager.contentsOfDirectory(at: walk.newWalkURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
-        for file in contents {
-            let name = file.lastPathComponent
-            guard name.hasPrefix(walk.oldStemBase) else { continue }
-            let suffix = String(name.dropFirst(walk.oldStemBase.count))
-            let newName: String
-            if suffix.range(of: #"^-\d{3}"#, options: .regularExpression) != nil {
-                newName = walk.newStemBase + suffix
-            } else {
-                newName = walk.newWalkName + suffix
+    private func migrate(_ walk: WalkPlan, archiveRoot: URL) throws -> (renamedFiles: Int, rewrittenTextFiles: Int) {
+        let operation = ArchiveFolderOperation(archiveRoot: archiveRoot, fileManager: fileManager)
+        let spec = ArchiveTextRewriteSpec(oldAbsoluteFolderPath: walk.oldWalkURL.path, newAbsoluteFolderPath: walk.newWalkURL.path,
+            oldRelativeFolderPath: "\(walk.yearName)/\(walk.oldMonthName)/\(walk.oldWalkName)",
+            newRelativeFolderPath: "\(walk.yearName)/\(walk.newMonthName)/\(walk.newWalkName)",
+            oldTripRelativePath: "\(walk.yearName)/\(walk.oldMonthName)", newTripRelativePath: "\(walk.yearName)/\(walk.newMonthName)",
+            oldStemBase: walk.oldStemBase, newStemBase: walk.newStemBase)
+        var names: [String: String] = [:]
+        if fileManager.fileExists(atPath: walk.oldWalkURL.path) {
+            let extensions: Set<String> = ["jpg", "jpeg", "png", "heic", "tiff", "tif", "cr3", "cr2", "raf", "nef", "arw", "dng", "md", "json", "jsonl", "mov", "mp4"]
+            for file in try fileManager.contentsOfDirectory(at: walk.oldWalkURL, includingPropertiesForKeys: [.isRegularFileKey]) {
+                let name = file.lastPathComponent
+                guard extensions.contains(file.pathExtension.lowercased()), name.hasPrefix(walk.oldStemBase) else { continue }
+                let suffix = String(name.dropFirst(walk.oldStemBase.count))
+                if suffix.range(of: #"^-\d{3}(?:[-.]|$)"#, options: .regularExpression) != nil {
+                    names[name] = walk.newStemBase + suffix
+                } else if name == walk.oldWalkName + ".md" || name == walk.oldWalkName + "-session-log.jsonl" {
+                    names[name] = walk.newWalkName + suffix
+                }
             }
-            guard newName != name else { continue }
-            try fileManager.moveItem(at: file, to: walk.newWalkURL.appendingPathComponent(newName))
-            renamedFiles += 1
         }
-
-        // 3. Rewrite paths and stems inside all text sidecars.
-        let rewriter = ArchiveTextSidecarRewriter(fileManager: fileManager)
-        let rewrittenTextFiles = try rewriter.rewriteSidecars(
-            in: walk.newWalkURL,
-            spec: ArchiveTextRewriteSpec(
-                oldAbsoluteFolderPath: walk.oldWalkURL.path,
-                newAbsoluteFolderPath: walk.newWalkURL.path,
-                oldRelativeFolderPath: "\(walk.yearName)/\(walk.oldMonthName)/\(walk.oldWalkName)",
-                newRelativeFolderPath: "\(walk.yearName)/\(walk.newMonthName)/\(walk.newWalkName)",
-                oldTripRelativePath: "\(walk.yearName)/\(walk.oldMonthName)",
-                newTripRelativePath: "\(walk.yearName)/\(walk.newMonthName)",
-                oldStemBase: walk.oldStemBase,
-                newStemBase: walk.newStemBase,
-                oldWalkName: walk.oldWalkName,
-                newWalkName: walk.newWalkName
-            )
-        )
-
-        return (renamedFiles, rewrittenTextFiles)
+        let record = try operation.prepare(source: walk.oldWalkURL, destination: walk.newWalkURL, spec: spec, names: names)
+        _ = try operation.execute(record)
+        _ = try ArchiveIndexStore(fileManager: fileManager).loadWalkManifest(folder: walk.newWalkURL, archiveRoot: archiveRoot)
+        try operation.complete(record)
+        return (record.renames.count, record.changes.count)
     }
 
     // MARK: - Helpers

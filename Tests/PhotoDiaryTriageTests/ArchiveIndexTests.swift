@@ -272,9 +272,9 @@ import Testing
     #expect(safety.hasSafeCapacity(15))
     #expect(safety.hasSafeCapacity(14) == false)
     #expect(safety.hasSafeCapacity(nil) == false)
-    #expect(safety.shouldEvict(wasOnlineOnly: true, generatedThumbnail: true))
-    #expect(safety.shouldEvict(wasOnlineOnly: false, generatedThumbnail: true) == false)
-    #expect(safety.shouldEvict(wasOnlineOnly: true, generatedThumbnail: false) == false)
+    #expect(safety.shouldEvict(wasOnlineOnly: true, hydrationAttempted: true))
+    #expect(safety.shouldEvict(wasOnlineOnly: false, hydrationAttempted: true) == false)
+    #expect(safety.shouldEvict(wasOnlineOnly: true, hydrationAttempted: false) == false)
 }
 
 @Test func archiveThumbnailBackfillUsesOnlyExplicitPhotosAndPromotesLocalCache() async throws {
@@ -345,7 +345,7 @@ import Testing
 }
 
 private func readIndexEntries(archiveRoot: URL, year: String) throws -> [ArchiveIndexEntry] {
-    let url = ArchiveIndexStore.indexRoot(for: archiveRoot).appendingPathComponent("index-\(year).jsonl")
+    let url = try ArchiveIndexStore.shardRoot(for: archiveRoot).appendingPathComponent("index-\(year).jsonl")
     let text = try String(contentsOf: url, encoding: .utf8)
     let decoder = JSONDecoder()
     return try text.split(separator: "\n").map { line in

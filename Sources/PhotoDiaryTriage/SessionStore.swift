@@ -100,6 +100,13 @@ final class SessionStore: SessionPersisting {
     }
 
     func replaceAllSessions(with sessions: [(ImportSession, [BurstGroup], [TimeCluster])]) throws {
+        guard sqlite3_exec(db, "BEGIN IMMEDIATE TRANSACTION;", nil, nil, nil) == SQLITE_OK else {
+            throw sqliteError("Failed to begin session restore")
+        }
+        var committed = false
+        defer {
+            if !committed { sqlite3_exec(db, "ROLLBACK;", nil, nil, nil) }
+        }
         guard sqlite3_exec(db, "DELETE FROM import_sessions;", nil, nil, nil) == SQLITE_OK else {
             throw sqliteError("Failed to clear sessions")
         }
@@ -108,6 +115,10 @@ final class SessionStore: SessionPersisting {
             try save(session: session.0, bursts: session.1, clusters: session.2)
         }
 
+        guard sqlite3_exec(db, "COMMIT;", nil, nil, nil) == SQLITE_OK else {
+            throw sqliteError("Failed to complete session restore")
+        }
+        committed = true
         logger.log("Replaced all persisted sessions with \(sessions.count) session(s)")
     }
 

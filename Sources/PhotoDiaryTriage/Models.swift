@@ -1038,6 +1038,9 @@ struct ArchiveEntry: Codable, Hashable, Sendable {
 struct ArchiveCommitPlan: Codable, Hashable, Sendable {
     var walkID: UUID?
     var walkTitle: String?
+    var walkLocation: String?
+    var walkLatitude: Double?
+    var walkLongitude: Double?
     var tripTarget: TripTarget
     var archiveFolder: URL
     var tripFolder: URL
@@ -1049,6 +1052,9 @@ struct ArchiveCommitPlan: Codable, Hashable, Sendable {
     init(
         walkID: UUID? = nil,
         walkTitle: String? = nil,
+        walkLocation: String? = nil,
+        walkLatitude: Double? = nil,
+        walkLongitude: Double? = nil,
         tripTarget: TripTarget = .defaultMonth,
         archiveFolder: URL,
         tripFolder: URL? = nil,
@@ -1059,6 +1065,9 @@ struct ArchiveCommitPlan: Codable, Hashable, Sendable {
     ) {
         self.walkID = walkID
         self.walkTitle = walkTitle
+        self.walkLocation = walkLocation
+        self.walkLatitude = walkLatitude
+        self.walkLongitude = walkLongitude
         self.tripTarget = tripTarget
         self.archiveFolder = archiveFolder
         self.tripFolder = tripFolder ?? archiveFolder.deletingLastPathComponent()
@@ -1090,6 +1099,8 @@ struct WalkManifest: Codable, Hashable, Sendable {
     var archiveFolder: URL
     var archiveFolderRelativePath: String?
     var title: String
+    var latitude: Double?
+    var longitude: Double?
     var location: String
     var notes: String
     var summary: Summary
@@ -1106,6 +1117,8 @@ struct WalkManifest: Codable, Hashable, Sendable {
         archiveFolderRelativePath: String? = nil,
         title: String,
         location: String,
+        latitude: Double? = nil,
+        longitude: Double? = nil,
         notes: String,
         summary: Summary,
         importedFiles: [FileManifest],
@@ -1120,6 +1133,8 @@ struct WalkManifest: Codable, Hashable, Sendable {
         self.archiveFolderRelativePath = archiveFolderRelativePath
         self.title = title
         self.location = location
+        self.latitude = latitude
+        self.longitude = longitude
         self.notes = notes
         self.summary = summary
         self.importedFiles = importedFiles
@@ -1147,6 +1162,7 @@ struct RejectedFileManifest: Codable, Hashable, Sendable {
 struct FileManifest: Codable, Hashable, Sendable {
     var mediaItemID: UUID
     var archivePath: String
+    var sha256: String?
     var archiveRelativePath: String?
     var sourceFileName: String
     var companionArchivePaths: [String]
@@ -1165,6 +1181,7 @@ struct FileManifest: Codable, Hashable, Sendable {
     init(
         mediaItemID: UUID,
         archivePath: String,
+        sha256: String? = nil,
         archiveRelativePath: String? = nil,
         sourceFileName: String,
         companionArchivePaths: [String],
@@ -1182,6 +1199,7 @@ struct FileManifest: Codable, Hashable, Sendable {
     ) {
         self.mediaItemID = mediaItemID
         self.archivePath = archivePath
+        self.sha256 = sha256
         self.archiveRelativePath = archiveRelativePath
         self.sourceFileName = sourceFileName
         self.companionArchivePaths = companionArchivePaths

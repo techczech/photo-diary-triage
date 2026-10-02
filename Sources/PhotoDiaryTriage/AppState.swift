@@ -2135,7 +2135,7 @@ final class AppState: ObservableObject {
 
     func updateWalkMetadata(title: String, location: String, notes: String) {
         guard let currentSession else { return }
-        save(sessionMutationCoordinator.sessionByUpdatingWalkMetadata(currentSession, title: title, location: location, notes: notes))
+        guard save(sessionMutationCoordinator.sessionByUpdatingWalkMetadata(currentSession, title: title, location: location, notes: notes)) else { return }
         refreshArchiveIndexAfterMetadataEditIfNeeded()
     }
 
@@ -2156,12 +2156,12 @@ final class AppState: ObservableObject {
     func setCurrentWalkLocation(name: String, latitude: Double?, longitude: Double?) {
         guard let currentSession else { return }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        save(sessionMutationCoordinator.sessionBySettingWalkLocation(
+        guard save(sessionMutationCoordinator.sessionBySettingWalkLocation(
             currentSession,
             location: trimmed,
             latitude: latitude,
             longitude: longitude
-        ))
+        )) else { return }
         refreshArchiveIndexAfterMetadataEditIfNeeded()
         statusMessage = trimmed.isEmpty ? "Cleared walk location." : "Saved walk location: \(trimmed)."
     }
@@ -2264,7 +2264,13 @@ final class AppState: ObservableObject {
         let oldWalkRelativePath = ArchiveIndexStore.archiveRelativePath(for: walkFolder, archiveRoot: settings.archiveRoot)
         let sourceTripFolder = walkFolder.deletingLastPathComponent()
         do {
-            let result = try walkMover.moveWalk(at: walkFolder, to: targetTripFolder, oneDrivePicturesRoot: settings.oneDrivePicturesRoot)
+            guard importProgress == nil else {
+                statusMessage = "Finish importing before moving an archived Walk."; return
+            }
+            pendingSessionPersistenceWorkItem?.cancel()
+            sessionPersistenceQueue.sync {}
+            let result = try walkMover.moveWalk(at: walkFolder, to: targetTripFolder, oneDrivePicturesRoot: settings.oneDrivePicturesRoot, archiveRoot: settings.archiveRoot)
+            try reconcileSavedArchivePaths(syncChangedLogs: true)
             refreshArchiveIndexAfterWalkMove(
                 destinationWalkFolder: result.destinationFolder,
                 removingWalkPath: oldWalkRelativePath,
@@ -2803,7 +2809,7 @@ final class AppState: ObservableObject {
         }
         let alert = NSAlert()
         alert.messageText = "Rebuild Archive Index?"
-        alert.informativeText = "This rebuilds _index/index-<year>.jsonl from the Trip, Walk, and file manifests. The manifests remain the source of truth."
+        alert.informativeText = "This rebuilds the Archive Index from the Trip, Walk, and file manifests. The manifests remain the source of truth."
         alert.addButton(withTitle: "Rebuild")
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else {
@@ -2899,6 +2905,11 @@ final class AppState: ObservableObject {
     }
 
     private func finishArchiveMigration(result: ArchiveLayoutMigrator.ExecutionResult, problems: [String], archiveRoot: URL) {
+        var problems = problems
+        if result.failures.isEmpty && problems.isEmpty {
+            do { try reconcileSavedArchivePaths(syncChangedLogs: true) }
+            catch { problems.append("Photo Log path reconciliation failed: \(error.localizedDescription)") }
+        }
         var lines = [
             "Archive layout v2 migration — \(DateFormatting.iso8601.string(from: Date()))",
             "Migrated walks: \(result.migratedWalks)",
@@ -4553,8 +4564,26 @@ final class AppState: ObservableObject {
         }
     }
 
+    private func reconcileSavedArchivePaths(syncChangedLogs: Bool) throws {
+        let records = try sessionStore.loadSessions()
+        let changed = try records.map { (try ArchiveSessionPathReconciler().reconcile($0.0), $0.1, $0.2) }
+        try sessionStore.replaceAllSessions(with: changed)
+        if syncChangedLogs {
+            for (index, record) in changed.enumerated() where record.0 != records[index].0 {
+                _ = try photoLogSyncStore.export(session: record.0, bursts: record.1, timeClusters: record.2,
+                    to: settings.oneDrivePicturesRoot)
+            }
+        }
+        if let currentSession {
+            setCurrentSession(try ArchiveSessionPathReconciler().reconcile(currentSession), updateKind: .sessionOnly)
+        }
+        try reloadPersistedSessionsFromStore()
+    }
+
     private func reloadPersistedSessionsFromStore() throws {
-        let loadedSessions = try sessionStore.loadSessions()
+        let rawSessions = try sessionStore.loadSessions()
+        let loadedSessions = try rawSessions.map { (try ArchiveSessionPathReconciler().reconcile($0.0), $0.1, $0.2) }
+        if loadedSessions.map({ $0.0 }) != rawSessions.map({ $0.0 }) { try sessionStore.replaceAllSessions(with: loadedSessions) }
         let normalized = persistedSessionNormalizer.normalize(loadedSessions)
         if normalized.deduplicatedInboxCount > 0 {
             logger.log("Deduplicated \(normalized.deduplicatedInboxCount, privacy: .public) inbox session(s) while loading persisted sessions")
@@ -4749,11 +4778,22 @@ final class AppState: ObservableObject {
         }.value
     }
 
-    private func save(_ session: ImportSession, updateKind: CurrentSessionUpdateKind = .sessionOnly) {
+    @discardableResult
+    private func save(_ session: ImportSession, updateKind: CurrentSessionUpdateKind = .sessionOnly) -> Bool {
+        if let previous = currentSession, previous.id == session.id,
+           (previous.walkMetadata.title != session.walkMetadata.title
+            || previous.walkMetadata.location != session.walkMetadata.location
+            || previous.walkMetadata.notes != session.walkMetadata.notes
+            || previous.walkMetadata.latitude != session.walkMetadata.latitude
+            || previous.walkMetadata.longitude != session.walkMetadata.longitude) {
+            do { try ArchiveManifestEditor().saveMetadata(for: session, previousMetadata: previous.walkMetadata) }
+            catch { statusMessage = "Could not save Archive metadata: \(error.localizedDescription)"; return false }
+        }
         var mutableSession = session
         mutableSession.lastUpdatedAt = Date()
         setCurrentSession(mutableSession, updateKind: updateKind)
         persistCurrentSession()
+        return true
     }
 
     private func requestThumbnails(for items: [MediaItem]) {
