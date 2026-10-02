@@ -36,7 +36,7 @@ struct ArchiveIndexMediaLoader {
                 thumbnailCacheKey: CacheKeyBuilder.key(for: url.path), selectionState: .included,
                 companionFiles: companions, lifecycleState: .imported, destinationURL: url,
                 archiveRelativePath: row.archiveRelativePath,
-                cropRelationship: try rebased(row.cropRelationship, folderPath: path, archiveRoot: settings.archiveRoot))
+                cropRelationship: try rebased(row.cropRelationship, folderPath: path, archiveRoot: settings.archiveRoot), captureDateEvidence: row.captureDateEvidence)
         })
     }
 

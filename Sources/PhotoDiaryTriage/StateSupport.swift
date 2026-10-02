@@ -421,8 +421,10 @@ final class SessionManager {
         self.logger = logger
     }
 
-    func openSession(for folder: URL, settings: AppSettings) throws -> SessionOpenResult {
-        let scannedItems = try scanner.scanFolder(folder, settings: settings)
+    func openSession(for folder: URL, settings: AppSettings, historical: HistoricalSourceContext? = nil) throws -> SessionOpenResult {
+        if let historical { try HistoricalSourceSafety.validate(root: historical.root, archiveRoot: settings.archiveRoot) }
+        let rawItems = try scanner.scanFolder(folder, settings: settings)
+        let scannedItems = historical.map { context in rawItems.map { HistoricalSourceHints.applying(to: $0, context: context) } } ?? rawItems
         let grouped = groupingService.group(items: scannedItems, settings: settings)
 
         var session = ImportSession(
@@ -434,6 +436,11 @@ final class SessionManager {
             sessionKind: .inbox
         )
         session.mediaItems = grouped.items
+        if let historical {
+            session.sourceProvenances[0].historical = historical
+            session.walkMetadata.title = historical.proposedTripTitle ?? ""
+            for index in session.mediaItems.indices { session.mediaItems[index].selectionState = .included }
+        }
         logger.log("Opened session for \(folder.path, privacy: .public) with \(grouped.items.count) items")
 
         return SessionOpenResult(session: session, bursts: grouped.burstGroups, clusters: grouped.timeClusters)

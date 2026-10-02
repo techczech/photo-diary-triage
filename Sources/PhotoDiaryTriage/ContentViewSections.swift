@@ -290,7 +290,7 @@ struct ActionButtonsPaneView: View {
             .disabled(!appState.canConfirmBackup)
             .help(appState.sidebarState.snapshot.importReadiness?.confirmBackupButtonHelp ?? "Confirm backup after copy verification.")
 
-            Button("Clean Source SSD") {
+            Button("Clean Source") {
                 appState.cleanupImportedSources()
             }
             .disabled(!appState.canCleanupImportedSources)

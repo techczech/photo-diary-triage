@@ -62,6 +62,7 @@ struct ImportCoordinator: ImportCoordinating {
             guard currentSelection == saved.mediaItemIDs,
                   session.walkMetadata == original.walkMetadata,
                   session.proposedWalks == original.proposedWalks,
+                  session.sourceProvenances == original.sourceProvenances,
                   session.oneDrivePicturesRoot == original.oneDrivePicturesRoot,
                   session.weekdayTokenStyle == original.weekdayTokenStyle,
                   original.mediaItems.allSatisfy({ previous in
@@ -81,8 +82,11 @@ struct ImportCoordinator: ImportCoordinating {
                 throw ArchiveFileVerification.failure("An unfinished import has different source files or selections. Resume the original photo log before starting another copy.")
             }
             record = saved
+            try validateHistoricalPlans(record.plans, session: session)
         } else {
-            record = ImportRecoveryRecord(session: session, plans: archivePlanner.planWalks(for: session), originalSession: session)
+            let plans = archivePlanner.planWalks(for: session)
+            try validateHistoricalPlans(plans, session: session)
+            record = ImportRecoveryRecord(session: session, plans: plans, originalSession: session)
             try recovery.save(record, kind: "import", sessionID: session.id)
         }
         let plans = record.plans
@@ -229,6 +233,7 @@ struct ImportCoordinator: ImportCoordinating {
             )
         }
         updatedSession.proposedWalks = []
+        updatedSession.confirmedCopyPending = nil
         record.session = updatedSession
         record.complete = true
         try recovery.save(record, kind: "import", sessionID: session.id)
@@ -264,7 +269,10 @@ struct ImportCoordinator: ImportCoordinating {
         var record = try recovery.load(CleanupRecoveryRecord.self, kind: "cleanup", sessionID: session.id) ?? CleanupRecoveryRecord()
         let archiveResolver = ArchiveRelativePathResolver(root: session.archiveRoot.resolvingSymlinksInPath())
         var candidates: [(UUID, UUID?, URL, URL)] = []
+        let importRecord = try recovery.load(ImportRecoveryRecord.self, kind: "import", sessionID: session.id)
+        var validatedHistoricalRoots: Set<URL> = []
         for item in session.mediaItems where item.lifecycleState == .sourceCleanupPending {
+            guard item.recognisedArchiveCopy != true else { throw ArchiveFileVerification.failure("A recognised previous archive copy does not authorise source cleanup.") }
             if item.cropRelationship?.role == .original && item.cropRelationship?.hasCrops == true { continue }
             guard let destination = item.destinationURL else {
                 throw ArchiveFileVerification.failure("The archived copy is missing for \(item.fileName). No sources were removed.")
@@ -283,9 +291,28 @@ struct ImportCoordinator: ImportCoordinating {
         // Verify the whole cleanup set before deleting any source, including RAW companions.
         for (itemID, companionID, source, destination) in candidates {
             try Task.checkCancellation()
-            guard archiveResolver.relativePath(for: destination.resolvingSymlinksInPath()) != nil,
-                  archiveResolver.relativePath(for: source.resolvingSymlinksInPath()) == nil else {
-                throw ArchiveFileVerification.failure("Cleanup requires an archived copy and a separate source outside the Archive.")
+            guard archiveResolver.relativePath(for: destination.resolvingSymlinksInPath()) != nil else {
+                throw ArchiveFileVerification.failure("Cleanup requires a verified destination inside the Archive.")
+            }
+            if archiveResolver.relativePath(for: source.resolvingSymlinksInPath()) != nil {
+                guard let context = HistoricalSourceSafety.context(for: source, in: session),
+                      let importRecord, importRecord.complete,
+                      let original = importRecord.originalSession,
+                      HistoricalSourceSafety.context(for: source, in: original)?.root == context.root,
+                      importRecord.plans.flatMap(\.entries).contains(where: { $0.mediaItemID == itemID && $0.companionFileID == companionID && $0.sourceURL == source && $0.destinationURL == destination }),
+                      !destination.resolvingSymlinksInPath().path.hasPrefix(context.root.resolvingSymlinksInPath().path + "/") else {
+                    throw ArchiveFileVerification.failure("Archive-source cleanup requires a completed recorded historical import into a separate destination.")
+                }
+                if validatedHistoricalRoots.insert(context.root).inserted { try HistoricalSourceSafety.validate(root: context.root, archiveRoot: session.archiveRoot, fileManager: fileManager) }
+            }
+            guard source.resolvingSymlinksInPath().standardizedFileURL != destination.resolvingSymlinksInPath().standardizedFileURL else {
+                throw ArchiveFileVerification.failure("Source and destination are the same file.")
+            }
+            if fileManager.fileExists(atPath: source.path) {
+                let a = try fileManager.attributesOfItem(atPath: source.path), b = try fileManager.attributesOfItem(atPath: destination.path)
+                guard a[.systemNumber] as? NSNumber != b[.systemNumber] as? NSNumber || a[.systemFileNumber] as? NSNumber != b[.systemFileNumber] as? NSNumber else {
+                    throw ArchiveFileVerification.failure("Source and destination are aliases of the same file.")
+                }
             }
             if let previous = record.entries.first(where: { $0.source == source }) {
                 guard previous.destination == destination, previous.mediaItemID == itemID,
@@ -423,6 +450,19 @@ struct ImportCoordinator: ImportCoordinating {
         }
     }
 
+    private func validateHistoricalPlans(_ plans: [ArchiveCommitPlan], session: ImportSession) throws {
+        for context in session.sourceProvenances.compactMap(\.historical) {
+            try HistoricalSourceSafety.validate(root: context.root, archiveRoot: session.archiveRoot, fileManager: fileManager)
+            let sourceRoot = context.root.resolvingSymlinksInPath().standardizedFileURL
+            guard !plans.contains(where: {
+                let destination = ArchivePathSafety.resolvedForWrite($0.archiveFolder)
+                return destination.path.hasPrefix(sourceRoot.path + "/") || destination == sourceRoot
+            }) else {
+                throw ArchiveFileVerification.failure("Choose an archive destination outside the historical source folder.")
+            }
+        }
+    }
+
     private func buildFileManifests(for session: ImportSession, mediaItemIDs: Set<UUID>, plan: ArchiveCommitPlan? = nil, sha256ByDestination: [String: String] = [:]) -> [FileManifest] {
         session.mediaItems
             .filter { mediaItemIDs.contains($0.id) && $0.selectionState.isIncluded }
@@ -445,7 +485,8 @@ struct ImportCoordinator: ImportCoordinating {
                     longitude: item.metadata.longitude,
                     walkTitle: plan?.walkTitle ?? session.walkMetadata.title,
                     walkLocation: plan?.walkLocation ?? session.walkMetadata.location,
-                    notes: session.walkMetadata.notes
+                    notes: session.walkMetadata.notes,
+                    captureDateEvidence: item.captureDateEvidence
                 )
             }
     }

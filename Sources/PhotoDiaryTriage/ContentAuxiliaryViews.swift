@@ -187,7 +187,7 @@ struct WalkCommitEditorSheet: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Confirm Triage Walks")
                         .font(.title2.weight(.bold))
-                    Text("Review proposed \(editor.walkDisplayLabel)s, adjust names, and choose the target \(editor.tripDisplayLabel) for each one.")
+                    Text(editor.isRecoveryPlan ? "Resume the recorded copy with its original names and targets. Changes are available after it finishes." : "Review proposed \(editor.walkDisplayLabel)s, adjust names, and choose the target \(editor.tripDisplayLabel) for each one.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -274,6 +274,7 @@ struct WalkCommitEditorSheet: View {
             .controlSize(.small)
         }
         .sheetSectionStyle()
+        .disabled(editor.isRecoveryPlan)
     }
 
     private func tripSelection(for walk: Binding<Walk>) -> Binding<String> {

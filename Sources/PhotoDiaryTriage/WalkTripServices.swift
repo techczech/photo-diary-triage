@@ -37,7 +37,7 @@ struct WalkBoundaryProposalService {
         var baseCounts: [String: Int] = [:]
         for items in sortedGroups {
             let date = items.compactMap(\.capturedAt).min() ?? session.startedAt
-            let baseTitle = session.walkMetadata.title.nonEmpty ?? DateFormatting.automaticPhotoLogTitle.string(from: date)
+            let baseTitle = historicalTitle(items: items, session: session) ?? session.walkMetadata.title.nonEmpty ?? DateFormatting.automaticPhotoLogTitle.string(from: date)
             let dayKey = DateFormatting.archiveFormatterForParsing.string(from: calendar.startOfDay(for: date))
             baseCounts["\(dayKey)|\(baseTitle)", default: 0] += 1
         }
@@ -46,7 +46,7 @@ struct WalkBoundaryProposalService {
         return sortedGroups.map { items in
                 let date = items.compactMap(\.capturedAt).min() ?? session.startedAt
                 let sourceIDs = Array(Set(items.compactMap(\.sourceProvenanceID))).sorted { $0.uuidString < $1.uuidString }
-                let baseTitle = session.walkMetadata.title.nonEmpty ?? DateFormatting.automaticPhotoLogTitle.string(from: date)
+                let baseTitle = historicalTitle(items: items, session: session) ?? session.walkMetadata.title.nonEmpty ?? DateFormatting.automaticPhotoLogTitle.string(from: date)
                 let dayKey = DateFormatting.archiveFormatterForParsing.string(from: calendar.startOfDay(for: date))
                 let titleKey = "\(dayKey)|\(baseTitle)"
                 baseOrdinals[titleKey, default: 0] += 1
@@ -58,12 +58,30 @@ struct WalkBoundaryProposalService {
                     date: date,
                     sourceProvenanceIDs: sourceIDs,
                     mediaItemIDs: items.map(\.id),
+                    tripTarget: historicalTrip(items: items, session: session),
                     location: session.walkMetadata.location,
                     latitude: session.walkMetadata.latitude,
                     longitude: session.walkMetadata.longitude
                 )
             }
     }
+    private func historicalContext(items: [MediaItem], session: ImportSession) -> HistoricalSourceContext? {
+        let contexts = items.compactMap { HistoricalSourceSafety.context(for: $0.sourceURL, in: session) }
+        guard contexts.count == items.count, Set(contexts.map(\.root)).count == 1 else { return nil }
+        return contexts.first
+    }
+
+    private func historicalTitle(items: [MediaItem], session: ImportSession) -> String? {
+        guard let context = historicalContext(items: items, session: session),
+              session.walkMetadata.title.isEmpty || session.walkMetadata.title == context.proposedTripTitle else { return nil }
+        return HistoricalSourceHints.walkTitle(for: items, context: context)
+    }
+
+    private func historicalTrip(items: [MediaItem], session: ImportSession) -> TripTarget {
+        guard let context = historicalContext(items: items, session: session), let title = context.proposedTripTitle else { return .defaultMonth }
+        return TripTarget(kind: .newNamedTrip, title: title, folderRelativePath: nil)
+    }
+
 }
 
 struct ExistingTrip: Identifiable, Hashable, Sendable {

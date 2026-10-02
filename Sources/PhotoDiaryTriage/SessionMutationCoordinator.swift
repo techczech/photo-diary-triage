@@ -75,7 +75,7 @@ final class SessionMutationCoordinator {
         var updatedSession = session
         updatedSession.walkMetadata.backupConfirmedAt = confirmedAt
 
-        for index in updatedSession.mediaItems.indices where updatedSession.mediaItems[index].lifecycleState == .verified {
+        for index in updatedSession.mediaItems.indices where updatedSession.mediaItems[index].lifecycleState == .verified && updatedSession.mediaItems[index].recognisedArchiveCopy != true && updatedSession.mediaItems[index].importedAt != nil {
             do {
                 updatedSession.mediaItems[index].lifecycleState = try updatedSession.mediaItems[index].lifecycleState.transition(to: .sourceCleanupPending)
             } catch {
