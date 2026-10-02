@@ -6241,7 +6241,8 @@ final class AppState: ObservableObject {
             yearGroups: content.yearGroups, selectedMapItemID: selectedArchiveMapItemID,
             browseFocusRevision: archiveBrowseFocusRevision, isSearching: archiveSearchIsLoading,
             searchError: archiveSearchError, searchSelection: selectedArchiveSearchTarget,
-            folderLoadState: archiveFolderLoadState, missingSearchHitMessage: archiveMissingSearchHitMessage)
+            folderLoadState: archiveFolderLoadState, missingSearchHitMessage: archiveMissingSearchHitMessage,
+            coverContext: ArchiveCoverContext(policyGeneration: ArchiveByteReadPolicyContext.shared.generation, catalogueRevision: archiveMediaCatalogueRevision))
         archiveBrowserState.update(snapshot)
     }
 

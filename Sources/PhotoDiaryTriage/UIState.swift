@@ -421,6 +421,7 @@ struct ArchiveBrowserSnapshot: Equatable, Sendable {
     var searchSelection: ArchiveSearchItemID? = nil
     var folderLoadState: ArchiveFolderLoadState = .idle
     var missingSearchHitMessage: String? = nil
+    var coverContext: ArchiveCoverContext = .inactive
 
     static let empty = ArchiveBrowserSnapshot(
         isLoading: false,

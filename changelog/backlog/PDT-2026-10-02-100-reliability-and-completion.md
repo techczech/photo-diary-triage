@@ -77,3 +77,12 @@ FTS/index snapshots, context guards, refresh-safe selection/Compare and durable 
 label projection within the current context. All 423 tests pass; final Astra source review
 is clear. Asynchronous covers and sidebar focus remain implementation work, followed by
 the original native/real-copy/provider acceptance. Whole-scope implementation remains active.
+
+## Cover loading checkpoint
+
+0.7.15/151 ships asynchronous resident-only Archive covers with hard physical worker,
+queue, LRU count and actual decoded-buffer limits. All 447 tests pass; 24 new functions
+include pre-fix original/Astra failures. Final Astra source review is clear. Installation
+was closed and signed/executable-verified. Original complete keyboard/sidebar work remains
+active: registry, persisted overrides, palette/contextual commands, generated help,
+reserved shortcuts and actual event tests. Native/real-copy/provider acceptance remains.
