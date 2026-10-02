@@ -1171,6 +1171,7 @@ struct TripManifest: Codable, Hashable, Sendable {
     var startDate: Date?
     var endDate: Date?
     var memberWalkFolderPaths: [String]
+    var locationLabelOverride: String? = nil
 }
 
 struct RejectedFileManifest: Codable, Hashable, Sendable {

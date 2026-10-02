@@ -85,6 +85,10 @@ struct ManifestRenderer {
             lines.append("- End date: \(DateFormatting.iso8601.string(from: endDate))")
         }
         lines.append("")
+        if let label = manifest.locationLabelOverride {
+            lines.append("- Location label override: \(ArchiveManifestText.quotedScalar(label))")
+            lines.append("")
+        }
         lines.append("## Member Walks")
         lines.append("")
         if manifest.memberWalkFolderPaths.isEmpty {

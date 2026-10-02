@@ -57,7 +57,7 @@ enum ArchiveLocationProjection {
                 : (pin != nil ? .walkPin : (gps != nil ? .photoGPS : nil))
             catalogue.photos[index] = photo
         }
-        return catalogue
+        return TripLocationProjection.refreshingDerivedLabels(in: catalogue)
     }
 
     private static func rootPhoto(for photo: ArchivePhotoSummary, in photos: [String: ArchivePhotoSummary]) -> ArchivePhotoSummary? {

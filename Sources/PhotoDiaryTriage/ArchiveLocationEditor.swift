@@ -182,9 +182,14 @@ struct ArchiveLocationEditor: Sendable {
         }
     }
 
-    private static func assertNoUnfinishedFolderOperation(overlapping folder: URL, archiveRoot: URL) throws {
+    static func assertNoUnfinishedFolderOperation(overlapping folder: URL, archiveRoot: URL) throws {
+        try ArchiveLayoutMigrator.assertNoPending(overlapping: folder, archiveRoot: archiveRoot)
         let recovery = ArchiveOperationRecovery(archiveRoot: archiveRoot)
         let paths = try FileManager.default.contentsOfDirectory(at: recovery.root, includingPropertiesForKeys: nil)
+        func overlaps(_ path: URL) -> Bool {
+            let a = folder.standardizedFileURL.path, b = path.standardizedFileURL.path
+            return a == b || a.hasPrefix(b + "/") || b.hasPrefix(a + "/")
+        }
         for url in paths where url.lastPathComponent.hasPrefix("folder-") && url.pathExtension == "json" {
             let record = try JSONDecoder().decode(ArchiveFolderRecoveryRecord.self, from: Data(contentsOf: url))
             if !record.complete && [record.source, record.destination].contains(where: { path in
@@ -194,13 +199,13 @@ struct ArchiveLocationEditor: Sendable {
         }
         for url in paths where url.lastPathComponent.hasPrefix("metadata-") && url.pathExtension == "json" {
             let record = try JSONDecoder().decode(ArchiveMetadataRecovery.self, from: Data(contentsOf: url))
-            if !record.complete && record.changes.contains(where: { $0.url.deletingLastPathComponent().standardizedFileURL == folder.standardizedFileURL }) {
+            if !record.complete && record.changes.contains(where: { overlaps($0.url.deletingLastPathComponent()) }) {
                 throw ArchiveFileVerification.failure("Finish the recorded metadata save before editing its location.")
             }
         }
         for url in paths where url.lastPathComponent.hasPrefix("import-") && !url.lastPathComponent.hasPrefix("import-file-") && url.pathExtension == "json" {
             let record = try JSONDecoder().decode(ImportRecoveryRecord.self, from: Data(contentsOf: url))
-            if !record.complete && record.plans.contains(where: { $0.archiveFolder.standardizedFileURL == folder.standardizedFileURL }) {
+            if !record.complete && record.plans.contains(where: { overlaps($0.archiveFolder) }) {
                 throw ArchiveFileVerification.failure("Finish the recorded import before editing its location.")
             }
         }
