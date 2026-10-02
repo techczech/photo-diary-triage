@@ -80,7 +80,7 @@ struct ArchivePlanner {
         let fileStemBase = DateFormatting.archiveFileStem(from: walkDate, title: titleSource)
         for (offset, item) in items.enumerated() {
             let archiveStem = "\(fileStemBase)-\(String(format: "%03d", offset + 1))"
-            let destination = makeUniqueDestination(stem: archiveStem, originalFileName: item.fileName, in: archiveFolder, reserved: &reservedDestinations)
+            let destination = makeUniqueDestination(stem: archiveStem, originalFileName: item.fileName, in: archiveFolder, reserved: &reservedDestinations, reservesSidecar: true)
             entries.append(
                 ArchiveEntry(
                     mediaItemID: item.id,
@@ -93,7 +93,7 @@ struct ArchivePlanner {
 
             if item.importRawCompanions {
                 for companion in item.companionFiles {
-                    let companionDestination = makeUniqueDestination(stem: archiveStem, originalFileName: companion.fileName, in: archiveFolder, reserved: &reservedDestinations)
+                    let companionDestination = makeUniqueDestination(stem: destination.deletingPathExtension().lastPathComponent, originalFileName: companion.fileName, in: archiveFolder, reserved: &reservedDestinations)
                     entries.append(
                         ArchiveEntry(
                             mediaItemID: item.id,
@@ -110,6 +110,9 @@ struct ArchivePlanner {
         return ArchiveCommitPlan(
             walkID: walk.id,
             walkTitle: titleSource,
+            walkLocation: walk.location,
+            walkLatitude: walk.latitude,
+            walkLongitude: walk.longitude,
             tripTarget: tripTarget,
             archiveFolder: archiveFolder,
             tripFolder: tripFolder,
@@ -120,19 +123,22 @@ struct ArchivePlanner {
         )
     }
 
-    private func makeUniqueDestination(stem: String, originalFileName: String, in folder: URL, reserved: inout Set<String>) -> URL {
+    private func makeUniqueDestination(stem: String, originalFileName: String, in folder: URL, reserved: inout Set<String>, reservesSidecar: Bool = false) -> URL {
         let ext = URL(fileURLWithPath: originalFileName).pathExtension.lowercased()
         let fileName = stem + (ext.isEmpty ? "" : ".\(ext)")
         var candidate = folder.appendingPathComponent(fileName)
         var counter = 1
 
-        while reserved.contains(candidate.path) || fileManager.fileExists(atPath: candidate.path) {
+        while reserved.contains(candidate.path) || fileManager.fileExists(atPath: candidate.path)
+            || (reservesSidecar && (reserved.contains(candidate.deletingPathExtension().appendingPathExtension("md").path)
+                || fileManager.fileExists(atPath: candidate.deletingPathExtension().appendingPathExtension("md").path))) {
             let numbered = "\(stem)-\(counter)" + (ext.isEmpty ? "" : ".\(ext)")
             candidate = folder.appendingPathComponent(numbered)
             counter += 1
         }
 
         reserved.insert(candidate.path)
+        if reservesSidecar { reserved.insert(candidate.deletingPathExtension().appendingPathExtension("md").path) }
         return candidate
     }
 

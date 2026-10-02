@@ -120,14 +120,21 @@ import Testing
         encoding: .utf8
     )
     let sidecar = oldWalk.appendingPathComponent("23-Sat-Morning.md")
-    try "archive_path: \(oldWalk.path)/photo.jpg\narchive_relative_path: 2026/05-May-Old/23-Sat-Morning/photo.jpg\nTrip folder: 2026/05-May-Old\n"
-        .write(to: sidecar, atomically: true, encoding: .utf8)
+    let fixture = WalkManifest(sessionID: UUID(), tripFolderRelativePath: "2026/05-May-Old", walkDate: Date(timeIntervalSince1970: 1_779_532_260),
+        sourceFolder: root.appendingPathComponent("source"), archiveFolder: oldWalk,
+        archiveFolderRelativePath: "2026/05-May-Old/23-Sat-Morning", title: "Morning", location: "Oxford", notes: "Keep my notes.",
+        summary: .init(totalSourceFiles: 1, visibleItems: 1, importedFiles: 1, excludedFiles: 0, candidateFiles: 0,
+            undecidedFiles: 0, skippedFiles: 0, cleanupPendingFiles: 0, cleanedSourceFiles: 0),
+        importedFiles: [], excludedFiles: [])
+    try ManifestRenderer().renderWalkManifest(fixture).write(to: sidecar, atomically: true, encoding: .utf8)
+    try "---\nmedia_item_id: \(UUID().uuidString)\narchive_path: \(oldWalk.path)/photo.jpg\narchive_relative_path: 2026/05-May-Old/23-Sat-Morning/photo.jpg\nsource_file_name: photo.jpg\n---\n"
+        .write(to: oldWalk.appendingPathComponent("photo.md"), atomically: true, encoding: .utf8)
     let cropSidecar = oldWalk.appendingPathComponent("crop.json")
     try #"{"archiveRelativePath":"2026/05-May-Old/23-Sat-Morning/crop.jpg","tripFolderRelativePath":"2026/05-May-Old"}"#
         .write(to: cropSidecar, atomically: true, encoding: .utf8)
 
     let result = try WalkMover().moveWalk(at: oldWalk, to: newTrip, oneDrivePicturesRoot: root)
-    let rewritten = try String(contentsOf: result.destinationFolder.appendingPathComponent("23-Sat-Morning.md"), encoding: .utf8)
+    let rewritten = try String(contentsOf: result.destinationFolder.appendingPathComponent("photo.md"), encoding: .utf8)
     let rewrittenCrop = try String(contentsOf: result.destinationFolder.appendingPathComponent("crop.json"), encoding: .utf8)
     let sourceTripManifest = try String(contentsOf: oldTrip.appendingPathComponent("05-May-Old.md"), encoding: .utf8)
     let destinationTripManifest = try String(contentsOf: newTrip.appendingPathComponent("05-May-Oxford.md"), encoding: .utf8)

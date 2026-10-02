@@ -153,7 +153,7 @@ struct ArchiveTextSidecarRewriter {
         for sidecar in sidecars {
             var text = try String(contentsOf: sidecar, encoding: .utf8)
             let original = text
-            text = rewrite(text, spec: spec)
+            text = try rewriteStructured(text, extension: sidecar.pathExtension.lowercased(), spec: spec)
             if text != original {
                 try text.write(to: sidecar, atomically: true, encoding: .utf8)
                 rewrittenCount += 1
@@ -163,27 +163,7 @@ struct ArchiveTextSidecarRewriter {
     }
 
     func rewrite(_ text: String, spec: ArchiveTextRewriteSpec) -> String {
-        var rewritten = text
-        if let old = spec.oldAbsoluteFolderPath, let new = spec.newAbsoluteFolderPath {
-            rewritten = rewritten.replacingOccurrences(of: old, with: new)
-        }
-        if let old = spec.oldRelativeFolderPath, let new = spec.newRelativeFolderPath {
-            rewritten = rewritten.replacingOccurrences(of: old, with: new)
-        }
-        if let old = spec.oldTripRelativePath, let new = spec.newTripRelativePath {
-            rewritten = rewritten.replacingOccurrences(of: old, with: new)
-        }
-        if let old = spec.oldStemBase, let new = spec.newStemBase {
-            rewritten = rewritten.replacingOccurrences(
-                of: "\(NSRegularExpression.escapedPattern(for: old))-(\\d{3})",
-                with: "\(new)-$1",
-                options: .regularExpression
-            )
-        }
-        if let old = spec.oldWalkName, let new = spec.newWalkName {
-            rewritten = rewritten.replacingOccurrences(of: old, with: new)
-        }
-        return rewritten
+        (try? rewriteStructured(text, extension: "md", spec: spec)) ?? text
     }
 
     private func textSidecars(in folder: URL, textExtensions: Set<String>) -> [URL] {
@@ -225,6 +205,11 @@ struct TripManifestStore {
         removing removals: [String] = []
     ) throws -> TripManifest {
         try AppDirectories.ensureExists(folder, fileManager: fileManager)
+        let url = tripManifestURL(for: folder)
+        let original = fileManager.fileExists(atPath: url.path) ? try String(contentsOf: url, encoding: .utf8) : nil
+        if let original, firstBacktickedValue(after: "Trip ID:", in: original).flatMap(UUID.init(uuidString:)) == nil {
+            throw ArchiveFileVerification.failure("The existing Trip identity could not be read. Its text has been retained.")
+        }
         let existing = loadTripManifest(folder: folder, oneDrivePicturesRoot: oneDrivePicturesRoot)
         let removalSet = Set(removals)
         var members = existing.memberWalkFolderPaths.filter { !removalSet.contains($0) }
@@ -233,8 +218,13 @@ struct TripManifestStore {
         }
         members.sort()
 
-        let dates = [existing.startDate, existing.endDate] + additions.map(\.date)
-        let compactDates = dates.compactMap { $0 }
+        let compactDates = try members.compactMap { member -> Date? in
+            if let date = additions.first(where: { $0.relativePath == member })?.date { return date }
+            let walk = oneDrivePicturesRoot.appendingPathComponent(member)
+            let url = walk.appendingPathComponent("\(walk.lastPathComponent).md")
+            let text = try String(contentsOf: url, encoding: .utf8)
+            return firstValue(after: "Walk date:", in: text).flatMap { DateFormatting.iso8601.date(from: $0) }
+        }
         let manifest = TripManifest(
             tripID: existing.tripID,
             title: title?.nonEmpty ?? existing.title.nonEmpty ?? folder.lastPathComponent,
@@ -244,7 +234,29 @@ struct TripManifestStore {
             endDate: compactDates.max(),
             memberWalkFolderPaths: members
         )
-        try renderer.renderTripManifest(manifest).write(to: tripManifestURL(for: folder), atomically: true, encoding: .utf8)
+        var rendered = renderer.renderTripManifest(manifest)
+        if var original {
+            guard let start = original.range(of: "## Member Walks\n"), let newStart = rendered.range(of: "## Member Walks\n") else {
+                throw ArchiveFileVerification.failure("The existing Trip membership could not be read.")
+            }
+            let after = original[start.upperBound...]
+            let end = after.range(of: "\n## ")?.lowerBound ?? original.endIndex
+            let replacement = String(rendered[newStart.upperBound...])
+            original.replaceSubrange(start.upperBound..<end, with: replacement + (end == original.endIndex ? "" : "\n"))
+            for (label, value) in [("Start date", manifest.startDate), ("End date", manifest.endDate)] {
+                let prefix = "- \(label):"
+                var lines = original.components(separatedBy: "\n")
+                if let index = lines.firstIndex(where: { $0.hasPrefix(prefix) }) {
+                    if let value { lines[index] = "\(prefix) \(DateFormatting.iso8601.string(from: value))" }
+                    else { lines.remove(at: index) }
+                } else if let value, let member = lines.firstIndex(of: "## Member Walks") {
+                    lines.insert("\(prefix) \(DateFormatting.iso8601.string(from: value))", at: max(0, member - 1))
+                }
+                original = lines.joined(separator: "\n")
+            }
+            rendered = original
+        }
+        try rendered.write(to: url, atomically: true, encoding: .utf8)
         return manifest
     }
 
@@ -268,7 +280,8 @@ struct TripManifestStore {
         let tripID = firstBacktickedValue(after: "Trip ID:", in: text).flatMap(UUID.init(uuidString:)) ?? UUID()
         let startDate = firstValue(after: "Start date:", in: text).flatMap { DateFormatting.iso8601.date(from: $0) }
         let endDate = firstValue(after: "End date:", in: text).flatMap { DateFormatting.iso8601.date(from: $0) }
-        let members = text.split(separator: "\n").compactMap { line -> String? in
+        let memberText = text.components(separatedBy: "## Member Walks").dropFirst().first?.components(separatedBy: "\n## ").first ?? ""
+        let members = memberText.split(separator: "\n").compactMap { line -> String? in
             let string = String(line.trimmingCharacters(in: .whitespaces))
             guard string.hasPrefix("- `"), string.hasSuffix("`") else { return nil }
             let value = String(string.dropFirst(3).dropLast())
@@ -291,7 +304,7 @@ struct TripManifestStore {
     }
 
     private func firstBacktickedValue(after label: String, in text: String) -> String? {
-        guard let line = text.split(separator: "\n").map(String.init).first(where: { $0.contains(label) }),
+        guard let line = text.components(separatedBy: "## ")[0].split(separator: "\n").map(String.init).first(where: { $0.hasPrefix("- " + label) }),
               let first = line.firstIndex(of: "`"),
               let last = line.lastIndex(of: "`"),
               first < last else { return nil }
@@ -299,7 +312,7 @@ struct TripManifestStore {
     }
 
     private func firstValue(after label: String, in text: String) -> String? {
-        text.split(separator: "\n").map(String.init).first { $0.contains(label) }?.components(separatedBy: label).last?.trimmingCharacters(in: .whitespaces)
+        text.components(separatedBy: "## ")[0].split(separator: "\n").map(String.init).first { $0.hasPrefix("- " + label) }?.components(separatedBy: label).last?.trimmingCharacters(in: .whitespaces)
     }
 }
 
@@ -319,51 +332,51 @@ struct WalkMover {
         self.tripManifestStore = TripManifestStore(fileManager: fileManager)
     }
 
-    func moveWalk(at walkFolder: URL, to tripFolder: URL, oneDrivePicturesRoot: URL) throws -> WalkMoveResult {
-        try AppDirectories.ensureExists(tripFolder, fileManager: fileManager)
+    func moveWalk(at walkFolder: URL, to tripFolder: URL, oneDrivePicturesRoot: URL, archiveRoot: URL? = nil) throws -> WalkMoveResult {
         let oldTripFolder = walkFolder.deletingLastPathComponent()
-        let destination = uniqueDestination(for: walkFolder.lastPathComponent, in: tripFolder)
-        try fileManager.moveItem(at: walkFolder, to: destination)
-
+        if oldTripFolder.standardizedFileURL == tripFolder.standardizedFileURL {
+            return WalkMoveResult(sourceFolder: walkFolder, destinationFolder: walkFolder)
+        }
+        let root = archiveRoot ?? walkFolder.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let mutationLock = try ArchiveMutationLock(archiveRoot: root)
+        defer { withExtendedLifetime(mutationLock) {} }
+        let operation = ArchiveFolderOperation(archiveRoot: root, fileManager: fileManager)
+        let previous = try operation.recorded(for: walkFolder)
+        let destination: URL
+        if let previous, !previous.complete || !fileManager.fileExists(atPath: walkFolder.path) {
+            guard previous.destination.deletingLastPathComponent().standardizedFileURL == tripFolder.standardizedFileURL else {
+                throw ArchiveFileVerification.failure("Finish the previous move before selecting a different Trip.")
+            }
+            destination = previous.destination
+        } else { destination = uniqueDestination(for: walkFolder.lastPathComponent, in: tripFolder) }
         let resolver = ArchiveRelativePathResolver(root: oneDrivePicturesRoot)
         let oldWalkRelative = resolver.relativePath(for: walkFolder)
         let newWalkRelative = resolver.relativePath(for: destination)
-        let oldTripRelative = resolver.relativePath(for: oldTripFolder)
-        let newTripRelative = resolver.relativePath(for: tripFolder)
-        try rewriter.rewriteSidecars(
-            in: destination,
-            spec: ArchiveTextRewriteSpec(
-                oldAbsoluteFolderPath: walkFolder.path,
-                newAbsoluteFolderPath: destination.path,
-                oldRelativeFolderPath: oldWalkRelative,
-                newRelativeFolderPath: newWalkRelative,
-                oldTripRelativePath: oldTripRelative,
-                newTripRelativePath: newTripRelative,
-                oldWalkName: walkFolder.lastPathComponent,
-                newWalkName: destination.lastPathComponent
-            )
-        )
-
-        if oldTripFolder.standardizedFileURL != tripFolder.standardizedFileURL,
-           let oldWalkRelative {
-            if TripLibraryScanner.isNamedTripFolder(oldTripFolder) {
-                _ = try tripManifestStore.updateNamedTripManifest(
-                    folder: oldTripFolder,
-                    title: oldTripFolder.lastPathComponent,
-                    oneDrivePicturesRoot: oneDrivePicturesRoot,
-                    adding: [],
-                    removing: [oldWalkRelative]
-                )
-            }
-            if TripLibraryScanner.isNamedTripFolder(tripFolder), let newWalkRelative {
-                _ = try tripManifestStore.updateNamedTripManifest(
-                    folder: tripFolder,
-                    title: tripFolder.lastPathComponent,
-                    oneDrivePicturesRoot: oneDrivePicturesRoot,
-                    adding: [TripManifestMemberUpdate(relativePath: newWalkRelative, date: nil)]
-                )
+        let spec = ArchiveTextRewriteSpec(oldAbsoluteFolderPath: walkFolder.path, newAbsoluteFolderPath: destination.path,
+            oldRelativeFolderPath: oldWalkRelative, newRelativeFolderPath: newWalkRelative,
+            oldTripRelativePath: resolver.relativePath(for: oldTripFolder), newTripRelativePath: resolver.relativePath(for: tripFolder))
+        var names: [String: String] = [:]
+        if walkFolder.lastPathComponent != destination.lastPathComponent, fileManager.fileExists(atPath: walkFolder.path) {
+            for suffix in [".md", "-session-log.jsonl"] {
+                let oldName = walkFolder.lastPathComponent + suffix
+                if fileManager.fileExists(atPath: walkFolder.appendingPathComponent(oldName).path) {
+                    names[oldName] = destination.lastPathComponent + suffix
+                }
             }
         }
+        let record = try operation.prepare(source: walkFolder, destination: destination, spec: spec, names: names)
+        _ = try operation.execute(record)
+        let date = try ArchiveIndexStore(fileManager: fileManager).loadWalkManifest(folder: destination, archiveRoot: root)?.walkDate
+        if let oldWalkRelative, TripLibraryScanner.isNamedTripFolder(oldTripFolder) {
+            _ = try tripManifestStore.updateNamedTripManifest(folder: oldTripFolder, title: nil,
+                oneDrivePicturesRoot: oneDrivePicturesRoot, adding: [], removing: [oldWalkRelative])
+        }
+        if let newWalkRelative, TripLibraryScanner.isNamedTripFolder(tripFolder) {
+            _ = try tripManifestStore.updateNamedTripManifest(folder: tripFolder, title: nil,
+                oneDrivePicturesRoot: oneDrivePicturesRoot,
+                adding: [TripManifestMemberUpdate(relativePath: newWalkRelative, date: date)])
+        }
+        try operation.complete(record)
         return WalkMoveResult(sourceFolder: walkFolder, destinationFolder: destination)
     }
 

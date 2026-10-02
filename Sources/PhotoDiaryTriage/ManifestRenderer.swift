@@ -24,6 +24,8 @@ struct ManifestRenderer {
             lines.append("- Location: \(location)")
         }
         lines.append("")
+        if let latitude = manifest.latitude { lines.append("- Latitude: \(latitude)") }
+        if let longitude = manifest.longitude { lines.append("- Longitude: \(longitude)") }
         lines.append("## Notes")
         lines.append("")
         lines.append(manifest.notes.nonEmpty ?? "_No notes provided._")
@@ -98,11 +100,12 @@ struct ManifestRenderer {
     func renderFileManifest(_ manifest: FileManifest) -> String {
         var lines: [String] = ["---"]
         lines.append("media_item_id: \(manifest.mediaItemID.uuidString)")
-        lines.append("archive_path: \(manifest.archivePath)")
+        lines.append("archive_path: \(escapeYAML(manifest.archivePath))")
         if let archiveRelativePath = manifest.archiveRelativePath {
             lines.append("archive_relative_path: \(escapeYAML(archiveRelativePath))")
         }
-        lines.append("source_file_name: \(manifest.sourceFileName)")
+        if let digest = manifest.sha256 { lines.append("sha256: \(digest)") }
+        lines.append("source_file_name: \(escapeYAML(manifest.sourceFileName))")
         if !manifest.companionArchivePaths.isEmpty {
             lines.append("companion_archive_paths:")
             for path in manifest.companionArchivePaths {
@@ -157,6 +160,6 @@ struct ManifestRenderer {
     }
 
     private func escapeYAML(_ value: String) -> String {
-        "\"\(value.replacingOccurrences(of: "\"", with: "\\\""))\""
+        ArchiveManifestText.quotedScalar(value)
     }
 }

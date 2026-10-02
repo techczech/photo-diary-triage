@@ -38,14 +38,31 @@ struct ArchiveLayoutMigratorTests {
         try Data([0xFF, 0xD8]).write(to: walk.appendingPathComponent("\(stem)-001.jpg"))
         try Data([0xFF, 0xD8]).write(to: walk.appendingPathComponent("\(stem)-002.jpg"))
         try """
+        ---
+        media_item_id: \(UUID().uuidString)
         archive_path: \(walk.path)/\(stem)-001.jpg
         archive_relative_path: 2020/03 - March/\(stem)/\(stem)-001.jpg
         source_file_name: DSCF0001.JPG
+        ---
         """.write(to: walk.appendingPathComponent("\(stem)-001.md"), atomically: true, encoding: .utf8)
         try """
         # Walk manifest
-        Archive folder: \(walk.path)
-        - DSCF0001.JPG -> \(stem)-001.jpg (2020/03 - March/\(stem)/\(stem)-001.jpg)
+        - Session ID: `\(UUID().uuidString)`
+        - Archive folder: `\(walk.path)`
+        - OneDrive Pictures relative folder: `2020/03 - March/\(stem)`
+        - Trip folder: `2020/03 - March`
+
+        ## Notes
+
+        Preserve my notes.
+
+        ## Source Report
+
+        ## Imported Files
+
+        - `DSCF0001.JPG` -> `\(walk.path)/\(stem)-001.jpg` (`2020/03 - March/\(stem)/\(stem)-001.jpg`)
+
+        ## Excluded Files
         """.write(to: walk.appendingPathComponent("\(stem).md"), atomically: true, encoding: .utf8)
         try #"{"event":"commit","archive_folder":"\#(walk.path)"}"#
             .write(to: walk.appendingPathComponent("\(stem)-session-log.jsonl"), atomically: true, encoding: .utf8)
@@ -102,7 +119,7 @@ struct ArchiveLayoutMigratorTests {
 
         let fileManifest = try String(contentsOf: newWalk.appendingPathComponent("2020-03-02-port-meadow-001.md"), encoding: .utf8)
         #expect(fileManifest.contains("2020/03-March/02-Mon-Port-meadow/2020-03-02-port-meadow-001.jpg"))
-        #expect(fileManifest.contains(newWalk.path))
+        #expect(fileManifest.contains(newWalk.resolvingSymlinksInPath().path))
         #expect(!fileManifest.contains("02-Monday-Port-meadow"))
         #expect(fileManifest.contains("source_file_name: DSCF0001.JPG"))
 
@@ -120,4 +137,23 @@ struct ArchiveLayoutMigratorTests {
         let secondPlan = migrator.plan(archiveRoot: root)
         #expect(secondPlan.walks.isEmpty)
     }
+    @Test func hiddenMonthContentsAndHistoricalLookalikesAreRetained() throws {
+        let root = try makeLegacyArchive()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let month = root.appendingPathComponent("2020/03 - March")
+        let hidden = month.appendingPathComponent(".private/retained.txt")
+        try writeTestFile(hidden, contents: "private source evidence")
+        let lookalike = month.appendingPathComponent("03-Tuesday-Historical")
+        try writeTestFile(lookalike.appendingPathComponent("photo.jpg"), contents: "historical")
+        let migrator = ArchiveLayoutMigrator()
+        let plan = migrator.plan(archiveRoot: root)
+        #expect(plan.walks.count == 1)
+        #expect(plan.skipped.contains { $0.0.resolvingSymlinksInPath().path == lookalike.resolvingSymlinksInPath().path })
+        let result = migrator.execute(plan)
+        #expect(result.failures.isEmpty)
+        #expect(result.removedLegacyMonthFolders == 0)
+        #expect(FileManager.default.fileExists(atPath: hidden.path))
+        #expect(FileManager.default.fileExists(atPath: lookalike.appendingPathComponent("photo.jpg").path))
+    }
+
 }

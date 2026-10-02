@@ -266,12 +266,13 @@ struct ArchiveCatalogueBuilder {
     }
 
     func readIndexEntries(archiveRoot: URL) throws -> [ArchiveIndexEntry] {
-        let indexRoot = ArchiveIndexStore.indexRoot(for: archiveRoot)
-        let shards = ((try? fileManager.contentsOfDirectory(
+        let indexRoot = try ArchiveIndexStore.shardRoot(for: archiveRoot)
+        guard fileManager.fileExists(atPath: indexRoot.path) else { return [] }
+        let shards = (try fileManager.contentsOfDirectory(
             at: indexRoot,
             includingPropertiesForKeys: [.isRegularFileKey],
             options: [.skipsHiddenFiles]
-        )) ?? [])
+        ))
             .filter { $0.lastPathComponent.range(of: #"^index-.+\.jsonl$"#, options: .regularExpression) != nil }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
 

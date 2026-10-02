@@ -24,6 +24,8 @@ struct ArchiveIndexEntry: Codable, Hashable, Sendable {
     var thumbnailPath: String?
     var walkPath: String?
     var tripPath: String?
+    var latitude: Double?
+    var longitude: Double?
 
     init(
         kind: ArchiveIndexEntryKind,
@@ -37,7 +39,9 @@ struct ArchiveIndexEntry: Codable, Hashable, Sendable {
         notes: String? = nil,
         thumbnailPath: String?,
         walkPath: String?,
-        tripPath: String?
+        tripPath: String?,
+        latitude: Double? = nil,
+        longitude: Double? = nil
     ) {
         self.kind = kind
         self.year = year
@@ -51,6 +55,8 @@ struct ArchiveIndexEntry: Codable, Hashable, Sendable {
         self.thumbnailPath = thumbnailPath
         self.walkPath = walkPath
         self.tripPath = tripPath
+        self.latitude = latitude
+        self.longitude = longitude
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -66,6 +72,8 @@ struct ArchiveIndexEntry: Codable, Hashable, Sendable {
         case thumbnailPath = "thumbnail_path"
         case walkPath = "walk_path"
         case tripPath = "trip_path"
+        case latitude
+        case longitude
     }
 }
 
@@ -89,8 +97,8 @@ struct ArchiveThumbnailBackfillSafety: Sendable {
         return availableBytes >= minimumFreeBytes
     }
 
-    func shouldEvict(wasOnlineOnly: Bool, generatedThumbnail: Bool) -> Bool {
-        wasOnlineOnly && generatedThumbnail
+    func shouldEvict(wasOnlineOnly: Bool, hydrationAttempted: Bool) -> Bool {
+        wasOnlineOnly && hydrationAttempted
     }
 }
 
@@ -136,12 +144,12 @@ struct ArchiveByteReadPolicy: Sendable {
     func isOnlineOnly(_ url: URL) -> Bool {
         do {
             let values = try url.resourceValues(forKeys: [.fileSizeKey, .totalFileAllocatedSizeKey])
-            let logicalSize = values.fileSize ?? 0
-            let allocatedSize = values.totalFileAllocatedSize ?? logicalSize
+            guard let logicalSize = values.fileSize, let allocatedSize = values.totalFileAllocatedSize else { return true }
+            if logicalSize > 0 && allocatedSize == 0 { return true }
             guard logicalSize > 16_384 else { return false }
             return allocatedSize <= 4_096 || logicalSize > max(allocatedSize, 1) * 16
         } catch {
-            return false
+            return true
         }
     }
 
@@ -193,7 +201,8 @@ final class ArchiveByteReadPolicyContext: @unchecked Sendable {
 
         let verdict = current.isOnlineOnly(url)
         lock.lock()
-        onlineOnlyVerdicts[key] = verdict
+        // A cached local verdict can become unsafe after external File Provider eviction.
+        if verdict { onlineOnlyVerdicts[key] = true }
         lock.unlock()
         return verdict
     }
@@ -226,7 +235,7 @@ final class ArchiveByteReadPolicyContext: @unchecked Sendable {
             guard !hasCachedVerdict else { continue }
             let verdict = current.isOnlineOnly(url)
             lock.lock()
-            onlineOnlyVerdicts[key] = verdict
+            if verdict { onlineOnlyVerdicts[key] = true }
             lock.unlock()
         }
     }
@@ -239,6 +248,10 @@ final class ArchiveByteReadPolicyContext: @unchecked Sendable {
     }
 }
 
+private struct ArchiveIndexGeneration: Codable {
+    var shards: [String: String]
+}
+
 struct ArchiveIndexStore {
     let fileManager: FileManager
     let encoder: JSONEncoder
@@ -246,17 +259,20 @@ struct ArchiveIndexStore {
     let backfillSafety: ArchiveThumbnailBackfillSafety
     let availableCapacityProvider: (URL) -> Int64?
     let evictor: (URL) async throws -> Void
+    let thumbnailGenerator: ((URL, URL) async throws -> URL)?
 
     init(
         fileManager: FileManager = .default,
         backfillSafety: ArchiveThumbnailBackfillSafety = ArchiveThumbnailBackfillSafety(),
         availableCapacityProvider: @escaping (URL) -> Int64? = ArchiveIndexStore.availableCapacity,
-        evictor: @escaping (URL) async throws -> Void = ArchiveFileProviderEvictor.evict
+        evictor: @escaping (URL) async throws -> Void = ArchiveFileProviderEvictor.evict,
+        thumbnailGenerator: ((URL, URL) async throws -> URL)? = nil
     ) {
         self.fileManager = fileManager
         self.backfillSafety = backfillSafety
         self.availableCapacityProvider = availableCapacityProvider
         self.evictor = evictor
+        self.thumbnailGenerator = thumbnailGenerator
         encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         decoder = JSONDecoder()
@@ -264,6 +280,30 @@ struct ArchiveIndexStore {
 
     static func indexRoot(for archiveRoot: URL) -> URL {
         archiveRoot.appendingPathComponent("_index", isDirectory: true)
+    }
+
+    static func shardRoot(for archiveRoot: URL) throws -> URL {
+        let root = indexRoot(for: archiveRoot)
+        let pointer = root.appendingPathComponent("index-current.json")
+        guard FileManager.default.fileExists(atPath: pointer.path) else { return root }
+        let name = try JSONDecoder().decode(String.self, from: Data(contentsOf: pointer))
+        guard UUID(uuidString: name) != nil else {
+            throw ArchiveFileVerification.failure("The Archive Index generation record is invalid. Rebuild the index from manifests.")
+        }
+        let generation = root.appendingPathComponent("generations/\(name)", isDirectory: true)
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: generation.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            throw ArchiveFileVerification.failure("The current Archive Index generation is unavailable.")
+        }
+        let descriptor = try JSONDecoder().decode(ArchiveIndexGeneration.self,
+            from: Data(contentsOf: generation.appendingPathComponent("generation.json")))
+        for (file, digest) in descriptor.shards {
+            guard file.range(of: #"^index-[^/]+\.jsonl$"#, options: .regularExpression) != nil,
+                  (try? ArchiveFileVerification.sha256(at: generation.appendingPathComponent(file))) == digest else {
+                throw ArchiveFileVerification.failure("The Archive Index has not completely synchronised. Wait for OneDrive or rebuild it from local manifests.")
+            }
+        }
+        return generation
     }
 
     static func thumbnailURL(for archiveFileURL: URL, archiveRoot: URL) -> URL {
@@ -291,10 +331,8 @@ struct ArchiveIndexStore {
 
     func generateThumbnail(for archiveFileURL: URL, archiveRoot: URL, maxPixelSize: CGFloat = 512) async throws -> URL {
         let destination = Self.thumbnailURL(for: archiveFileURL, archiveRoot: archiveRoot)
-        if fileManager.fileExists(atPath: destination.path) {
-            return destination
-        }
-
+        if isValidThumbnail(destination) { return destination }
+        if let thumbnailGenerator { return try await thumbnailGenerator(archiveFileURL, archiveRoot) }
         try AppDirectories.ensureExists(destination.deletingLastPathComponent(), fileManager: fileManager)
         let request = QLThumbnailGenerator.Request(
             fileAt: archiveFileURL,
@@ -308,7 +346,7 @@ struct ArchiveIndexStore {
                 NSLocalizedDescriptionKey: "Could not encode archive thumbnail for \(archiveFileURL.lastPathComponent)."
             ])
         }
-        try data.write(to: destination)
+        try data.write(to: destination, options: .atomic)
         return destination
     }
 
@@ -318,9 +356,7 @@ struct ArchiveIndexStore {
         archiveRoot: URL
     ) throws -> URL {
         let destination = Self.thumbnailURL(for: archiveFileURL, archiveRoot: archiveRoot)
-        if fileManager.fileExists(atPath: destination.path) {
-            return destination
-        }
+        if isValidThumbnail(destination) { return destination }
 
         guard let image = NSImage(contentsOf: cachedThumbnailURL),
               let data = jpegData(from: image, compressionQuality: 0.82) else {
@@ -329,7 +365,7 @@ struct ArchiveIndexStore {
             ])
         }
         try AppDirectories.ensureExists(destination.deletingLastPathComponent(), fileManager: fileManager)
-        try data.write(to: destination)
+        try data.write(to: destination, options: .atomic)
         return destination
     }
 
@@ -358,9 +394,10 @@ struct ArchiveIndexStore {
                 result.cancelled = true
                 break
             }
+            var hydrationAttempted = false
             do {
                 let thumbnailURL = Self.thumbnailURL(for: url, archiveRoot: archiveRoot)
-                if fileManager.fileExists(atPath: thumbnailURL.path) {
+                if isValidThumbnail(thumbnailURL) {
                     result.existingThumbnails += 1
                 } else if let cachedThumbnailURL = cachedThumbnailURLsByPhotoPath[url.standardizedFileURL.path],
                           fileManager.fileExists(atPath: cachedThumbnailURL.path) {
@@ -377,33 +414,44 @@ struct ArchiveIndexStore {
                     }
                     let wasOnlineOnly = bytePolicy.isOnlineOnly(url)
                     if wasOnlineOnly {
+                        hydrationAttempted = true
                         let handle = try FileHandle(forReadingFrom: url)
+                        defer { try? handle.close() }
                         _ = try handle.read(upToCount: 1)
-                        try handle.close()
                     }
+                    try Task.checkCancellation()
                     _ = try await generateThumbnail(for: url, archiveRoot: archiveRoot)
                     result.generatedThumbnails += 1
-                    if backfillSafety.shouldEvict(wasOnlineOnly: wasOnlineOnly, generatedThumbnail: true) {
-                        do {
-                            try await evictor(url)
-                            result.evictedFiles += 1
-                        } catch {
-                            result.failures.append("\(url.path): thumbnail generated, but the downloaded original could not be evicted: \(error.localizedDescription)")
-                        }
-                    }
                     if throttleNanoseconds > 0 {
                         try? await Task.sleep(nanoseconds: throttleNanoseconds)
                     }
                 }
             } catch {
-                result.failures.append("\(url.path): \(error.localizedDescription)")
+                if error is CancellationError { result.cancelled = true }
+                else { result.failures.append("\(url.path): \(error.localizedDescription)") }
             }
+            // Eviction also runs when decoding fails or cancellation interrupts generation.
+            if hydrationAttempted {
+                do {
+                    try await evictor(url)
+                    result.evictedFiles += 1
+                } catch {
+                    result.failures.append("\(url.path): the downloaded original could not be evicted: \(error.localizedDescription)")
+                }
+            }
+            if result.cancelled || Task.isCancelled { result.cancelled = true; break }
             if offset % 10 == 0 || offset == photos.indices.last {
                 await progress?(offset + 1, photos.count)
             }
         }
 
         return result
+    }
+
+    private func isValidThumbnail(_ url: URL) -> Bool {
+        guard fileManager.fileExists(atPath: url.path),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return false }
+        return CGImageSourceCreateImageAtIndex(source, 0, nil) != nil
     }
 
     private static func availableCapacity(at archiveRoot: URL) -> Int64? {
@@ -413,6 +461,8 @@ struct ArchiveIndexStore {
 
     @discardableResult
     func rebuildIndex(archiveRoot: URL) throws -> ArchiveIndexRebuildResult {
+        let mutationLock = try ArchiveMutationLock(archiveRoot: archiveRoot)
+        defer { withExtendedLifetime(mutationLock) {} }
         let entries = try entriesFromArchive(archiveRoot: archiveRoot)
         try replaceIndex(with: entries, archiveRoot: archiveRoot)
         let years = Array(Set(entries.map(\.year))).sorted()
@@ -427,31 +477,24 @@ struct ArchiveIndexStore {
         replacingTripPaths: Set<String> = []
     ) throws {
         guard !entries.isEmpty || !removingArchiveRelativePaths.isEmpty || !replacingWalkPaths.isEmpty || !replacingTripPaths.isEmpty else { return }
+        let mutationLock = try ArchiveMutationLock(archiveRoot: archiveRoot)
+        defer { withExtendedLifetime(mutationLock) {} }
         try AppDirectories.ensureExists(Self.indexRoot(for: archiveRoot), fileManager: fileManager)
-        let years = Set(entries.map(\.year))
-            .union(yearsPossiblyContaining(paths: removingArchiveRelativePaths))
-            .union(yearsPossiblyContaining(paths: replacingWalkPaths))
-            .union(yearsPossiblyContaining(paths: replacingTripPaths))
-
-        for year in years {
-            let shardURL = indexShardURL(for: year, archiveRoot: archiveRoot)
-            var existing = try readEntries(from: shardURL)
-            let replacementKeys = Set(entries.filter { $0.year == year }.map(entryKey))
-            existing.removeAll { entry in
-                replacementKeys.contains(entryKey(entry))
-                    || removingArchiveRelativePaths.contains(entry.archiveRelativePath)
-                    || entry.walkPath.map(replacingWalkPaths.contains) == true
-                    || (entry.kind == .trip && entry.tripPath.map(replacingTripPaths.contains) == true)
-                    || replacingWalkPaths.contains(entry.archiveRelativePath)
-                    || (entry.kind == .trip && replacingTripPaths.contains(entry.archiveRelativePath))
-            }
-            existing.append(contentsOf: entries.filter { $0.year == year })
-            existing.sort { lhs, rhs in
-                if lhs.kind.rawValue != rhs.kind.rawValue { return lhs.kind.rawValue < rhs.kind.rawValue }
-                return lhs.archiveRelativePath < rhs.archiveRelativePath
-            }
-            try writeEntries(existing, to: shardURL)
+        let activeRoot = try Self.shardRoot(for: archiveRoot)
+        let shards = try fileManager.contentsOfDirectory(at: activeRoot, includingPropertiesForKeys: nil)
+            .filter { $0.lastPathComponent.range(of: #"^index-.+\.jsonl$"#, options: .regularExpression) != nil }
+        var existing = try shards.flatMap { try readEntries(from: $0) }
+        let replacementKeys = Set(entries.map(entryKey))
+        existing.removeAll { entry in
+            replacementKeys.contains(entryKey(entry))
+                || removingArchiveRelativePaths.contains(entry.archiveRelativePath)
+                || entry.walkPath.map(replacingWalkPaths.contains) == true
+                || (entry.kind == .trip && entry.tripPath.map(replacingTripPaths.contains) == true)
+                || replacingWalkPaths.contains(entry.archiveRelativePath)
+                || (entry.kind == .trip && replacingTripPaths.contains(entry.archiveRelativePath))
         }
+        existing.append(contentsOf: entries)
+        try replaceIndex(with: existing, archiveRoot: archiveRoot)
     }
 
     func entriesForImport(
@@ -514,10 +557,10 @@ struct ArchiveIndexStore {
         return entries
     }
 
-    func entriesForWalkFolder(_ walkFolder: URL, archiveRoot: URL) -> [ArchiveIndexEntry] {
-        guard let walkManifest = loadWalkManifest(folder: walkFolder, archiveRoot: archiveRoot) else { return [] }
+    func entriesForWalkFolder(_ walkFolder: URL, archiveRoot: URL) throws -> [ArchiveIndexEntry] {
+        guard let walkManifest = try loadWalkManifest(folder: walkFolder, archiveRoot: archiveRoot) else { return [] }
         var entries = [entry(from: walkManifest, archiveRoot: archiveRoot)]
-        for file in loadFileManifests(folder: walkFolder) {
+        for file in try loadFileManifests(folder: walkFolder, archiveRoot: archiveRoot) {
             entries.append(photoEntry(from: file, walk: walkManifest, archiveRoot: archiveRoot))
         }
         return entries
@@ -529,16 +572,41 @@ struct ArchiveIndexStore {
     }
 
     private func replaceIndex(with entries: [ArchiveIndexEntry], archiveRoot: URL) throws {
-        let indexRoot = Self.indexRoot(for: archiveRoot)
-        try AppDirectories.ensureExists(indexRoot, fileManager: fileManager)
-        for oldShard in (try? fileManager.contentsOfDirectory(at: indexRoot, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
-            where oldShard.lastPathComponent.range(of: #"^index-.+\.jsonl$"#, options: .regularExpression) != nil {
-            try? fileManager.removeItem(at: oldShard)
+        let root = Self.indexRoot(for: archiveRoot)
+        let previous = try? Self.shardRoot(for: archiveRoot)
+        let name = UUID().uuidString
+        let generation = root.appendingPathComponent("generations/\(name)", isDirectory: true)
+        try AppDirectories.ensureExists(generation, fileManager: fileManager)
+        var published = false
+        defer {
+            if !published { try? fileManager.removeItem(at: generation) }
         }
-
-        let byYear = Dictionary(grouping: entries) { $0.year }
-        for (year, entries) in byYear {
-            try writeEntries(entries.sorted { $0.archiveRelativePath < $1.archiveRelativePath }, to: indexShardURL(for: year, archiveRoot: archiveRoot))
+        var shardDigests: [String: String] = [:]
+        let byYear = Dictionary(grouping: entries, by: \.year)
+        for year in byYear.keys.sorted() {
+            try Task.checkCancellation()
+            let values = byYear[year]!.sorted {
+                $0.archiveRelativePath == $1.archiveRelativePath
+                    ? $0.kind.rawValue < $1.kind.rawValue : $0.archiveRelativePath < $1.archiveRelativePath
+            }
+            let shard = generation.appendingPathComponent("index-\(year).jsonl")
+            try writeEntries(values, to: shard)
+            shardDigests[shard.lastPathComponent] = try ArchiveFileVerification.sha256(at: shard)
+            guard try readEntries(from: shard) == values else {
+                throw ArchiveFileVerification.failure("The replacement Archive Index could not be verified.")
+            }
+        }
+        try Task.checkCancellation()
+        try JSONEncoder().encode(ArchiveIndexGeneration(shards: shardDigests))
+            .write(to: generation.appendingPathComponent("generation.json"), options: .atomic)
+        let pointer = root.appendingPathComponent("index-current.json")
+        try JSONEncoder().encode(name).write(to: pointer, options: .atomic)
+        published = true
+        // Keep the preceding complete generation; prune only app-owned older generations.
+        let generations = root.appendingPathComponent("generations", isDirectory: true)
+        for url in (try? fileManager.contentsOfDirectory(at: generations, includingPropertiesForKeys: nil)) ?? []
+            where UUID(uuidString: url.lastPathComponent) != nil && url.standardizedFileURL.path != generation.standardizedFileURL.path && url.standardizedFileURL.path != previous?.standardizedFileURL.path {
+            try? fileManager.removeItem(at: url)
         }
     }
 
@@ -547,10 +615,10 @@ struct ArchiveIndexStore {
         var walks: [WalkManifest] = []
         var explicitTripPaths = Set<String>()
 
-        for manifestURL in structuralManifestURLs(archiveRoot: archiveRoot) {
+        for manifestURL in try structuralManifestURLs(archiveRoot: archiveRoot) {
             try Task.checkCancellation()
             let folder = manifestURL.deletingLastPathComponent()
-            guard let text = try? String(contentsOf: manifestURL, encoding: .utf8) else { continue }
+            let text = try String(contentsOf: manifestURL, encoding: .utf8)
 
             if text.contains("Trip ID:") {
                 let manifest = TripManifestStore(fileManager: fileManager)
@@ -560,10 +628,10 @@ struct ArchiveIndexStore {
                 entries.append(tripEntry)
             } else if text.contains("Session ID:"),
                       text.contains("Archive folder:"),
-                      let walkManifest = loadWalkManifest(folder: folder, archiveRoot: archiveRoot) {
+                      let walkManifest = try loadWalkManifest(folder: folder, archiveRoot: archiveRoot) {
                 walks.append(walkManifest)
                 entries.append(entry(from: walkManifest, archiveRoot: archiveRoot))
-                for file in loadFileManifests(folder: folder) {
+                for file in try loadFileManifests(folder: folder, archiveRoot: archiveRoot) {
                     entries.append(photoEntry(from: file, walk: walkManifest, archiveRoot: archiveRoot))
                 }
             }
@@ -599,14 +667,17 @@ struct ArchiveIndexStore {
         return entries
     }
 
-    private func structuralManifestURLs(archiveRoot: URL) -> [URL] {
+    private func structuralManifestURLs(archiveRoot: URL) throws -> [URL] {
+        _ = try fileManager.contentsOfDirectory(at: archiveRoot, includingPropertiesForKeys: nil)
+        var enumerationError: Error?
         guard let enumerator = fileManager.enumerator(
             at: archiveRoot,
             includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles]
-        ) else { return [] }
+            options: [.skipsHiddenFiles],
+            errorHandler: { _, error in enumerationError = error; return false }
+        ) else { throw ArchiveFileVerification.failure("Could not enumerate Archive manifests.") }
 
-        return enumerator.compactMap { entry -> URL? in
+        let urls = enumerator.compactMap { entry -> URL? in
             guard let url = entry as? URL else { return nil }
             let relativePath = Self.archiveRelativePath(for: url, archiveRoot: archiveRoot) ?? ""
             if relativePath == "_index" || relativePath.hasPrefix("_index/") {
@@ -623,6 +694,8 @@ struct ArchiveIndexStore {
             return url
         }
         .sorted { $0.path < $1.path }
+        if let enumerationError { throw enumerationError }
+        return urls
     }
 
     private func entry(from manifest: WalkManifest, archiveRoot: URL) -> ArchiveIndexEntry {
@@ -643,7 +716,9 @@ struct ArchiveIndexStore {
             notes: manifest.notes,
             thumbnailPath: cover.flatMap { existingThumbnailRelativePath(for: $0, archiveRoot: archiveRoot) },
             walkPath: relativePath,
-            tripPath: manifest.tripFolderRelativePath
+            tripPath: manifest.tripFolderRelativePath,
+            latitude: manifest.latitude,
+            longitude: manifest.longitude
         )
     }
 
@@ -690,21 +765,26 @@ struct ArchiveIndexStore {
         )
     }
 
-    private func loadWalkManifest(folder: URL, archiveRoot: URL) -> WalkManifest? {
+    func loadWalkManifest(folder: URL, archiveRoot: URL) throws -> WalkManifest? {
         let url = folder.appendingPathComponent("\(folder.lastPathComponent).md")
-        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        guard fileManager.fileExists(atPath: url.path) else { return nil }
+        let text = try String(contentsOf: url, encoding: .utf8)
+        guard let storedSessionID = firstBacktickedValue(after: "Session ID:", in: text).flatMap(UUID.init(uuidString:)) else {
+            throw ArchiveFileVerification.failure("Invalid Walk manifest: \(url.lastPathComponent)")
+        }
         let title = firstHeading(in: text) ?? folder.lastPathComponent
-        let sessionID = firstBacktickedValue(after: "Session ID:", in: text).flatMap(UUID.init(uuidString:)) ?? UUID()
+        let sessionID = storedSessionID
         let walkID = firstBacktickedValue(after: "Walk ID:", in: text).flatMap(UUID.init(uuidString:))
         let sourceFolder = firstBacktickedValue(after: "Source folder:", in: text).map { URL(fileURLWithPath: $0, isDirectory: true) } ?? folder
-        let archiveFolder = firstBacktickedValue(after: "Archive folder:", in: text).map { URL(fileURLWithPath: $0, isDirectory: true) } ?? folder
-        let archiveRelativePath = firstBacktickedValue(after: "OneDrive Pictures relative folder:", in: text)
-            ?? Self.archiveRelativePath(for: folder, archiveRoot: archiveRoot)
-        let tripFolder = firstBacktickedValue(after: "Trip folder:", in: text)
+        let archiveFolder = folder
+        let archiveRelativePath = Self.archiveRelativePath(for: folder, archiveRoot: archiveRoot)
+            ?? firstBacktickedValue(after: "OneDrive Pictures relative folder:", in: text)
+        let tripFolder = Self.archiveRelativePath(for: folder.deletingLastPathComponent(), archiveRoot: archiveRoot)
+            ?? firstBacktickedValue(after: "Trip folder:", in: text)
         let walkDate = firstValue(after: "Walk date:", in: text).flatMap { DateFormatting.iso8601.date(from: $0) }
         let location = firstValue(after: "Location:", in: text) ?? ""
         let notes = notesSection(in: text)
-        let files = loadFileManifests(folder: folder)
+        let files = try loadFileManifests(folder: folder, archiveRoot: archiveRoot)
         return WalkManifest(
             sessionID: sessionID,
             walkID: walkID,
@@ -715,6 +795,8 @@ struct ArchiveIndexStore {
             archiveFolderRelativePath: archiveRelativePath,
             title: title,
             location: location,
+            latitude: firstValue(after: "Latitude:", in: text).flatMap(Double.init),
+            longitude: firstValue(after: "Longitude:", in: text).flatMap(Double.init),
             notes: notes,
             summary: .init(
                 totalSourceFiles: files.count,
@@ -732,15 +814,30 @@ struct ArchiveIndexStore {
         )
     }
 
-    private func loadFileManifests(folder: URL) -> [FileManifest] {
-        let urls = ((try? fileManager.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles])) ?? [])
+    func loadFileManifests(folder: URL, archiveRoot: URL? = nil) throws -> [FileManifest] {
+        let urls = try fileManager.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles])
             .filter { $0.pathExtension.lowercased() == "md" }
             .filter { $0.lastPathComponent != "\(folder.lastPathComponent).md" }
-
-        return urls.compactMap { url in
-            guard let text = try? String(contentsOf: url, encoding: .utf8),
-                  text.contains("media_item_id:") else { return nil }
-            return parseFileManifest(text: text)
+        return try urls.compactMap { url in
+            let text = try String(contentsOf: url, encoding: .utf8)
+            guard text.contains("media_item_id:") else { return nil }
+            guard var manifest = parseFileManifest(text: text) else {
+                throw ArchiveFileVerification.failure("Invalid photo manifest: \(url.lastPathComponent)")
+            }
+            let localFile = folder.appendingPathComponent(URL(fileURLWithPath: manifest.archivePath).lastPathComponent)
+            manifest.archivePath = localFile.path
+            if let archiveRoot {
+                manifest.archiveRelativePath = Self.archiveRelativePath(for: localFile, archiveRoot: archiveRoot)
+            }
+            manifest.companionArchivePaths = manifest.companionArchivePaths.map {
+                folder.appendingPathComponent(URL(fileURLWithPath: $0).lastPathComponent).path
+            }
+            if let archiveRoot {
+                manifest.companionArchiveRelativePaths = manifest.companionArchivePaths.compactMap {
+                    Self.archiveRelativePath(for: URL(fileURLWithPath: $0), archiveRoot: archiveRoot)
+                }
+            }
+            return manifest
         }
     }
 
@@ -748,10 +845,11 @@ struct ArchiveIndexStore {
         guard let id = yamlValue("media_item_id", in: text).flatMap(UUID.init(uuidString:)),
               let archivePath = yamlValue("archive_path", in: text),
               let sourceFileName = yamlValue("source_file_name", in: text) else { return nil }
-        let notes = text.components(separatedBy: "---").dropFirst(2).joined(separator: "---").trimmingCharacters(in: .whitespacesAndNewlines)
+        let notes = ArchiveManifestText.body(in: text)
         return FileManifest(
             mediaItemID: id,
             archivePath: archivePath,
+            sha256: yamlValue("sha256", in: text),
             archiveRelativePath: yamlValue("archive_relative_path", in: text),
             sourceFileName: sourceFileName,
             companionArchivePaths: yamlList("companion_archive_paths", in: text),
@@ -853,7 +951,7 @@ struct ArchiveIndexStore {
     }
 
     private func firstBacktickedValue(after label: String, in text: String) -> String? {
-        guard let line = text.split(separator: "\n").map(String.init).first(where: { $0.contains(label) }),
+        guard let line = text.components(separatedBy: "## Notes")[0].split(separator: "\n").map(String.init).first(where: { $0.hasPrefix("- " + label) }),
               let first = line.firstIndex(of: "`"),
               let last = line.lastIndex(of: "`"),
               first < last else { return nil }
@@ -861,8 +959,8 @@ struct ArchiveIndexStore {
     }
 
     private func firstValue(after label: String, in text: String) -> String? {
-        text.split(separator: "\n").map(String.init)
-            .first { $0.contains(label) }?
+        text.components(separatedBy: "## Notes")[0].split(separator: "\n").map(String.init)
+            .first { $0.hasPrefix("- " + label) }?
             .components(separatedBy: label)
             .last?
             .trimmingCharacters(in: .whitespaces)
@@ -871,30 +969,25 @@ struct ArchiveIndexStore {
     private func notesSection(in text: String) -> String {
         guard let range = text.range(of: "## Notes") else { return "" }
         let after = text[range.upperBound...]
-        if let next = after.range(of: "\n## ") {
+        if let next = ArchiveManifestText.sourceReport(in: text), next.lowerBound > range.upperBound {
             return String(after[..<next.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
         }
         return String(after).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func yamlValue(_ key: String, in text: String) -> String? {
-        guard let line = text.split(separator: "\n").map(String.init).first(where: { $0.hasPrefix("\(key):") }) else { return nil }
-        var value = String(line.dropFirst(key.count + 1)).trimmingCharacters(in: .whitespaces)
-        if value.hasPrefix("\""), value.hasSuffix("\""), value.count >= 2 {
-            value = String(value.dropFirst().dropLast()).replacingOccurrences(of: "\\\"", with: "\"")
-        }
-        return value
+        ArchiveManifestText.scalar(key, in: text)
     }
 
     private func yamlList(_ key: String, in text: String) -> [String] {
-        let lines = text.split(separator: "\n").map(String.init)
+        let lines = ArchiveManifestText.frontmatter(in: text).split(separator: "\n").map(String.init)
         guard let start = lines.firstIndex(where: { $0 == "\(key):" }) else { return [] }
         var values: [String] = []
         for line in lines[(start + 1)...] {
             guard line.hasPrefix("  - ") else { break }
             var value = String(line.dropFirst(4)).trimmingCharacters(in: .whitespaces)
             if value.hasPrefix("\""), value.hasSuffix("\""), value.count >= 2 {
-                value = String(value.dropFirst().dropLast()).replacingOccurrences(of: "\\\"", with: "\"")
+                value = ArchiveManifestText.unquote(value)
             }
             values.append(value)
         }
@@ -979,16 +1072,11 @@ actor ArchiveIndexMutationQueue {
             }
         }
 
-        let entries = store.entriesForImport(result: result, archiveRoot: archiveRoot, generatedThumbnailPaths: thumbnailPaths)
-        let walkPaths = Set(result.walkManifests.compactMap(\.archiveFolderRelativePath))
-        let tripPaths = Set(result.tripManifests.compactMap(\.folderRelativePath))
-            .union(Set(result.walkManifests.compactMap(\.tripFolderRelativePath)))
-        try store.updateIndex(
-            with: entries,
-            archiveRoot: archiveRoot,
-            replacingWalkPaths: walkPaths,
-            replacingTripPaths: tripPaths
-        )
+        // Thumbnail work can suspend this actor. Always re-read canonical metadata
+        // afterwards, so a more recent edit or append cannot be overwritten by old results.
+        let walkFolders = result.walkManifests.map(\.archiveFolder)
+        let tripFolders = Array(Set(walkFolders.map { $0.deletingLastPathComponent() }))
+        try replaceWalkFolders(walkFolders, archiveRoot: archiveRoot, policy: policy, tripFolders: tripFolders)
     }
 
     func replaceWalkFolders(
@@ -1001,11 +1089,11 @@ actor ArchiveIndexMutationQueue {
         guard policy.canWriteIndex else { return }
         var entries: [ArchiveIndexEntry] = []
         for walkFolder in walkFolders {
-            entries.append(contentsOf: store.entriesForWalkFolder(walkFolder, archiveRoot: archiveRoot))
+            entries.append(contentsOf: try store.entriesForWalkFolder(walkFolder, archiveRoot: archiveRoot))
         }
         entries.append(contentsOf: tripFolders.map { store.entryForTripFolder($0, archiveRoot: archiveRoot) })
         let walkPaths = removingWalkPaths.union(Set(entries.compactMap(\.walkPath)))
-        let tripPaths = Set(entries.compactMap(\.tripPath))
+        let tripPaths = Set(entries.filter { $0.kind == .trip }.compactMap(\.tripPath))
         try store.updateIndex(
             with: entries,
             archiveRoot: archiveRoot,

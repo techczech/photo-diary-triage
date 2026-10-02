@@ -5,9 +5,6 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SWIFT_BUILD_ARGS=()
 if [[ -n "${PDT_BUILD_PATH:-}" ]]; then
     SWIFT_BUILD_ARGS+=(--build-path "$PDT_BUILD_PATH")
-    BUILD_DIR="$PDT_BUILD_PATH/arm64-apple-macosx/debug"
-else
-    BUILD_DIR="$ROOT_DIR/.build/arm64-apple-macosx/debug"
 fi
 if [[ "${PDT_DISABLE_SWIFTPM_SANDBOX:-0}" == "1" ]]; then
     SWIFT_BUILD_ARGS+=(--disable-sandbox)
@@ -16,13 +13,15 @@ APP_DIR="$ROOT_DIR/dist/Walkfolio.app"
 MACOS_DIR="$APP_DIR/Contents/MacOS"
 RESOURCES_DIR="$APP_DIR/Contents/Resources"
 PLIST_PATH="$APP_DIR/Contents/Info.plist"
-EXECUTABLE="$BUILD_DIR/PhotoDiaryTriage"
 RELEASE_ENV="$ROOT_DIR/APP_RELEASE.env"
 
 source "$RELEASE_ENV"
 
 cd "$ROOT_DIR"
 swift build "${SWIFT_BUILD_ARGS[@]}"
+BUILD_DIR="$(swift build "${SWIFT_BUILD_ARGS[@]}" --show-bin-path)"
+EXECUTABLE="$BUILD_DIR/PhotoDiaryTriage"
+[[ -x "$EXECUTABLE" ]] || { print -u2 "Missing built Walkfolio executable: $EXECUTABLE"; exit 1; }
 
 pkill -f "$APP_DIR/Contents/MacOS/PhotoDiaryTriage" 2>/dev/null || true
 rm -rf "$APP_DIR"
