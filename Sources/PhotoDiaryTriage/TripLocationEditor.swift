@@ -1,5 +1,10 @@
 import Foundation
 
+struct SavedTripLocationLabel: Equatable, Sendable {
+    let manifest: TripManifest
+    let originalTripID: UUID?
+}
+
 struct TripLocationTarget: Hashable, Sendable {
     let relativePath: String
     let tripID: UUID?
@@ -147,6 +152,19 @@ enum TripLocationProjection {
             catalogue.entries[index].location = trip.locationLabelOverride ?? derivedLabel(from: catalogue.walksByTripPath[trip.archiveRelativePath] ?? [])
         }
         return catalogue
+    }
+
+    static func applyingSavedLabels(_ saved: [String: SavedTripLocationLabel], to initial: ArchiveCatalogue) -> ArchiveCatalogue {
+        guard !saved.isEmpty else { return initial }
+        var catalogue = initial
+        for index in catalogue.entries.indices where catalogue.entries[index].kind == .trip {
+            let entry = catalogue.entries[index]
+            guard let label = saved[entry.archiveRelativePath],
+                  entry.tripID == label.manifest.tripID || entry.tripID == label.originalTripID else { continue }
+            catalogue.entries[index].tripID = label.manifest.tripID
+            catalogue.entries[index].locationLabelOverride = label.manifest.locationLabelOverride
+        }
+        return refreshingDerivedLabels(in: catalogue)
     }
 
     static func applying(_ manifest: TripManifest, to initial: ArchiveCatalogue) -> ArchiveCatalogue {

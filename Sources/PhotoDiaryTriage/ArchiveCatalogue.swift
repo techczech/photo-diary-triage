@@ -163,10 +163,9 @@ enum ArchiveBrowseProjection {
         }
 
         if !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            entries = entries.filter { entry in
-                matchingPaths.contains(entry.archiveRelativePath)
-                    || matchingPaths.contains { $0.hasPrefix(entry.archiveRelativePath + "/") }
-            }
+            let byPath = Dictionary(catalogue.entries.map { ($0.archiveRelativePath, $0) }, uniquingKeysWith: { first, _ in first })
+            let matchedIDs = Set(matchingPaths.compactMap { ArchiveEntryContainment.entryID(for: $0, entriesByPath: byPath) })
+            entries = entries.filter { matchedIDs.contains($0.id) }
         }
 
         switch sort {
@@ -202,8 +201,9 @@ struct ArchiveCatalogueBuilder {
         self.decoder = JSONDecoder()
     }
 
-    func build(archiveRoot: URL, supportedExtensions: Set<String>, machineRole: ArchiveMachineRole = .mainArchive) throws -> ArchiveCatalogue {
-        let indexedEntries = try readIndexEntries(archiveRoot: archiveRoot)
+    func build(archiveRoot: URL, supportedExtensions: Set<String>, machineRole: ArchiveMachineRole = .mainArchive,
+               indexEntries: [ArchiveIndexEntry]? = nil) throws -> ArchiveCatalogue {
+        let indexedEntries = try indexEntries ?? readIndexEntries(archiveRoot: archiveRoot)
         let walkRows = indexedEntries.filter { $0.kind == .walk }
         let photoRows = indexedEntries.filter { $0.kind == .photo }
         let indexedWalkTripPaths = Set(walkRows.compactMap(\.tripPath))
@@ -474,6 +474,7 @@ struct ArchiveCatalogueBuilder {
 
 struct ArchiveSearchCache {
     let databaseURL: URL
+    var configureConnection: ((OpaquePointer) -> Void)? = nil
 
     func rebuild(indexEntries: [ArchiveIndexEntry], browseEntries: [ArchiveBrowseEntry]) throws {
         try AppDirectories.ensureExists(databaseURL.deletingLastPathComponent())
@@ -483,6 +484,7 @@ struct ArchiveSearchCache {
             throw sqliteError(db, message: "Could not open the Archive search cache")
         }
         defer { sqlite3_close(db) }
+        if let db { configureConnection?(db) }
 
         let schema = """
         DROP TABLE IF EXISTS archive_search;
@@ -499,15 +501,19 @@ struct ArchiveSearchCache {
             tokenize='unicode61 remove_diacritics 2'
         );
         """
-        guard sqlite3_exec(db, schema, nil, nil, nil) == SQLITE_OK else {
-            throw sqliteError(db, message: "Could not create the Archive search cache")
-        }
-
         guard sqlite3_exec(db, "BEGIN IMMEDIATE;", nil, nil, nil) == SQLITE_OK else {
             throw sqliteError(db, message: "Could not start the Archive search update")
         }
         do {
+            guard sqlite3_exec(db, schema, nil, nil, nil) == SQLITE_OK else {
+                throw sqliteError(db, message: "Could not create the Archive search cache")
+            }
+            let tripsByPath = Dictionary(browseEntries.filter { $0.kind == .trip }.map { ($0.archiveRelativePath, $0) },
+                uniquingKeysWith: { first, _ in first })
             for entry in indexEntries {
+                let location: String
+                if entry.kind == .trip, let trip = tripsByPath[entry.archiveRelativePath] { location = trip.location ?? "" }
+                else { location = entry.location ?? "" }
                 try insert(
                     db: db,
                     kind: entry.kind.rawValue,
@@ -516,7 +522,7 @@ struct ArchiveSearchCache {
                     filename: entry.kind == .photo ? entry.title : "",
                     description: entry.aiDescription ?? "",
                     notes: entry.notes ?? "",
-                    location: entry.location ?? "",
+                    location: location,
                     camera: entry.exifSummary ?? "",
                     year: entry.year
                 )
@@ -554,9 +560,11 @@ struct ArchiveSearchCache {
             throw sqliteError(db, message: "Could not open the Archive search cache")
         }
         defer { sqlite3_close(db) }
+        sqlite3_progress_handler(db, 1000, { _ in Task.isCancelled ? 1 : 0 }, nil)
+        if let db { configureConnection?(db) }
 
         var statement: OpaquePointer?
-        let sql = "SELECT archive_path FROM archive_search WHERE archive_search MATCH ? ORDER BY rank LIMIT 5000;"
+        let sql = "SELECT archive_path FROM archive_search WHERE archive_search MATCH ? ORDER BY rank;"
         guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
             throw sqliteError(db, message: "Could not prepare Archive search")
         }
@@ -564,11 +572,12 @@ struct ArchiveSearchCache {
         try bind(expression, statement: statement, index: 1, db: db)
 
         var paths = Set<String>()
-        while sqlite3_step(statement) == SQLITE_ROW {
-            if let value = sqlite3_column_text(statement, 0) {
-                paths.insert(String(cString: value))
-            }
+        var step = sqlite3_step(statement)
+        while step == SQLITE_ROW {
+            if let value = sqlite3_column_text(statement, 0) { paths.insert(String(cString: value)) }
+            step = sqlite3_step(statement)
         }
+        guard step == SQLITE_DONE else { throw sqliteError(db, message: "Could not finish Archive search") }
         return paths
     }
 

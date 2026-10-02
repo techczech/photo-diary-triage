@@ -1,7 +1,7 @@
 import Foundation
 import OSLog
 
-struct ArchiveLoadResult {
+struct ArchiveLoadResult: Sendable {
     let nodeID: String
     let items: [MediaItem]
     let statusMessage: String
