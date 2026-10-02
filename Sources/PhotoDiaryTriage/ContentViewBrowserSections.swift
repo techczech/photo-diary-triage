@@ -119,11 +119,38 @@ struct BrowserOrReviewPaneView: View {
                 case .photos:
                     VStack(alignment: .leading, spacing: 10) {
                         HeaderPaneView(appState: appState)
-                        if state.snapshot.contextMediaItemCount > 0 {
-                            DayContextPaneView(appState: appState, state: state, navigationState: navigationState)
-                        } else {
+                        if let message = archiveState.snapshot.missingSearchHitMessage {
+                            HStack {
+                                Label(message, systemImage: "exclamationmark.triangle").font(.callout)
+                                Spacer()
+                                Button("Return to search") { appState.navigateToParent() }
+                            }.padding(8)
+                        }
+                        switch archiveState.snapshot.folderLoadState {
+                        case .loading:
                             ProgressView("Loading Archive photos…")
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        case .failed(let message):
+                            ContentUnavailableView {
+                                Label("Archive folder unavailable", systemImage: "exclamationmark.triangle")
+                            } description: { Text(message) } actions: {
+                                Button("Retry") { appState.retryArchiveFolderLoad() }
+                                Button("Back") { appState.navigateToParent() }
+                            }
+                        case .loaded where state.snapshot.contextMediaItemCount > 0:
+                            DayContextPaneView(appState: appState, state: state, navigationState: navigationState)
+                        case .loaded:
+                            ContentUnavailableView {
+                                Label("No photos in this folder", systemImage: "photo")
+                            } description: {
+                                Text("No supported photos are available in this folder's current Archive Index.")
+                            } actions: {
+                                Button("Refresh folder") { appState.retryArchiveFolderLoad() }
+                                Button("Back") { appState.navigateToParent() }
+                            }
+                        case .idle:
+                            ContentUnavailableView("Choose an Archive folder", systemImage: "folder",
+                                description: Text("Return to the Archive and open a Trip, Walk or historical folder."))
                         }
                     }
                 }

@@ -143,6 +143,16 @@ struct ArchiveMainPaneView: View {
                     if snapshot.isLoading && snapshot.entries.isEmpty {
                         ProgressView("Reading the Archive Index and folders…")
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if snapshot.isSearching && snapshot.entries.isEmpty {
+                        ProgressView("Searching the Archive…")
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if let error = snapshot.searchError {
+                        ContentUnavailableView {
+                            Label("Search unavailable", systemImage: "exclamationmark.triangle")
+                        } description: { Text(error) } actions: {
+                            Button("Retry search") { appState.updateArchiveSearch(snapshot.searchQuery) }
+                            Button("Refresh Archive") { appState.reloadArchiveCatalogue() }
+                        }
                     } else if let error = snapshot.errorMessage, snapshot.entries.isEmpty {
                         ContentUnavailableView(
                             "Archive unavailable",
@@ -162,8 +172,12 @@ struct ArchiveMainPaneView: View {
                             }
                         }
                     } else if snapshot.viewMode == .map {
-                        ArchiveMapView(snapshot: snapshot.map, selectedItemID: snapshot.selectedMapItemID, openWalk: appState.openArchiveMapWalk,
+                        ArchiveMapView(snapshot: snapshot.map, selectedItemID: snapshot.selectedMapItemID,
+                            searchPhotos: snapshot.searchResults, openPhoto: appState.openArchiveSearchPhoto, openWalk: appState.openArchiveMapWalk,
                             openFolder: appState.openArchiveMapFolder)
+                    } else if !snapshot.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        ArchiveSearchResultsView(appState: appState, snapshot: snapshot, layout: layout,
+                            focusCards: { hasKeyboardFocus = true })
                     } else if snapshot.viewMode == .timeline {
                         archiveTimeline(snapshot)
                     } else {
@@ -346,7 +360,8 @@ struct ArchiveMainPaneView: View {
         let folders = snapshot.entries.count - trips
         let search = snapshot.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         let prefix = search.isEmpty ? "" : "Search “\(search)” · "
-        return "\(prefix)\(trips) Trip\(trips == 1 ? "" : "s") · \(folders) unorganised folder\(folders == 1 ? "" : "s")"
+        let photoMatches = search.isEmpty ? "" : "\(snapshot.searchResults.count) matching photo(s) · "
+        return "\(prefix)\(photoMatches)\(trips) Trip\(trips == 1 ? "" : "s") · \(folders) unorganised folder\(folders == 1 ? "" : "s")"
     }
 
 }
@@ -453,7 +468,7 @@ struct ArchiveTripPaneView: View {
     }
 }
 
-private struct ArchiveTimelineRow: View {
+struct ArchiveTimelineRow: View {
     let entry: ArchiveBrowseEntry
     let archiveRoot: URL
     let showPreview: Bool
@@ -523,7 +538,7 @@ private struct ArchiveTimelineRow: View {
     }
 }
 
-private struct ArchiveContactTile: View {
+struct ArchiveContactTile: View {
     let entry: ArchiveBrowseEntry
     let archiveRoot: URL
     let showPreview: Bool
@@ -641,7 +656,7 @@ private struct ArchiveEntryKindBadge: View {
     }
 }
 
-private struct ArchiveCoverView: View {
+struct ArchiveCoverView: View {
     let thumbnailPath: String?
     let archiveRoot: URL
     let showPreview: Bool

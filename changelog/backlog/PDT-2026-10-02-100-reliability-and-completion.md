@@ -69,3 +69,11 @@ Astra and the primary agent found outstanding WP3 implementation defects after t
 0.7.13 build 149 is installed while closed. All 401 tests pass; measured navigation,
 Map action ownership, Back/Open and projection reuse are verified. Astra review clear.
 Remaining WP3 implementation and original acceptance keep the whole-scope task active.
+
+## Search continuation
+
+Walkfolio 0.7.14/150 ships visible exact-photo search, recoverable folder feedback, owned
+FTS/index snapshots, context guards, refresh-safe selection/Compare and durable Travel
+label projection within the current context. All 423 tests pass; final Astra source review
+is clear. Asynchronous covers and sidebar focus remain implementation work, followed by
+the original native/real-copy/provider acceptance. Whole-scope implementation remains active.

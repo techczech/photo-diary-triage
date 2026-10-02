@@ -67,12 +67,13 @@ The automated tests use temporary archives and injected failures. They do not es
 
 ## Current acceptance boundary
 
-Walkfolio 0.7.13 build 149 is installed while closed, signed and executable-verified.
-All 401 tests pass and Astra's focused review is clear. Navigation and projection reuse
-are verified; the composed fixture journey remains green. Further WP3 implementation is
-active: photo search/hit focus, empty/error/retry feedback, asynchronous covers and sidebar
-focus. Original native/real-copy/provider acceptance remains open. The navigation request
-has no watcher; no automatic delivery runs.
+Walkfolio 0.7.14 build 150 is installed while closed, signed and executable-verified.
+All 423 tests pass in 23.227 seconds and Astra's focused review is clear. Visible photo
+search, exact-hit grid focus, explicit folder empty/error/retry, context-bound publication,
+FTS snapshot ownership and refresh-safe Compare are verified alongside the composed
+fixture journey. Further WP3 implementation is active: asynchronous bounded covers and
+sidebar focus. Original native/real-copy/provider acceptance remains open. The search
+request has synthetic disposable data and no watcher; no automatic delivery runs.
 
 The [requirements audit](audit-walkfolio-completion-requirements.md) traces every work
 package to original decisions, current implementation, regression evidence and remaining
@@ -80,4 +81,6 @@ acceptance. It records the old Map approval and the corrected default-Trip summa
 
 ## Continuing WP3 work
 
-Item 109 ships measured navigation, correct Map action ownership and reusable projections with 17 new cases. Search results, folder feedback, covers and sidebar focus remain active implementation. The full original scope stays committed; 1.0 is not accepted.
+Navigation, visible search and folder feedback ship with meaningful regressions. Cover
+I/O remains synchronous in view bodies and Archive sidebar focus still needs implementation.
+The full original scope stays committed; 1.0 is not accepted.

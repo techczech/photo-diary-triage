@@ -4,6 +4,8 @@ import SwiftUI
 struct ArchiveMapView: View {
     let snapshot: ArchiveMapSnapshot
     let selectedItemID: ArchiveMapItemID?
+    let searchPhotos: [ArchivePhotoSummary]
+    let openPhoto: (ArchivePhotoSummary) -> Void
     let openWalk: (ArchiveMapWalk) -> Void
     let openFolder: (ArchiveBrowseEntry) -> Void
 
@@ -21,6 +23,22 @@ struct ArchiveMapView: View {
             Divider()
             ScrollViewReader { proxy in
                 List {
+                    if !searchPhotos.isEmpty {
+                        Section("Matching photos · \(searchPhotos.count)") {
+                            ForEach(searchPhotos) { photo in
+                                Button { openPhoto(photo) } label: {
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(photo.title).font(.body.weight(.medium))
+                                        Text(photo.archiveRelativePath).font(.caption).foregroundStyle(.secondary)
+                                            .lineLimit(2)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                .id(ArchiveMapItemID.photo(photo.id))
+                                .listRowBackground(selectedItemID == .photo(photo.id) ? Color.accentColor.opacity(0.16) : Color.clear)
+                            }
+                        }
+                    }
                     Section("Located Walks · \(snapshot.locatedWalks.count)") {
                         ForEach(snapshot.locatedWalks) { walk in
                             Button { openWalk(walk) } label: {

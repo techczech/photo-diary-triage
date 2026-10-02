@@ -44,7 +44,7 @@ final class AppState: ObservableObject {
         didSet {
             if oldValue.archiveBrowseViewMode != settings.archiveBrowseViewMode { archiveGridNavigator.reset() }
             if oldValue.archiveRoot != settings.archiveRoot || oldValue.archiveMachineRole != settings.archiveMachineRole || oldValue.oneDrivePicturesRoot != settings.oneDrivePicturesRoot {
-                invalidateArchiveBrowseContent()
+                invalidateArchiveContext()
                 ArchiveByteReadPolicyContext.shared.update(settings: settings)
                 originalViewingTasks.values.forEach { $0.cancel() }
                 originalViewingTasks.removeAll()
@@ -358,9 +358,16 @@ final class AppState: ObservableObject {
     private let logger = AppLogger.appState
     private let latencyRecorder = LatencyRecorder()
     private var compareSelectionBackup: CompareSelectionBackup?
+    var testingArchiveCatalogueHandler: (@Sendable (URL, AppSettings) async throws -> (ArchiveCatalogue, [ArchiveIndexEntry]))?
+    var testingArchiveSearchHandler: (@Sendable (ArchiveSearchDatabaseSnapshot, String) async throws -> Set<String>)?
+    var testingArchiveLoadHandler: (@Sendable (BrowserNode, AppSettings) async throws -> ArchiveLoadResult?)?
+    var testingPendingArchiveTasks: [Task<Void, Never>] {
+        [archiveCatalogueLoadTask, archiveSearchTask, archiveMediaLoadTask].compactMap { $0 }
+    }
     var testingSourceScanHandler: ((URL, AppSettings) async throws -> SessionOpenResult)?
 
     func testingInstallArchiveCatalogue(_ catalogue: ArchiveCatalogue) {
+        archiveSearchDatabaseSnapshot = ArchiveSearchDatabaseSnapshot(borrowing: supportRoot.appendingPathComponent("archive-search.sqlite"), archiveRoot: settings.archiveRoot)
         archiveCatalogue = catalogue
         archiveCatalogueIsLoading = false
         archiveCatalogueError = nil
@@ -392,6 +399,8 @@ final class AppState: ObservableObject {
     private var reviewKeyboardTarget: ReviewKeyboardTarget = .items
     private var archiveMediaLoadTask: Task<Void, Never>?
     private var archiveMediaLoadGeneration: Int = 0
+    private var archiveMediaCatalogueRevision = UUID()
+    private var archiveMediaCacheRevisions: [String: UUID] = [:]
     private var archiveCatalogueLoadTask: Task<Void, Never>?
     private var archiveCatalogueLoadGeneration: Int = 0
     private var archiveSearchTask: Task<Void, Never>?
@@ -401,6 +410,7 @@ final class AppState: ObservableObject {
     private var archiveLocationWalksByPath: [String: ArchiveWalkSummary] = [:]
     private var archiveCatalogue: ArchiveCatalogue = .empty {
         didSet {
+            archiveMediaCatalogueRevision = archiveSearchDatabaseSnapshot?.id ?? UUID()
             invalidateArchiveBrowseContent()
             archiveLocationPhotosByPath = Dictionary(archiveCatalogue.photos.map { ($0.archiveRelativePath, $0) }, uniquingKeysWith: { first, _ in first })
             archiveLocationWalksByPath = Dictionary(archiveCatalogue.walksByTripPath.values.flatMap { $0 }.map { ($0.archiveRelativePath, $0) }, uniquingKeysWith: { first, _ in first })
@@ -428,6 +438,17 @@ final class AppState: ObservableObject {
     private var archiveGridNavigator = ArchiveGridNavigator()
     private var selectedArchiveMapItemID: ArchiveMapItemID?
     private var archiveBrowseFocusRevision = 0
+    private var archiveSearchDatabaseSnapshot: ArchiveSearchDatabaseSnapshot?
+    private var archiveSavedTripLocationOverlays: [String: SavedTripLocationLabel] = [:]
+    private var archiveSearchRequestID = UUID()
+    private var archiveSearchIsLoading = false
+    private var archiveSearchError: String?
+    private var selectedArchiveSearchTarget: ArchiveSearchItemID?
+    private var archiveFolderLoadState: ArchiveFolderLoadState = .idle
+    private var archiveRequestedSearchPhotoPath: String?
+    private var archiveFolderSelectionToRestore: ArchiveFolderSelection?
+    private var archiveSearchReturnPhotoID: String?
+    private var archiveMissingSearchHitMessage: String?
     private var archiveSearchFocusRevision = 0
     private var archiveNavigationLevel: ArchiveNavigationLevel = .archive
     private var selectedArchiveEntryID: String?
@@ -822,7 +843,7 @@ final class AppState: ObservableObject {
             switch archiveNavigationLevel {
             case .archive: return !filteredArchiveEntries.isEmpty
             case .trip: return !currentArchiveWalks.isEmpty
-            case .photos: break
+            case .photos: return archiveFolderLoadState == .loaded && !visibleMediaItems.isEmpty
             }
         }
         return !visibleMediaItems.isEmpty
@@ -1141,56 +1162,89 @@ final class AppState: ObservableObject {
 
     func reloadArchiveCatalogue() {
         archiveCatalogueLoadTask?.cancel()
-        archiveSearchTask?.cancel()
+        archiveSearchTask?.cancel(); archiveSearchTask = nil
+        archiveSearchRequestID = UUID()
+        archiveSearchMatchingPaths = []
+        archiveSearchIsLoading = !archiveSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        archiveSearchError = nil
+        if case .photos = archiveNavigationLevel, archiveRequestedSearchPhotoPath == nil {
+            archiveFolderSelectionToRestore = archiveFolderSelectionToRestore ?? captureArchiveFolderSelection()
+        }
+        cancelArchiveMediaLoad(clearPendingHit: false)
+        if case .photos = archiveNavigationLevel {
+            archiveFolderLoadState = .loading
+            // Keep the prior items for mapping live Preview/Compare/selection changes to fresh IDs.
+        }
         archiveCatalogueLoadGeneration &+= 1
         let generation = archiveCatalogueLoadGeneration
-        let archiveRoot = settings.archiveRoot
-        let supportedExtensions = settings.supportedExtensions
-        let searchDatabaseURL = supportRoot.appendingPathComponent("archive-search.sqlite")
-        let machineRole = settings.archiveMachineRole
-
+        let capturedSettings = settings
+        let contextGeneration = ArchiveByteReadPolicyContext.shared.generation
+        let snapshot = ArchiveSearchDatabaseSnapshot(archiveRoot: capturedSettings.archiveRoot, supportRoot: supportRoot)
+        let handler = testingArchiveCatalogueHandler
+        let savedTripLabels = archiveSavedTripLocationOverlays
         archiveCatalogueIsLoading = true
         archiveCatalogueError = nil
         refreshArchiveBrowserState()
 
         archiveCatalogueLoadTask = Task.detached(priority: .userInitiated) {
-            let result: Result<ArchiveCatalogue, Error>
+            let result: Result<(catalogue: ArchiveCatalogue, acknowledgedLabels: Set<String>), Error>
             do {
-                let builder = ArchiveCatalogueBuilder()
-                let catalogue = try builder.build(
-                    archiveRoot: archiveRoot,
-                    supportedExtensions: supportedExtensions, machineRole: machineRole
-                )
-                let indexEntries = try builder.readIndexEntries(archiveRoot: archiveRoot)
-                try ArchiveSearchCache(databaseURL: searchDatabaseURL).rebuild(
-                    indexEntries: indexEntries,
-                    browseEntries: catalogue.entries
-                )
-                result = .success(catalogue)
-            } catch {
-                result = .failure(error)
-            }
+                var catalogue: ArchiveCatalogue
+                let indexEntries: [ArchiveIndexEntry]
+                if let handler {
+                    (catalogue, indexEntries) = try await handler(capturedSettings.archiveRoot, capturedSettings)
+                } else {
+                    let builder = ArchiveCatalogueBuilder()
+                    indexEntries = try builder.readIndexEntries(archiveRoot: capturedSettings.archiveRoot)
+                    catalogue = try builder.build(archiveRoot: capturedSettings.archiveRoot,
+                        supportedExtensions: capturedSettings.supportedExtensions,
+                        machineRole: capturedSettings.archiveMachineRole, indexEntries: indexEntries)
+                }
+                let acknowledgedLabels = Set(indexEntries.compactMap { row -> String? in
+                    guard row.kind == .trip, let saved = savedTripLabels[row.archiveRelativePath],
+                          row.tripID == saved.manifest.tripID, row.tripLocationOverride == saved.manifest.locationLabelOverride else { return nil }
+                    return row.archiveRelativePath
+                })
+                catalogue = TripLocationProjection.applyingSavedLabels(savedTripLabels, to: catalogue)
+                try Task.checkCancellation()
+                try ArchiveSearchCache(databaseURL: snapshot.databaseURL).rebuild(indexEntries: indexEntries, browseEntries: catalogue.entries)
+                result = .success((catalogue, acknowledgedLabels))
+            } catch { result = .failure(error) }
 
             await MainActor.run { [weak self] in
-                guard let self,
-                      generation == self.archiveCatalogueLoadGeneration,
+                guard let self, generation == self.archiveCatalogueLoadGeneration,
+                      contextGeneration == ArchiveByteReadPolicyContext.shared.generation,
+                      capturedSettings.archiveRoot.standardizedFileURL == self.settings.archiveRoot.standardizedFileURL,
                       !Task.isCancelled else { return }
                 self.archiveCatalogueLoadTask = nil
                 self.archiveCatalogueIsLoading = false
-
                 switch result {
-                case .success(let catalogue):
+                case .success(let value):
+                    let catalogue = value.catalogue
+                    for path in value.acknowledgedLabels {
+                        if self.archiveSavedTripLocationOverlays[path] == savedTripLabels[path] {
+                            self.archiveSavedTripLocationOverlays.removeValue(forKey: path)
+                        }
+                    }
+                    self.archiveSearchDatabaseSnapshot = snapshot
                     self.archiveCatalogue = self.googleProjectedCatalogue(catalogue)
                     self.archiveCatalogueError = nil
                     self.reconcileArchiveSelection()
-                    let entryNoun = catalogue.entries.count == 1 ? "entry" : "entries"
-                    self.statusMessage = "Archive catalogue refreshed: \(catalogue.entries.count) \(entryNoun) across \(catalogue.years.count) year(s)."
+                    self.statusMessage = "Archive catalogue refreshed: \(catalogue.entries.count) entries across \(catalogue.years.count) year(s)."
                     if !self.archiveSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         self.updateArchiveSearch(self.archiveSearchQuery)
+                    } else { self.archiveSearchIsLoading = false }
+                    if case .photos = self.archiveNavigationLevel {
+                        self.loadArchiveMediaIfNeeded(for: self.selectedSidebarNodeID)
                     }
                 case .failure(let error):
                     self.archiveCatalogueError = error.localizedDescription
+                    self.archiveSearchIsLoading = false
+                    self.archiveSearchError = "Search could not refresh: \(error.localizedDescription)"
                     self.statusMessage = "Archive catalogue could not be refreshed: \(error.localizedDescription)"
+                    if case .photos = self.archiveNavigationLevel {
+                        self.archiveFolderLoadState = .failed(error.localizedDescription)
+                    }
                 }
                 self.refreshArchiveBrowserState()
             }
@@ -1251,40 +1305,63 @@ final class AppState: ObservableObject {
     }
 
     func updateArchiveSearch(_ query: String) {
+        let changed = query != archiveSearchQuery
+        if changed {
+            _ = returnToArchiveCatalogueFromFilter()
+            archiveSearchReturnPhotoID = nil
+            selectedArchiveSearchTarget = nil
+        }
         archiveSearchQuery = query
-        archiveSearchTask?.cancel()
-
+        archiveSearchTask?.cancel(); archiveSearchTask = nil
+        archiveSearchRequestID = UUID()
+        let requestID = archiveSearchRequestID
+        archiveSearchMatchingPaths = []
+        archiveSearchError = nil
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        archiveSearchIsLoading = !trimmed.isEmpty
         guard !trimmed.isEmpty else {
-            archiveSearchMatchingPaths = []
             selectedArchiveSearchResultID = nil
+            selectedArchiveSearchTarget = nil
             reconcileArchiveSelection()
             refreshArchiveBrowserState()
             return
         }
-
-        let databaseURL = supportRoot.appendingPathComponent("archive-search.sqlite")
+        guard let database = archiveSearchDatabaseSnapshot,
+              database.archiveRoot == settings.archiveRoot.standardizedFileURL else {
+            archiveSearchIsLoading = archiveCatalogueIsLoading
+            if !archiveCatalogueIsLoading { reloadArchiveCatalogue() }
+            refreshArchiveBrowserState()
+            return
+        }
+        let contextGeneration = ArchiveByteReadPolicyContext.shared.generation
+        let handler = testingArchiveSearchHandler
         archiveSearchTask = Task.detached(priority: .userInitiated) {
-            try? await Task.sleep(nanoseconds: 120_000_000)
-            guard !Task.isCancelled else { return }
-            let result = Result { try ArchiveSearchCache(databaseURL: databaseURL).matchingPaths(query: trimmed) }
+            let result: Result<Set<String>, Error>
+            do {
+                if let handler { result = .success(try await handler(database, trimmed)) }
+                else {
+                    try await Task.sleep(for: .milliseconds(120))
+                    try Task.checkCancellation()
+                    result = .success(try ArchiveSearchCache(databaseURL: database.databaseURL).matchingPaths(query: trimmed))
+                }
+            } catch { result = .failure(error) }
             await MainActor.run { [weak self] in
-                guard let self,
-                      !Task.isCancelled,
-                      self.archiveSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines) == trimmed else { return }
+                guard let self, self.archiveSearchRequestID == requestID,
+                      self.archiveSearchDatabaseSnapshot?.id == database.id,
+                      contextGeneration == ArchiveByteReadPolicyContext.shared.generation,
+                      database.archiveRoot == self.settings.archiveRoot.standardizedFileURL,
+                      !Task.isCancelled else { return }
                 self.archiveSearchTask = nil
+                self.archiveSearchIsLoading = false
                 switch result {
-                case .success(let paths):
-                    self.archiveSearchMatchingPaths = paths
-                    self.archiveCatalogueError = nil
-                case .failure(let error):
-                    self.archiveSearchMatchingPaths = []
-                    self.archiveCatalogueError = "Search unavailable: \(error.localizedDescription)"
+                case .success(let paths): self.archiveSearchMatchingPaths = paths
+                case .failure(let error): self.archiveSearchError = "Search unavailable: \(error.localizedDescription)"
                 }
                 self.reconcileArchiveSelection()
                 self.refreshArchiveBrowserState()
             }
         }
+        reconcileArchiveSelection()
         refreshArchiveBrowserState()
     }
 
@@ -1297,6 +1374,7 @@ final class AppState: ObservableObject {
         guard filteredArchiveEntries.contains(where: { $0.id == entryID }) else { return }
         archiveGridNavigator.reset()
         selectedArchiveEntryID = entryID
+        if hasArchiveSearchQuery { selectedArchiveSearchTarget = .entry(entryID); selectedArchiveSearchResultID = nil }
         activePane = .media
         refreshArchiveBrowserState()
     }
@@ -1615,6 +1693,10 @@ final class AppState: ObservableObject {
         guard workspaceMode == .archiveView else { return [] }
         switch archiveNavigationLevel {
         case .archive:
+            if let photo = selectedArchiveSearchPhoto {
+                guard !photo.isDerivedPhoto, photo.cropRole != .crop else { return [] }
+                return [(.photo, photo.archiveRelativePath)]
+            }
             if settings.archiveBrowseViewMode == .map {
                 guard let walk = selectedArchiveMapWalk else { return [] }
                 return [(.walk, walk.archiveRelativePath)]
@@ -1729,9 +1811,15 @@ final class AppState: ObservableObject {
         do {
             let result = try await ArchiveIndexMutationQueue.shared.saveTripLocation(target: target, label: label, archiveRoot: root, policy: policy)
             guard root.standardizedFileURL == settings.archiveRoot.standardizedFileURL else { return }
-            archiveCatalogueLoadTask?.cancel(); archiveCatalogueLoadGeneration &+= 1
+            if let path = result.manifest.folderRelativePath {
+                let originalID: UUID?
+                if let prior = archiveSavedTripLocationOverlays[path], prior.manifest.tripID == result.manifest.tripID {
+                    originalID = prior.originalTripID
+                } else { originalID = target.tripID }
+                archiveSavedTripLocationOverlays[path] = SavedTripLocationLabel(manifest: result.manifest, originalTripID: originalID)
+            }
             archiveCatalogue = TripLocationProjection.applying(result.manifest, to: archiveCatalogue)
-            refreshArchiveBrowserState()
+            reloadArchiveCatalogue()
             if let error = result.indexError { statusMessage = "Saved Trip label, but Archive Index refresh failed: \(error)" }
             else {
                 statusMessage = result.manifest.locationLabelOverride == nil ? "Restored the Trip location derived from its Walks." : "Saved Trip location label."
@@ -1750,7 +1838,10 @@ final class AppState: ObservableObject {
 
     func selectArchiveSearchResult(_ resultID: String) {
         guard archiveSearchResults.contains(where: { $0.id == resultID }) else { return }
+        archiveGridNavigator.reset()
         selectedArchiveSearchResultID = resultID
+        selectedArchiveSearchTarget = .photo(resultID)
+        if settings.archiveBrowseViewMode == .map { selectedArchiveMapItemID = .photo(resultID) }
         activePane = .media
         refreshArchiveBrowserState()
     }
@@ -1763,12 +1854,42 @@ final class AppState: ObservableObject {
         case .photos:
             return
         case .archive:
-            if settings.archiveBrowseViewMode == .map {
+            if hasArchiveSearchQuery, settings.archiveBrowseViewMode != .map {
+                let photoIDs = archiveSearchResults.map { ArchiveSearchItemID.photo($0.id) }
+                let rows = stride(from: 0, to: photoIDs.count, by: max(contactSheetColumns, 1)).map {
+                    Array(photoIDs[$0..<min($0 + max(contactSheetColumns, 1), photoIDs.count)])
+                }
+                let entryColumns = settings.archiveBrowseViewMode == .timeline ? 1 : max(contactSheetColumns, 1)
+                let entryRows = archiveBrowseContent.yearGroups.flatMap { group in
+                    stride(from: 0, to: group.entries.count, by: entryColumns).map {
+                        Array(group.entries[$0..<min($0 + entryColumns, group.entries.count)]).map { ArchiveSearchItemID.entry($0.id) }
+                    }
+                }
+                selectedArchiveSearchTarget = archiveGridNavigator.targetRows(rows: rows + entryRows,
+                    selectedID: selectedArchiveSearchTarget, horizontal: horizontal, vertical: vertical,
+                    layoutKey: [max(contactSheetColumns, 1), entryColumns])
+                switch selectedArchiveSearchTarget {
+                case .photo(let id): selectedArchiveSearchResultID = id
+                case .entry(let id): selectedArchiveEntryID = id; selectedArchiveSearchResultID = nil
+                case nil: break
+                }
+            } else if settings.archiveBrowseViewMode == .map {
                 let ids = archiveBrowseContent.mapNavigationIDs
                 guard !ids.isEmpty else { return }
                 let index = selectedArchiveMapItemID.flatMap { ids.firstIndex(of: $0) } ?? 0
                 let delta = vertical != 0 ? vertical : horizontal
                 selectedArchiveMapItemID = ids[min(max(index + delta, 0), ids.count - 1)]
+                if hasArchiveSearchQuery {
+                    switch selectedArchiveMapItemID {
+                    case .photo(let id): selectedArchiveSearchTarget = .photo(id); selectedArchiveSearchResultID = id
+                    case .folder(let id): selectedArchiveSearchTarget = .entry(id); selectedArchiveSearchResultID = nil
+                    case .walk:
+                        if let id = selectedArchiveMapWalk.flatMap({ archiveBrowseContent.tripsByPath[$0.tripPath]?.id }) {
+                            selectedArchiveSearchTarget = .entry(id); selectedArchiveEntryID = id; selectedArchiveSearchResultID = nil
+                        }
+                    case nil: break
+                    }
+                }
             } else {
                 let sections = archiveBrowseContent.yearGroups.map { $0.entries.map(\.id) }
                 selectedArchiveEntryID = archiveGridNavigator.target(sections: sections,
@@ -1783,12 +1904,20 @@ final class AppState: ObservableObject {
     func openSelectedArchiveItem() {
         switch archiveNavigationLevel {
         case .archive:
+            guard !archiveSearchIsLoading else { return }
+            if hasArchiveSearchQuery, settings.archiveBrowseViewMode != .map,
+               case .photo(let id) = selectedArchiveSearchTarget {
+                if let result = archiveSearchResults.first(where: { $0.id == id }) { openArchiveSearchPhoto(result) }
+                return
+            }
             if settings.archiveBrowseViewMode == .map {
                 switch selectedArchiveMapItemID {
                 case .walk(let path):
                     if let walk = archiveBrowseContent.map.walks.first(where: { $0.archiveRelativePath == path }) { openArchiveMapWalk(walk) }
                 case .folder(let id):
                     if let entry = archiveBrowseContent.allEntriesByID[id] { openArchiveMapFolder(entry) }
+                case .photo(let id):
+                    if let result = archiveSearchResults.first(where: { $0.id == id }) { openArchiveSearchPhoto(result) }
                 case nil: break
                 }
                 return
@@ -1849,6 +1978,8 @@ final class AppState: ObservableObject {
     var canOpenSelectedArchiveItem: Bool {
         switch archiveNavigationLevel {
         case .archive:
+            guard !archiveSearchIsLoading else { return false }
+            if hasArchiveSearchQuery, settings.archiveBrowseViewMode != .map { return selectedArchiveSearchTarget != nil }
             return settings.archiveBrowseViewMode == .map ? selectedArchiveMapItemID != nil : selectedArchiveEntry != nil
         case .trip:
             return !currentArchiveWalks.isEmpty
@@ -1858,33 +1989,30 @@ final class AppState: ObservableObject {
     }
 
     var canOrganiseSelectedUnorganisedFolder: Bool {
-        selectedArchiveEntry?.kind == .unorganisedFolder && archiveNavigationLevel == .archive
+        guard archiveNavigationLevel == .archive, !archiveSearchIsLoading else { return false }
+        if hasArchiveSearchQuery, settings.archiveBrowseViewMode != .map,
+           case .photo = selectedArchiveSearchTarget { return false }
+        if settings.archiveBrowseViewMode == .map, case .photo = selectedArchiveMapItemID { return false }
+        return selectedArchiveEntry?.kind == .unorganisedFolder
     }
 
-    private func openArchiveSearchResult(_ result: ArchivePhotoSummary) {
-        if let walkPath = result.walkPath {
-            let parentTripPath = result.tripPath
-            let walkTitle = archiveCatalogue.walksByTripPath.values
-                .flatMap { $0 }
-                .first { $0.archiveRelativePath == walkPath }?
-                .title ?? URL(fileURLWithPath: walkPath).lastPathComponent
-            openArchivePhotoFolder(
-                relativePath: walkPath,
-                title: walkTitle,
-                parentTripPath: parentTripPath
-            )
-            return
+    func openArchiveSearchPhoto(_ result: ArchivePhotoSummary) {
+        guard !archiveSearchIsLoading, archiveSearchResults.contains(where: { $0.id == result.id }) else { return }
+        do { _ = try ArchiveIndexMediaLoader().indexedURL(result.archiveRelativePath, archiveRoot: settings.archiveRoot) }
+        catch { statusMessage = "Search result cannot be opened: \(error.localizedDescription)"; return }
+        selectArchiveSearchResult(result.id)
+        let folder = result.walkPath ?? (result.archiveRelativePath as NSString).deletingLastPathComponent
+        let folderPath = folder.isEmpty ? "." : folder
+        guard folderPath == "." || result.archiveRelativePath.hasPrefix(folderPath + "/") else {
+            statusMessage = "The search result has inconsistent folder metadata."; return
         }
-
-        let parentFolder = (result.archiveRelativePath as NSString).deletingLastPathComponent
-        openArchivePhotoFolder(
-            relativePath: parentFolder,
-            title: URL(fileURLWithPath: parentFolder).lastPathComponent,
-            parentTripPath: nil
-        )
+        let title = archiveLocationWalksByPath[folderPath]?.title ?? URL(fileURLWithPath: folderPath).lastPathComponent
+        openArchivePhotoFolder(relativePath: folderPath, title: title, parentTripPath: result.tripPath,
+            requestedPhotoPath: result.archiveRelativePath)
+        archiveSearchReturnPhotoID = result.id
     }
 
-    private func openArchivePhotoFolder(relativePath: String, title: String, parentTripPath: String?) {
+    private func openArchivePhotoFolder(relativePath: String, title: String, parentTripPath: String?, requestedPhotoPath: String? = nil) {
         let folderURL = archiveURL(for: relativePath)
         let nodeID = "archive-content-\(CacheKeyBuilder.key(for: relativePath))"
         let node = BrowserNode(
@@ -1898,11 +2026,15 @@ final class AppState: ObservableObject {
             folderURL: folderURL
         )
         archiveGridNavigator.reset()
+        cancelArchiveMediaLoad()
+        archiveSearchReturnPhotoID = nil
+        archiveRequestedSearchPhotoPath = requestedPhotoPath
         archiveLocationRecoveryWalkPath = nil
         activeArchiveContentNode = node
         archiveNavigationLevel = .photos(path: relativePath, parentTripPath: parentTripPath)
         selectedSidebarNodeID = nodeID
         activePane = .media
+        previewingMediaItemID = nil; comparingMediaItemIDs = []; compareSelectionBackup = nil
         clearDetailSelections()
         loadArchiveMediaIfNeeded(for: nodeID)
         refreshArchiveBrowserState()
@@ -3475,6 +3607,7 @@ final class AppState: ObservableObject {
 
     func setArchiveRoot(_ archiveRoot: URL) {
         cancelArchiveMediaLoad()
+        invalidateArchiveContext()
         let shouldFollowArchiveRoot = settings.oneDrivePicturesRoot.standardizedFileURL == settings.archiveRoot.standardizedFileURL
         settings.archiveRoot = archiveRoot
         if shouldFollowArchiveRoot {
@@ -3487,6 +3620,7 @@ final class AppState: ObservableObject {
         archiveNavigationLevel = .archive
         activeArchiveContentNode = nil
         archiveYearFilter = nil
+        ArchiveByteReadPolicyContext.shared.update(settings: settings)
         reloadArchiveCatalogue()
 
         if var session = currentSession {
@@ -3498,7 +3632,6 @@ final class AppState: ObservableObject {
         }
 
         persistSettings()
-        ArchiveByteReadPolicyContext.shared.update(settings: settings)
         let existingYears = archiveYearFolders.isEmpty ? "no existing 202x folders detected yet" : "found year folders: \(archiveYearFolders.joined(separator: ", "))"
         statusMessage = "Archive root set to \(archiveRoot.path); \(existingYears)."
     }
@@ -3820,24 +3953,26 @@ final class AppState: ObservableObject {
     }
 
     func setOneDrivePicturesRoot(_ root: URL) {
+        guard root.standardizedFileURL != settings.oneDrivePicturesRoot.standardizedFileURL else { return }
         settings.oneDrivePicturesRoot = root
         if var session = currentSession {
             session.oneDrivePicturesRoot = root
             save(session)
         }
         persistSettings()
-        ArchiveByteReadPolicyContext.shared.update(settings: settings)
+        reloadArchiveCatalogue()
         statusMessage = "OneDrive Pictures root set to \(root.path)."
     }
 
     func setArchiveMachineRole(_ role: ArchiveMachineRole) {
+        guard role != settings.archiveMachineRole else { return }
         settings.archiveMachineRole = role
         if var session = currentSession {
             session.archiveMachineRole = role
             save(session)
         }
         persistSettings()
-        ArchiveByteReadPolicyContext.shared.update(settings: settings)
+        reloadArchiveCatalogue()
         statusMessage = "Machine role set to \(role.title)."
     }
 
@@ -4715,10 +4850,17 @@ final class AppState: ObservableObject {
                 activeArchiveContentNode = nil
                 selectedSidebarNodeID = preferredSidebarNodeID(for: .archiveView)
             case .photos(let path, let parentTripPath):
+                let returnPhotoID = archiveSearchReturnPhotoID
                 cancelArchiveMediaLoad()
+                archiveSearchReturnPhotoID = nil
                 activeArchiveContentNode = nil
                 archiveMediaCache.removeAll()
-                if let parentTripPath {
+                if let returnPhotoID, hasArchiveSearchQuery {
+                    archiveNavigationLevel = .archive
+                    selectedArchiveSearchTarget = .photo(returnPhotoID)
+                    selectedArchiveSearchResultID = returnPhotoID
+                    reconcileArchiveSelection()
+                } else if let parentTripPath {
                     archiveNavigationLevel = .trip(path: parentTripPath)
                     selectedArchiveEntryID = archiveBrowseContent.tripsByPath[parentTripPath]?.id
                     selectedArchiveWalkID = archiveCatalogue.walksByTripPath[parentTripPath]?.first(where: { $0.archiveRelativePath == path })?.id
@@ -4944,7 +5086,7 @@ final class AppState: ObservableObject {
         pendingSessionPersistence.forEach { $0.workItem.cancel() }; pendingSessionPersistence = []
         restoredStateGeneration &+= 1
         invalidateInFlightSourceLoad()
-        cancelArchiveMediaLoad()
+        invalidateArchiveContext()
         archiveCatalogueLoadTask?.cancel(); archiveCatalogueLoadTask = nil; archiveCatalogueLoadGeneration &+= 1
         archiveSearchTask?.cancel(); archiveSearchTask = nil
         googleContext.invalidate(); cancelGoogleDelivery(); cancelGoogleSignIn(); googleDeliveryReview = nil
@@ -6097,7 +6239,9 @@ final class AppState: ObservableObject {
             selectedWalkID: selectedArchiveWalkID, searchResults: content.searchResults,
             selectedSearchResultID: selectedArchiveSearchResultID, map: content.map,
             yearGroups: content.yearGroups, selectedMapItemID: selectedArchiveMapItemID,
-            browseFocusRevision: archiveBrowseFocusRevision)
+            browseFocusRevision: archiveBrowseFocusRevision, isSearching: archiveSearchIsLoading,
+            searchError: archiveSearchError, searchSelection: selectedArchiveSearchTarget,
+            folderLoadState: archiveFolderLoadState, missingSearchHitMessage: archiveMissingSearchHitMessage)
         archiveBrowserState.update(snapshot)
     }
 
@@ -6114,12 +6258,29 @@ final class AppState: ObservableObject {
         return archiveBrowseContent.map.walks.first { $0.archiveRelativePath == path }
     }
 
+    private var hasArchiveSearchQuery: Bool {
+        !archiveSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var selectedArchiveSearchPhoto: ArchivePhotoSummary? {
+        guard hasArchiveSearchQuery, archiveNavigationLevel == .archive, !archiveSearchIsLoading else { return nil }
+        let id: String?
+        if settings.archiveBrowseViewMode == .map, case .photo(let path) = selectedArchiveMapItemID { id = path }
+        else if settings.archiveBrowseViewMode != .map, case .photo(let path) = selectedArchiveSearchTarget { id = path }
+        else { id = nil }
+        return id.flatMap { id in archiveSearchResults.first { $0.id == id } }
+    }
+
     private var selectedArchiveEntry: ArchiveBrowseEntry? {
+        if let photo = selectedArchiveSearchPhoto {
+            return photo.tripPath.flatMap { archiveBrowseContent.tripsByPath[$0] }
+        }
         if archiveNavigationLevel == .archive, settings.archiveBrowseViewMode == .map {
             switch selectedArchiveMapItemID {
             case .walk:
                 return selectedArchiveMapWalk.flatMap { archiveBrowseContent.tripsByPath[$0.tripPath] }
             case .folder(let id): return archiveBrowseContent.allEntriesByID[id]
+            case .photo: return nil
             case nil: return nil
             }
         }
@@ -6140,9 +6301,16 @@ final class AppState: ObservableObject {
         }
 
         let results = archiveSearchResults
-        if selectedArchiveSearchResultID.flatMap({ id in results.first(where: { $0.id == id }) }) == nil {
-            selectedArchiveSearchResultID = results.first?.id
-        }
+        if hasArchiveSearchQuery {
+            switch selectedArchiveSearchTarget {
+            case .photo(let id) where results.contains(where: { $0.id == id }): break
+            case .entry(let id) where entries.contains(where: { $0.id == id }): break
+            default:
+                selectedArchiveSearchTarget = results.first.map { .photo($0.id) } ?? entries.first.map { .entry($0.id) }
+            }
+            if case .photo(let id) = selectedArchiveSearchTarget { selectedArchiveSearchResultID = id }
+            else { selectedArchiveSearchResultID = nil }
+        } else { selectedArchiveSearchTarget = nil; selectedArchiveSearchResultID = nil }
     }
 
     private func archiveURL(for relativePath: String) -> URL {
@@ -7353,82 +7521,189 @@ final class AppState: ObservableObject {
         refreshAllUIState()
     }
 
-    private func loadArchiveMediaIfNeeded(for nodeID: String?) {
-        guard let nodeID,
-              let node = browserNodeMap[nodeID],
-              (node.children?.isEmpty ?? true),
-              node.folderURL != nil,
-              node.kind == .archiveWalkFolder else {
-            cancelArchiveMediaLoad()
-            return
-        }
-
-        latencyRecorder.begin("archive.load")
+    private func invalidateArchiveContext() {
         cancelArchiveMediaLoad()
+        archiveCatalogueLoadTask?.cancel(); archiveCatalogueLoadTask = nil
+        archiveCatalogueLoadGeneration &+= 1
+        archiveSearchTask?.cancel(); archiveSearchTask = nil
+        archiveSearchRequestID = UUID()
+        archiveSearchDatabaseSnapshot = nil
+        archiveSavedTripLocationOverlays.removeAll()
+        archiveSearchIsLoading = false; archiveSearchError = nil
+        archiveSearchMatchingPaths = []
+        selectedArchiveSearchTarget = nil; selectedArchiveSearchResultID = nil
+        archiveSearchReturnPhotoID = nil
+        archiveNavigationLevel = .archive
+        activeArchiveContentNode = nil
+        archiveMediaCache.removeAll(); archiveMediaCacheRevisions.removeAll()
+        archiveCatalogue = .empty
+        archiveCatalogueIsLoading = false; archiveCatalogueError = nil
+        selectedArchiveEntryID = nil; selectedArchiveWalkID = nil; selectedArchiveMapItemID = nil
+        if workspaceMode == .archiveView {
+            selectedSidebarNodeID = preferredSidebarNodeID(for: .archiveView)
+            clearDetailSelections()
+        }
+        refreshArchiveBrowserState()
+    }
 
-        if let cachedItems = archiveMediaCache[nodeID] {
-            let cachedURLs = cachedItems.map(\.sourceURL)
-            if settings.archiveMachineRole != .travel {
-                Task.detached(priority: .utility) {
-                    ArchiveByteReadPolicyContext.shared.warmOnlineOnlyVerdicts(for: cachedURLs)
-                }
-            }
-            requestInitialArchiveThumbnails(for: cachedItems)
-            DispatchQueue.main.async { [weak self] in
-                self?.latencyRecorder.end("archive.load")
-            }
+    func retryArchiveFolderLoad() {
+        guard case .photos = archiveNavigationLevel, let nodeID = activeArchiveContentNode?.id else { return }
+        archiveMediaCacheRevisions.removeValue(forKey: nodeID)
+        loadArchiveMediaIfNeeded(for: nodeID)
+    }
+
+    private func loadArchiveMediaIfNeeded(for nodeID: String?) {
+        guard let nodeID, let node = browserNodeMap[nodeID],
+              (node.children?.isEmpty ?? true), node.folderURL != nil, node.kind == .archiveWalkFolder else {
+            cancelArchiveMediaLoad(); refreshArchiveBrowserState(); return
+        }
+        latencyRecorder.begin("archive.load")
+        if archiveRequestedSearchPhotoPath == nil {
+            archiveFolderSelectionToRestore = archiveFolderSelectionToRestore ?? captureArchiveFolderSelection()
+        }
+        cancelArchiveMediaLoad(clearPendingHit: false)
+        let capturedSettings = settings
+        let contextGeneration = ArchiveByteReadPolicyContext.shared.generation
+        let requestedPath = archiveRequestedSearchPhotoPath
+        let generation = archiveMediaLoadGeneration
+        if let cached = archiveMediaCache[nodeID], archiveMediaCacheRevisions[nodeID] == archiveMediaCatalogueRevision {
+            applyArchiveFolderResult(ArchiveLoadResult(nodeID: nodeID, items: cached, statusMessage: "Loaded \(cached.count) archived photo(s)."),
+                requestedPath: requestedPath, capturedSettings: capturedSettings)
             return
         }
-
-        archiveMediaLoadGeneration &+= 1
-        let generation = archiveMediaLoadGeneration
-        let settings = settings
-        statusMessage = "Loading archive photos from \(node.title)..."
-
-        archiveMediaLoadTask = Task.detached(priority: .userInitiated) { [node, settings] in
+        archiveFolderLoadState = .loading
+        statusMessage = "Loading archive photos from \(node.title)…"
+        refreshArchiveBrowserState()
+        let handler = testingArchiveLoadHandler
+        archiveMediaLoadTask = Task.detached(priority: .userInitiated) {
             let result: Result<ArchiveLoadResult?, Error>
             do {
-                let loader = BrowserViewModel(scanner: FileScanner())
-                let loadResult = try loader.loadArchiveMedia(for: node, settings: settings)
-                if let loadResult, settings.archiveMachineRole != .travel {
-                    ArchiveByteReadPolicyContext.shared.warmOnlineOnlyVerdicts(for: loadResult.items.map(\.sourceURL))
-                }
-                result = .success(loadResult)
-            } catch {
-                result = .failure(error)
-            }
-
+                let value: ArchiveLoadResult?
+                if let handler { value = try await handler(node, capturedSettings) }
+                else { value = try BrowserViewModel(scanner: FileScanner()).loadArchiveMedia(for: node, settings: capturedSettings) }
+                result = .success(value)
+            } catch { result = .failure(error) }
             await MainActor.run { [weak self] in
-                guard let self else { return }
-                guard !Task.isCancelled, generation == self.archiveMediaLoadGeneration else { return }
+                guard let self, !Task.isCancelled, generation == self.archiveMediaLoadGeneration,
+                      contextGeneration == ArchiveByteReadPolicyContext.shared.generation,
+                      self.settings.archiveRoot.standardizedFileURL == capturedSettings.archiveRoot.standardizedFileURL,
+                      self.settings.archiveMachineRole == capturedSettings.archiveMachineRole,
+                      self.settings.oneDrivePicturesRoot.standardizedFileURL == capturedSettings.oneDrivePicturesRoot.standardizedFileURL,
+                      self.selectedBrowserNode?.id == nodeID else { return }
                 self.archiveMediaLoadTask = nil
-
                 switch result {
-                case .success(let loadResult):
-                    guard let loadResult else { return }
-                    let projectedItems = loadResult.items.map { item -> MediaItem in
-                        guard let path = item.archiveRelativePath, let photo = self.archiveLocationPhotosByPath[path] else { return item }
-                        var item = item
-                        item.metadata.latitude = photo.latitude; item.metadata.longitude = photo.longitude
-                        return item
+                case .success(let value):
+                    guard let value, value.nodeID == nodeID else {
+                        self.archiveFolderLoadState = .failed("This folder could not be loaded.")
+                        break
                     }
-                    let sortedItems = MediaItemSort.sorted(projectedItems.map(self.googleProjectedItem))
-                    self.archiveMediaCache[loadResult.nodeID] = sortedItems
-                    self.requestInitialArchiveThumbnails(for: sortedItems)
-                    self.preheatDisplayImages(for: sortedItems.map(\.id), limit: 6)
-                    self.statusMessage = loadResult.statusMessage
+                    self.applyArchiveFolderResult(value, requestedPath: requestedPath, capturedSettings: capturedSettings)
                 case .failure(let error):
+                    self.archiveFolderLoadState = .failed(error.localizedDescription)
                     self.statusMessage = "Failed to load archive folder: \(error.localizedDescription)"
                 }
                 self.latencyRecorder.end("archive.load")
+                self.refreshArchiveBrowserState()
             }
         }
     }
 
-    private func cancelArchiveMediaLoad() {
-        archiveMediaLoadTask?.cancel()
-        archiveMediaLoadTask = nil
+    private func applyArchiveFolderResult(_ result: ArchiveLoadResult, requestedPath: String?, capturedSettings: AppSettings) {
+        let folderPath = selectedBrowserNode?.folderURL.flatMap {
+            ArchiveIndexStore.archiveRelativePath(for: $0, archiveRoot: capturedSettings.archiveRoot)
+        } ?? "."
+        guard result.items.allSatisfy({ item in
+            guard let path = ArchiveIndexStore.archiveRelativePath(for: item.sourceURL, archiveRoot: capturedSettings.archiveRoot) else { return false }
+            return folderPath == "." || path.hasPrefix(folderPath + "/")
+        }) else {
+            archiveFolderLoadState = .failed("The folder returned a photo outside its Archive destination.")
+            statusMessage = "Archive folder load rejected an inconsistent photo path."
+            refreshArchiveBrowserState()
+            return
+        }
+        let items = MediaItemSort.sorted(result.items.map { item -> MediaItem in
+            var item = item
+            if let path = ArchiveIndexStore.archiveRelativePath(for: item.sourceURL, archiveRoot: capturedSettings.archiveRoot) {
+                item.archiveRelativePath = path
+                if let photo = archiveLocationPhotosByPath[path] {
+                    item.metadata.latitude = photo.latitude; item.metadata.longitude = photo.longitude
+                }
+            }
+            return googleProjectedItem(item)
+        })
+        // Capture the current UI state now: closing Preview/Compare during a suspended
+        // refresh must win over the earlier refresh snapshot.
+        let selectionToRestore = requestedPath == nil ? (captureArchiveFolderSelection() ?? archiveFolderSelectionToRestore) : nil
+        if let oldItems = archiveMediaCache[result.nodeID], let backup = compareSelectionBackup {
+            let oldPaths = Dictionary(oldItems.compactMap { item in item.archiveRelativePath.map { (item.id, $0) } },
+                uniquingKeysWith: { first, _ in first })
+            let newIDs = Dictionary(items.compactMap { item in item.archiveRelativePath.map { ($0, item.id) } },
+                uniquingKeysWith: { first, _ in first })
+            var state = backup.selectionState
+            state.selectedMediaItemIDs = Set(state.selectedMediaItemIDs.compactMap { oldPaths[$0].flatMap { newIDs[$0] } })
+            state.focusedReviewItemID = state.focusedReviewItemID.flatMap { oldPaths[$0] }.flatMap { newIDs[$0] }
+            state.reviewSelectionAnchorID = state.reviewSelectionAnchorID.flatMap { oldPaths[$0] }.flatMap { newIDs[$0] }
+            compareSelectionBackup = CompareSelectionBackup(selectionState: state, keyboardTarget: backup.keyboardTarget)
+        }
+        archiveMediaCacheRevisions[result.nodeID] = archiveMediaCatalogueRevision
+        archiveMediaCache[result.nodeID] = items
+        archiveFolderLoadState = .loaded
+        archiveMissingSearchHitMessage = nil
+        statusMessage = result.statusMessage
+        if let requestedPath {
+            archiveRequestedSearchPhotoPath = nil
+            archiveFolderSelectionToRestore = nil
+            reviewFilter = .all
+            dayDetailDisplayMode = .review
+            if let hit = items.first(where: { $0.archiveRelativePath == requestedPath }) {
+                focusMediaItem(hit, openPreview: false)
+                activateReviewGridFocus()
+            } else {
+                clearDetailSelections()
+                archiveMissingSearchHitMessage = "The matching photo is no longer in this folder. Return to search and refresh the Archive."
+                statusMessage = archiveMissingSearchHitMessage!
+            }
+        }
+        if let selection = selectionToRestore {
+            archiveFolderSelectionToRestore = nil
+            let byPath = Dictionary(items.compactMap { item in item.archiveRelativePath.map { ($0, item.id) } },
+                uniquingKeysWith: { first, _ in first })
+            selectedMediaItemIDs = Set(selection.selectedPaths.compactMap { byPath[$0] })
+            focusedReviewItemID = selection.focusedPath.flatMap { byPath[$0] }
+            reviewSelectionAnchorID = selection.anchorPath.flatMap { byPath[$0] }
+            previewingMediaItemID = selection.previewPath.flatMap { byPath[$0] }
+            comparingMediaItemIDs = selection.comparePaths.compactMap { byPath[$0] }
+            pendingReviewScrollTargetID = focusedReviewItemID
+        }
+        requestInitialArchiveThumbnails(for: items)
+        if capturedSettings.archiveMachineRole != .travel {
+            let urls = items.map(\.sourceURL)
+            Task.detached(priority: .utility) { ArchiveByteReadPolicyContext.shared.warmOnlineOnlyVerdicts(for: urls) }
+        }
+        preheatDisplayImages(for: items.map(\.id), limit: 6)
+        latencyRecorder.end("archive.load")
+        refreshArchiveBrowserState()
+    }
+
+    private func captureArchiveFolderSelection() -> ArchiveFolderSelection? {
+        guard let nodeID = activeArchiveContentNode?.id, let items = archiveMediaCache[nodeID] else { return nil }
+        let paths = Dictionary(items.compactMap { item in
+            ArchiveIndexStore.archiveRelativePath(for: item.sourceURL, archiveRoot: settings.archiveRoot).map { (item.id, $0) }
+        }, uniquingKeysWith: { first, _ in first })
+        return ArchiveFolderSelection(selectedPaths: Set(selectedMediaItemIDs.compactMap { paths[$0] }),
+            focusedPath: focusedReviewItemID.flatMap { paths[$0] }, anchorPath: reviewSelectionAnchorID.flatMap { paths[$0] },
+            previewPath: previewingMediaItemID.flatMap { paths[$0] }, comparePaths: comparingMediaItemIDs.compactMap { paths[$0] })
+    }
+
+    private func cancelArchiveMediaLoad(clearPendingHit: Bool = true) {
+        archiveMediaLoadTask?.cancel(); archiveMediaLoadTask = nil
         archiveMediaLoadGeneration &+= 1
+        archiveFolderLoadState = .idle
+        archiveMissingSearchHitMessage = nil
+        if clearPendingHit {
+            archiveRequestedSearchPhotoPath = nil
+            archiveFolderSelectionToRestore = nil
+        }
     }
 
     private static func formatSeconds(_ seconds: TimeInterval) -> String {

@@ -23,20 +23,25 @@ struct ArchiveBrowseYearGroup: Equatable, Sendable {
 /// Rows restart at every year header. Preserve the intended column through short rows.
 struct ArchiveGridNavigator {
     private var preferredColumn: Int?
-    private var previousColumns: Int?
+    private var previousColumns: [Int]?
 
     mutating func reset() { preferredColumn = nil; previousColumns = nil }
 
     mutating func target(sections: [[String]], selectedID: String?, horizontal: Int,
                          vertical: Int, columns: Int) -> String? {
         let columns = max(columns, 1)
-        if previousColumns != columns { preferredColumn = nil }
-        previousColumns = columns
         let rows = sections.flatMap { section in
             stride(from: 0, to: section.count, by: columns).map {
                 Array(section[$0..<min($0 + columns, section.count)])
             }
         }
+        return targetRows(rows: rows, selectedID: selectedID, horizontal: horizontal, vertical: vertical, layoutKey: [columns])
+    }
+
+    mutating func targetRows<ID: Hashable>(rows: [[ID]], selectedID: ID?, horizontal: Int,
+                                           vertical: Int, layoutKey: [Int]) -> ID? {
+        if previousColumns != layoutKey { preferredColumn = nil }
+        previousColumns = layoutKey
         let all = rows.flatMap { $0 }
         guard !all.isEmpty else { return nil }
         let current = selectedID.flatMap { all.contains($0) ? $0 : nil } ?? all[0]
@@ -58,6 +63,7 @@ struct ArchiveGridNavigator {
 enum ArchiveMapItemID: Hashable, Sendable {
     case walk(String)
     case folder(String)
+    case photo(String)
 }
 
 struct ArchiveBrowseContent {
@@ -80,7 +86,8 @@ struct ArchiveBrowseContent {
         yearGroups = groups.keys.sorted(by: >).map { ArchiveBrowseYearGroup(year: $0, entries: groups[$0] ?? []) }
         let visibleEntries = yearGroups.flatMap(\.entries)
         entries = visibleEntries
-        let visibleRoots = Set(visibleEntries.map(\.archiveRelativePath))
+        let visibleEntryIDs = Set(visibleEntries.map(\.id))
+        let entriesByPath = Dictionary(catalogue.entries.map { ($0.archiveRelativePath, $0) }, uniquingKeysWith: { first, _ in first })
         allEntriesByID = Dictionary(catalogue.entries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         tripsByPath = Dictionary(catalogue.entries.filter { $0.kind == .trip }.map { ($0.archiveRelativePath, $0) }, uniquingKeysWith: { first, _ in first })
         let years = Dictionary(grouping: catalogue.entries, by: \.year)
@@ -92,8 +99,8 @@ struct ArchiveBrowseContent {
         } else {
             searchResults = catalogue.photos.filter { photo in
                 matchingPaths.contains(photo.archiveRelativePath)
-                    && (year == nil || photo.archiveRelativePath.split(separator: "/").first.map(String.init) == year)
-                    && Self.isPhoto(photo.archiveRelativePath, within: visibleRoots)
+                    && ArchiveEntryContainment.entryID(for: photo.archiveRelativePath, entriesByPath: entriesByPath)
+                        .map { visibleEntryIDs.contains($0) } == true
             }.sorted {
                 if $0.date != $1.date { return ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
                 return $0.archiveRelativePath < $1.archiveRelativePath
@@ -102,20 +109,9 @@ struct ArchiveBrowseContent {
         let projectedMap = ArchiveMapProjection.snapshot(catalogue: catalogue, visibleEntries: visibleEntries,
             searchQuery: searchQuery, matchingPaths: matchingPaths)
         map = projectedMap
-        mapNavigationIDs = projectedMap.locatedWalks.map { .walk($0.archiveRelativePath) }
+        mapNavigationIDs = searchResults.map { .photo($0.id) } + projectedMap.locatedWalks.map { .walk($0.archiveRelativePath) }
             + projectedMap.unlocatedWalks.map { .walk($0.archiveRelativePath) }
             + projectedMap.unlocatedHistoricalFolders.map { .folder($0.id) }
     }
 
-    private static func isPhoto(_ path: String, within roots: Set<String>) -> Bool {
-        if roots.contains(".") { return true }
-        var parent = (path as NSString).deletingLastPathComponent
-        while !parent.isEmpty && parent != "." {
-            if roots.contains(parent) { return true }
-            let next = (parent as NSString).deletingLastPathComponent
-            if next == parent { break }
-            parent = next
-        }
-        return false
-    }
 }
