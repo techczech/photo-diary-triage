@@ -42,7 +42,9 @@ struct ArchiveThumbnailPreparationProgress: Equatable {
 final class AppState: ObservableObject {
     @Published var settings: AppSettings {
         didSet {
+            if oldValue.archiveBrowseViewMode != settings.archiveBrowseViewMode { archiveGridNavigator.reset() }
             if oldValue.archiveRoot != settings.archiveRoot || oldValue.archiveMachineRole != settings.archiveMachineRole || oldValue.oneDrivePicturesRoot != settings.oneDrivePicturesRoot {
+                invalidateArchiveBrowseContent()
                 ArchiveByteReadPolicyContext.shared.update(settings: settings)
                 originalViewingTasks.values.forEach { $0.cancel() }
                 originalViewingTasks.removeAll()
@@ -399,17 +401,33 @@ final class AppState: ObservableObject {
     private var archiveLocationWalksByPath: [String: ArchiveWalkSummary] = [:]
     private var archiveCatalogue: ArchiveCatalogue = .empty {
         didSet {
+            invalidateArchiveBrowseContent()
             archiveLocationPhotosByPath = Dictionary(archiveCatalogue.photos.map { ($0.archiveRelativePath, $0) }, uniquingKeysWith: { first, _ in first })
             archiveLocationWalksByPath = Dictionary(archiveCatalogue.walksByTripPath.values.flatMap { $0 }.map { ($0.archiveRelativePath, $0) }, uniquingKeysWith: { first, _ in first })
         }
     }
     private var archiveCatalogueIsLoading = false
     private var archiveCatalogueError: String?
-    private var archiveYearFilter: String?
-    private var archiveKindFilter: ArchiveBrowseKindFilter = .all
-    private var archiveSort: ArchiveBrowseSort = .newest
-    private var archiveSearchQuery = ""
-    private var archiveSearchMatchingPaths: Set<String> = []
+    private var archiveYearFilter: String? {
+        didSet { if oldValue != archiveYearFilter { invalidateArchiveBrowseContent() } }
+    }
+    private var archiveKindFilter: ArchiveBrowseKindFilter = .all {
+        didSet { if oldValue != archiveKindFilter { invalidateArchiveBrowseContent() } }
+    }
+    private var archiveSort: ArchiveBrowseSort = .newest {
+        didSet { if oldValue != archiveSort { invalidateArchiveBrowseContent() } }
+    }
+    private var archiveSearchQuery = "" {
+        didSet { if oldValue != archiveSearchQuery { invalidateArchiveBrowseContent() } }
+    }
+    private var archiveSearchMatchingPaths: Set<String> = [] {
+        didSet { if oldValue != archiveSearchMatchingPaths { invalidateArchiveBrowseContent() } }
+    }
+    private var archiveBrowseContentCache: ArchiveBrowseContent?
+    private(set) var archiveProjectionBuildCount = 0
+    private var archiveGridNavigator = ArchiveGridNavigator()
+    private var selectedArchiveMapItemID: ArchiveMapItemID?
+    private var archiveBrowseFocusRevision = 0
     private var archiveSearchFocusRevision = 0
     private var archiveNavigationLevel: ArchiveNavigationLevel = .archive
     private var selectedArchiveEntryID: String?
@@ -800,7 +818,14 @@ final class AppState: ObservableObject {
     }
 
     var canFocusReviewSurface: Bool {
-        !visibleMediaItems.isEmpty
+        if workspaceMode == .archiveView {
+            switch archiveNavigationLevel {
+            case .archive: return !filteredArchiveEntries.isEmpty
+            case .trip: return !currentArchiveWalks.isEmpty
+            case .photos: break
+            }
+        }
+        return !visibleMediaItems.isEmpty
     }
 
     var canUseGroupedSectionNavigation: Bool {
@@ -1270,6 +1295,7 @@ final class AppState: ObservableObject {
 
     func selectArchiveEntry(_ entryID: String) {
         guard filteredArchiveEntries.contains(where: { $0.id == entryID }) else { return }
+        archiveGridNavigator.reset()
         selectedArchiveEntryID = entryID
         activePane = .media
         refreshArchiveBrowserState()
@@ -1589,6 +1615,10 @@ final class AppState: ObservableObject {
         guard workspaceMode == .archiveView else { return [] }
         switch archiveNavigationLevel {
         case .archive:
+            if settings.archiveBrowseViewMode == .map {
+                guard let walk = selectedArchiveMapWalk else { return [] }
+                return [(.walk, walk.archiveRelativePath)]
+            }
             guard let entry = selectedArchiveEntry, entry.kind == .trip, entry.tripID != nil else { return [] }
             return [(.trip, entry.archiveRelativePath)]
         case .trip:
@@ -1712,6 +1742,7 @@ final class AppState: ObservableObject {
 
     func selectArchiveWalk(_ walkID: String) {
         guard currentArchiveWalks.contains(where: { $0.id == walkID }) else { return }
+        archiveGridNavigator.reset()
         selectedArchiveWalkID = walkID
         activePane = .media
         refreshArchiveBrowserState()
@@ -1724,31 +1755,47 @@ final class AppState: ObservableObject {
         refreshArchiveBrowserState()
     }
 
-    func moveArchiveSelection(horizontal: Int, vertical: Int, contactSheetColumns: Int = 4) {
-        if case .trip = archiveNavigationLevel {
-            moveArchiveWalkSelection(horizontal: horizontal, vertical: vertical, columns: contactSheetColumns)
+    func moveArchiveSelection(horizontal: Int, vertical: Int, contactSheetColumns: Int) {
+        switch archiveNavigationLevel {
+        case .trip:
+            selectedArchiveWalkID = archiveGridNavigator.target(sections: [currentArchiveWalks.map(\.id)],
+                selectedID: selectedArchiveWalkID, horizontal: horizontal, vertical: vertical, columns: contactSheetColumns)
+        case .photos:
             return
+        case .archive:
+            if settings.archiveBrowseViewMode == .map {
+                let ids = archiveBrowseContent.mapNavigationIDs
+                guard !ids.isEmpty else { return }
+                let index = selectedArchiveMapItemID.flatMap { ids.firstIndex(of: $0) } ?? 0
+                let delta = vertical != 0 ? vertical : horizontal
+                selectedArchiveMapItemID = ids[min(max(index + delta, 0), ids.count - 1)]
+            } else {
+                let sections = archiveBrowseContent.yearGroups.map { $0.entries.map(\.id) }
+                selectedArchiveEntryID = archiveGridNavigator.target(sections: sections,
+                    selectedID: selectedArchiveEntryID, horizontal: settings.archiveBrowseViewMode == .timeline ? 0 : horizontal,
+                    vertical: vertical, columns: settings.archiveBrowseViewMode == .timeline ? 1 : contactSheetColumns)
+            }
         }
-
-        let entries = filteredArchiveEntries
-        guard !entries.isEmpty else { return }
-        let currentIndex = selectedArchiveEntryID.flatMap { id in entries.firstIndex(where: { $0.id == id }) } ?? 0
-        let delta: Int
-        if settings.archiveBrowseViewMode == .timeline {
-            delta = vertical
-        } else {
-            delta = horizontal + (vertical * max(contactSheetColumns, 1))
-        }
-        let target = min(max(currentIndex + delta, 0), entries.count - 1)
-        selectedArchiveEntryID = entries[target].id
+        activePane = .media
         refreshArchiveBrowserState()
     }
 
     func openSelectedArchiveItem() {
         switch archiveNavigationLevel {
         case .archive:
+            if settings.archiveBrowseViewMode == .map {
+                switch selectedArchiveMapItemID {
+                case .walk(let path):
+                    if let walk = archiveBrowseContent.map.walks.first(where: { $0.archiveRelativePath == path }) { openArchiveMapWalk(walk) }
+                case .folder(let id):
+                    if let entry = archiveBrowseContent.allEntriesByID[id] { openArchiveMapFolder(entry) }
+                case nil: break
+                }
+                return
+            }
             guard let entry = selectedArchiveEntry else { return }
             if entry.kind == .trip {
+                archiveGridNavigator.reset()
                 archiveNavigationLevel = .trip(path: entry.archiveRelativePath)
                 selectedArchiveWalkID = archiveCatalogue.walksByTripPath[entry.archiveRelativePath]?.first?.id
                 refreshArchiveBrowserState()
@@ -1769,17 +1816,23 @@ final class AppState: ObservableObject {
             )
         case .photos:
             focusReviewSurface()
+            openFocusedReviewItem()
         }
     }
 
     func openArchiveMapWalk(_ walk: ArchiveMapWalk) {
         guard archiveCatalogue.walksByTripPath[walk.tripPath]?.contains(where: { $0.archiveRelativePath == walk.archiveRelativePath }) == true else { return }
+        selectedArchiveMapItemID = .walk(walk.archiveRelativePath)
+        selectedArchiveEntryID = archiveBrowseContent.tripsByPath[walk.tripPath]?.id
         openArchivePhotoFolder(relativePath: walk.archiveRelativePath, title: walk.title, parentTripPath: walk.tripPath)
     }
 
     func openArchiveMapFolder(_ entry: ArchiveBrowseEntry) {
+        guard entry.kind == .unorganisedFolder,
+              filteredArchiveEntries.contains(where: { $0.id == entry.id }) else { return }
+        selectedArchiveMapItemID = .folder(entry.id)
         selectArchiveEntry(entry.id)
-        openSelectedArchiveItem()
+        openArchivePhotoFolder(relativePath: entry.archiveRelativePath, title: entry.title, parentTripPath: nil)
     }
 
     func organiseSelectedUnorganisedFolder() {
@@ -1796,7 +1849,7 @@ final class AppState: ObservableObject {
     var canOpenSelectedArchiveItem: Bool {
         switch archiveNavigationLevel {
         case .archive:
-            return selectedArchiveEntry != nil
+            return settings.archiveBrowseViewMode == .map ? selectedArchiveMapItemID != nil : selectedArchiveEntry != nil
         case .trip:
             return !currentArchiveWalks.isEmpty
         case .photos:
@@ -1844,6 +1897,7 @@ final class AppState: ObservableObject {
             children: nil,
             folderURL: folderURL
         )
+        archiveGridNavigator.reset()
         archiveLocationRecoveryWalkPath = nil
         activeArchiveContentNode = node
         archiveNavigationLevel = .photos(path: relativePath, parentTripPath: parentTripPath)
@@ -1851,16 +1905,6 @@ final class AppState: ObservableObject {
         activePane = .media
         clearDetailSelections()
         loadArchiveMediaIfNeeded(for: nodeID)
-        refreshArchiveBrowserState()
-    }
-
-    private func moveArchiveWalkSelection(horizontal: Int, vertical: Int, columns: Int) {
-        let walks = currentArchiveWalks
-        guard !walks.isEmpty else { return }
-        let currentIndex = selectedArchiveWalkID.flatMap { id in walks.firstIndex(where: { $0.id == id }) } ?? 0
-        let delta = horizontal + (vertical * max(columns, 1))
-        let target = min(max(currentIndex + delta, 0), walks.count - 1)
-        selectedArchiveWalkID = walks[target].id
         refreshArchiveBrowserState()
     }
 
@@ -3970,6 +4014,17 @@ final class AppState: ObservableObject {
 
     func focusReviewSurface() {
         guard canFocusReviewSurface else { return }
+        if workspaceMode == .archiveView {
+            switch archiveNavigationLevel {
+            case .archive, .trip:
+                activePane = .media
+                reviewGridHasFocus = false
+                archiveBrowseFocusRevision &+= 1
+                refreshArchiveBrowserState()
+                return
+            case .photos: break
+            }
+        }
         if dayDetailDisplayMode == .sections {
             ensureFocusedInlineSection()
         }
@@ -4659,19 +4714,27 @@ final class AppState: ObservableObject {
                 archiveNavigationLevel = .archive
                 activeArchiveContentNode = nil
                 selectedSidebarNodeID = preferredSidebarNodeID(for: .archiveView)
-            case .photos(_, let parentTripPath):
+            case .photos(let path, let parentTripPath):
                 cancelArchiveMediaLoad()
                 activeArchiveContentNode = nil
                 archiveMediaCache.removeAll()
                 if let parentTripPath {
                     archiveNavigationLevel = .trip(path: parentTripPath)
-                    selectedArchiveWalkID = archiveCatalogue.walksByTripPath[parentTripPath]?.first?.id
+                    selectedArchiveEntryID = archiveBrowseContent.tripsByPath[parentTripPath]?.id
+                    selectedArchiveWalkID = archiveCatalogue.walksByTripPath[parentTripPath]?.first(where: { $0.archiveRelativePath == path })?.id
+                        ?? archiveCatalogue.walksByTripPath[parentTripPath]?.first?.id
                 } else {
                     archiveNavigationLevel = .archive
+                    selectedArchiveEntryID = filteredArchiveEntries.filter {
+                        path == $0.archiveRelativePath || path.hasPrefix($0.archiveRelativePath + "/")
+                    }.max { $0.archiveRelativePath.count < $1.archiveRelativePath.count }?.id ?? selectedArchiveEntryID
                 }
                 selectedSidebarNodeID = preferredSidebarNodeID(for: .archiveView)
                 clearDetailSelections()
             }
+            archiveGridNavigator.reset()
+            activePane = .media
+            archiveBrowseFocusRevision &+= 1
             refreshArchiveBrowserState()
             refreshAllUIState()
             return
@@ -5995,92 +6058,73 @@ final class AppState: ObservableObject {
         refreshArchiveBrowserState()
     }
 
-    private func refreshArchiveBrowserState() {
-        let entries = filteredArchiveEntries
-        let selectedTrip: ArchiveBrowseEntry?
-        let walks: [ArchiveWalkSummary]
-        if case .trip(let path) = archiveNavigationLevel {
-            selectedTrip = archiveCatalogue.entries.first {
-                $0.kind == .trip && $0.archiveRelativePath == path
-            }
-            walks = archiveCatalogue.walksByTripPath[path] ?? []
-        } else if case .photos(_, let parentTripPath) = archiveNavigationLevel,
-                  let parentTripPath {
-            selectedTrip = archiveCatalogue.entries.first {
-                $0.kind == .trip && $0.archiveRelativePath == parentTripPath
-            }
-            walks = archiveCatalogue.walksByTripPath[parentTripPath] ?? []
-        } else {
-            selectedTrip = nil
-            walks = []
-        }
+    private func invalidateArchiveBrowseContent() {
+        archiveBrowseContentCache = nil
+        archiveGridNavigator.reset()
+    }
 
-        let yearFilters = archiveCatalogue.years.map { year in
-            ArchiveYearFilterSnapshot(
-                year: year,
-                count: archiveCatalogue.entries.filter { $0.year == year }.count
-            )
+    private var archiveBrowseContent: ArchiveBrowseContent {
+        if let cached = archiveBrowseContentCache { return cached }
+        let content = ArchiveBrowseContent(catalogue: archiveCatalogue, year: archiveYearFilter,
+            kind: archiveKindFilter, searchQuery: archiveSearchQuery,
+            matchingPaths: archiveSearchMatchingPaths, sort: archiveSort)
+        archiveBrowseContentCache = content
+        archiveProjectionBuildCount &+= 1
+        return content
+    }
+
+    private func refreshArchiveBrowserState() {
+        let content = archiveBrowseContent
+        let tripPath: String?
+        switch archiveNavigationLevel {
+        case .trip(let path): tripPath = path
+        case .photos(_, let parent): tripPath = parent
+        case .archive: tripPath = nil
+        }
+        if !content.mapNavigationIDs.contains(where: { $0 == selectedArchiveMapItemID }) {
+            selectedArchiveMapItemID = content.mapNavigationIDs.first
         }
         let snapshot = ArchiveBrowserSnapshot(
-            isLoading: archiveCatalogueIsLoading,
-            errorMessage: archiveCatalogueError,
-            viewMode: settings.archiveBrowseViewMode,
-            sort: archiveSort,
-            showPreviews: settings.showArchivePreviews,
-            yearFilter: archiveYearFilter,
-            kindFilter: archiveKindFilter,
-            searchQuery: archiveSearchQuery,
-            searchFocusRevision: archiveSearchFocusRevision,
-            level: archiveNavigationLevel,
-            entries: entries,
-            totalEntryCount: archiveCatalogue.entries.count,
-            tripCount: archiveCatalogue.entries.filter { $0.kind == .trip }.count,
-            unorganisedFolderCount: archiveCatalogue.entries.filter { $0.kind == .unorganisedFolder }.count,
-            yearFilters: yearFilters,
-            selectedEntryID: selectedArchiveEntryID,
-            selectedTrip: selectedTrip,
-            walks: walks,
-            selectedWalkID: selectedArchiveWalkID,
-            searchResults: archiveSearchResults,
-            selectedSearchResultID: selectedArchiveSearchResultID,
-            map: ArchiveMapProjection.snapshot(catalogue: archiveCatalogue, visibleEntries: entries,
-                searchQuery: archiveSearchQuery, matchingPaths: archiveSearchMatchingPaths)
-        )
+            isLoading: archiveCatalogueIsLoading, errorMessage: archiveCatalogueError,
+            viewMode: settings.archiveBrowseViewMode, sort: archiveSort, showPreviews: settings.showArchivePreviews,
+            yearFilter: archiveYearFilter, kindFilter: archiveKindFilter, searchQuery: archiveSearchQuery,
+            searchFocusRevision: archiveSearchFocusRevision, level: archiveNavigationLevel,
+            entries: content.entries, totalEntryCount: archiveCatalogue.entries.count,
+            tripCount: content.tripCount, unorganisedFolderCount: content.unorganisedFolderCount,
+            yearFilters: content.yearFilters, selectedEntryID: selectedArchiveEntryID,
+            selectedTrip: tripPath.flatMap { content.tripsByPath[$0] },
+            walks: tripPath.flatMap { archiveCatalogue.walksByTripPath[$0] } ?? [],
+            selectedWalkID: selectedArchiveWalkID, searchResults: content.searchResults,
+            selectedSearchResultID: selectedArchiveSearchResultID, map: content.map,
+            yearGroups: content.yearGroups, selectedMapItemID: selectedArchiveMapItemID,
+            browseFocusRevision: archiveBrowseFocusRevision)
         archiveBrowserState.update(snapshot)
     }
 
-    private var filteredArchiveEntries: [ArchiveBrowseEntry] {
-        ArchiveBrowseProjection.entries(
-            from: archiveCatalogue,
-            year: archiveYearFilter,
-            kind: archiveKindFilter,
-            searchQuery: archiveSearchQuery,
-            matchingPaths: archiveSearchMatchingPaths,
-            sort: archiveSort
-        )
-    }
-
-    private var archiveSearchResults: [ArchivePhotoSummary] {
-        guard !archiveSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return []
-        }
-        return archiveCatalogue.photos
-            .filter { photo in
-                archiveSearchMatchingPaths.contains(photo.archiveRelativePath)
-                    && (archiveYearFilter == nil
-                        || photo.archiveRelativePath.split(separator: "/").first.map(String.init) == archiveYearFilter)
-            }
-            .sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
-    }
+    private var filteredArchiveEntries: [ArchiveBrowseEntry] { archiveBrowseContent.entries }
+    private var archiveSearchResults: [ArchivePhotoSummary] { archiveBrowseContent.searchResults }
 
     private var currentArchiveWalks: [ArchiveWalkSummary] {
         guard case .trip(let path) = archiveNavigationLevel else { return [] }
         return archiveCatalogue.walksByTripPath[path] ?? []
     }
 
+    private var selectedArchiveMapWalk: ArchiveMapWalk? {
+        guard case .walk(let path) = selectedArchiveMapItemID else { return nil }
+        return archiveBrowseContent.map.walks.first { $0.archiveRelativePath == path }
+    }
+
     private var selectedArchiveEntry: ArchiveBrowseEntry? {
+        if archiveNavigationLevel == .archive, settings.archiveBrowseViewMode == .map {
+            switch selectedArchiveMapItemID {
+            case .walk:
+                return selectedArchiveMapWalk.flatMap { archiveBrowseContent.tripsByPath[$0.tripPath] }
+            case .folder(let id): return archiveBrowseContent.allEntriesByID[id]
+            case nil: return nil
+            }
+        }
         guard let selectedArchiveEntryID else { return nil }
-        return archiveCatalogue.entries.first { $0.id == selectedArchiveEntryID }
+        return archiveBrowseContent.allEntriesByID[selectedArchiveEntryID]
     }
 
     private func reconcileArchiveSelection() {

@@ -413,6 +413,9 @@ struct ArchiveBrowserSnapshot: Equatable, Sendable {
     let searchResults: [ArchivePhotoSummary]
     let selectedSearchResultID: String?
     var map: ArchiveMapSnapshot = .empty
+    var yearGroups: [ArchiveBrowseYearGroup] = []
+    var selectedMapItemID: ArchiveMapItemID? = nil
+    var browseFocusRevision: Int = 0
 
     static let empty = ArchiveBrowserSnapshot(
         isLoading: false,
