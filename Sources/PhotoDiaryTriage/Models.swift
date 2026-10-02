@@ -493,6 +493,7 @@ struct AppSettings: Codable, Hashable, Sendable {
     var archiveBrowseViewMode: ArchiveBrowseViewMode
     var showArchivePreviews: Bool
     var lmStudioConfiguration = LMStudioConfiguration()
+    var googlePhotosClientID = ""
 
     static func `default`(fileManager: FileManager = .default) -> AppSettings {
         let libraryRoot = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -603,6 +604,7 @@ struct AppSettings: Codable, Hashable, Sendable {
         }
         archiveBrowseViewMode = try container.decodeIfPresent(ArchiveBrowseViewMode.self, forKey: .archiveBrowseViewMode) ?? defaults.archiveBrowseViewMode
         showArchivePreviews = try container.decodeIfPresent(Bool.self, forKey: .showArchivePreviews) ?? defaults.showArchivePreviews
+        googlePhotosClientID = try container.decodeIfPresent(String.self, forKey: .googlePhotosClientID) ?? ""
         lmStudioConfiguration = try container.decodeIfPresent(LMStudioConfiguration.self, forKey: .lmStudioConfiguration) ?? defaults.lmStudioConfiguration
     }
 
@@ -625,6 +627,7 @@ struct AppSettings: Codable, Hashable, Sendable {
         try container.encode(archiveBrowseViewMode, forKey: .archiveBrowseViewMode)
         try container.encode(showArchivePreviews, forKey: .showArchivePreviews)
         try container.encode(lmStudioConfiguration, forKey: .lmStudioConfiguration)
+        try container.encode(googlePhotosClientID, forKey: .googlePhotosClientID)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -645,6 +648,7 @@ struct AppSettings: Codable, Hashable, Sendable {
         case archiveBrowseViewMode
         case showArchivePreviews
         case lmStudioConfiguration
+        case googlePhotosClientID
     }
 
     private enum LegacyCodingKeys: String, CodingKey {
@@ -876,6 +880,7 @@ struct MediaItem: Identifiable, Codable, Hashable, Sendable {
     var sourceProvenanceID: UUID?
     var sourceModificationTime: TimeInterval?
     var captureDateEvidence: CaptureDateEvidence?
+    var googlePhotos: GooglePhotosRecord? = nil
     var recognisedArchiveCopy: Bool?
 
     init(
@@ -904,7 +909,8 @@ struct MediaItem: Identifiable, Codable, Hashable, Sendable {
         sourceProvenanceID: UUID? = nil,
         sourceModificationTime: TimeInterval? = nil,
         captureDateEvidence: CaptureDateEvidence? = nil,
-        recognisedArchiveCopy: Bool? = nil
+        recognisedArchiveCopy: Bool? = nil,
+        googlePhotos: GooglePhotosRecord? = nil
     ) {
         self.id = id
         self.sourceURL = sourceURL
@@ -932,6 +938,7 @@ struct MediaItem: Identifiable, Codable, Hashable, Sendable {
         self.sourceModificationTime = sourceModificationTime
         self.captureDateEvidence = captureDateEvidence
         self.recognisedArchiveCopy = recognisedArchiveCopy
+        self.googlePhotos = googlePhotos
     }
 }
 
@@ -1132,6 +1139,7 @@ struct WalkManifest: Codable, Hashable, Sendable {
     var importedFiles: [FileManifest]
     var excludedFiles: [RejectedFileManifest] = []
     var descriptions: MachineDescriptionHistory? = nil
+    var googlePhotos: GooglePhotosRecord? = nil
 
     init(
         sessionID: UUID,
@@ -1149,7 +1157,8 @@ struct WalkManifest: Codable, Hashable, Sendable {
         summary: Summary,
         importedFiles: [FileManifest],
         excludedFiles: [RejectedFileManifest] = [],
-        descriptions: MachineDescriptionHistory? = nil
+        descriptions: MachineDescriptionHistory? = nil,
+        googlePhotos: GooglePhotosRecord? = nil
     ) {
         self.sessionID = sessionID
         self.walkID = walkID
@@ -1167,6 +1176,7 @@ struct WalkManifest: Codable, Hashable, Sendable {
         self.importedFiles = importedFiles
         self.excludedFiles = excludedFiles
         self.descriptions = descriptions
+        self.googlePhotos = googlePhotos
     }
 }
 
@@ -1180,6 +1190,7 @@ struct TripManifest: Codable, Hashable, Sendable {
     var memberWalkFolderPaths: [String]
     var locationLabelOverride: String? = nil
     var descriptions: MachineDescriptionHistory? = nil
+    var googlePhotos: GooglePhotosRecord? = nil
 }
 
 struct RejectedFileManifest: Codable, Hashable, Sendable {
@@ -1210,6 +1221,7 @@ struct FileManifest: Codable, Hashable, Sendable {
     var locationOverride: PhotoLocationOverride?
     var captureDateEvidence: CaptureDateEvidence?
     var descriptions: MachineDescriptionHistory? = nil
+    var googlePhotos: GooglePhotosRecord? = nil
 
     init(
         mediaItemID: UUID,
@@ -1231,7 +1243,8 @@ struct FileManifest: Codable, Hashable, Sendable {
         notes: String,
         locationOverride: PhotoLocationOverride? = nil,
         captureDateEvidence: CaptureDateEvidence? = nil,
-        descriptions: MachineDescriptionHistory? = nil
+        descriptions: MachineDescriptionHistory? = nil,
+        googlePhotos: GooglePhotosRecord? = nil
     ) {
         self.mediaItemID = mediaItemID
         self.archivePath = archivePath
@@ -1253,6 +1266,7 @@ struct FileManifest: Codable, Hashable, Sendable {
         self.locationOverride = locationOverride
         self.captureDateEvidence = captureDateEvidence
         self.descriptions = descriptions
+        self.googlePhotos = googlePhotos
     }
 }
 

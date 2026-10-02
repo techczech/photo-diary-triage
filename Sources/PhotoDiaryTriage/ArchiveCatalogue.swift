@@ -86,6 +86,8 @@ struct ArchiveBrowseEntry: Identifiable, Hashable, Sendable {
     let coverThumbnailPath: String?
     var tripID: UUID? = nil
     var locationLabelOverride: String? = nil
+    var googlePhotos: GooglePhotosRecord? = nil
+    var originalPhotoCount: Int? = nil
 
     var sortDate: Date {
         endDate ?? startDate ?? .distantPast
@@ -104,6 +106,8 @@ struct ArchiveWalkSummary: Identifiable, Hashable, Sendable {
     var latitude: Double? = nil
     var longitude: Double? = nil
     var coordinateSource: ArchiveCoordinateSource? = nil
+    var googlePhotos: GooglePhotosRecord? = nil
+    var originalPhotoCount: Int? = nil
     var sessionID: UUID? = nil
     var walkID: UUID? = nil
 }
@@ -239,6 +243,10 @@ struct ArchiveCatalogueBuilder {
         let walksByTripPath = Dictionary(grouping: walkRows.compactMap { row -> ArchiveWalkSummary? in
             guard let tripPath = row.tripPath?.nonEmpty else { return nil }
             let memberPhotos = photosByWalkPath[row.archiveRelativePath] ?? []
+            var google = row.googlePhotos ?? GooglePhotosRecord()
+            for member in photoRows where member.walkPath == row.archiveRelativePath && member.isDerivedPhoto != true {
+                for receipt in member.googlePhotos?.memberships ?? [] { google.add(receipt) }
+            }
             return ArchiveWalkSummary(
                 id: row.archiveRelativePath,
                 tripPath: tripPath,
@@ -248,7 +256,7 @@ struct ArchiveCatalogueBuilder {
                 location: row.location?.nonEmpty,
                 photoCount: memberPhotos.count,
                 coverThumbnailPath: row.thumbnailPath ?? memberPhotos.compactMap(\.thumbnailPath).first,
-                latitude: row.latitude, longitude: row.longitude, coordinateSource: row.coordinateSource, sessionID: row.sessionID, walkID: row.walkID
+                latitude: row.latitude, longitude: row.longitude, coordinateSource: row.coordinateSource, googlePhotos: google.badge == nil ? nil : google, originalPhotoCount: memberPhotos.filter { !$0.isDerivedPhoto }.count, sessionID: row.sessionID, walkID: row.walkID
             )
         }) { $0.tripPath }
             .mapValues { $0.sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) } }
@@ -258,6 +266,10 @@ struct ArchiveCatalogueBuilder {
                 ?? photos.filter { $0.archiveRelativePath.hasPrefix(row.archiveRelativePath + "/") }
             let walks = walksByTripPath[row.archiveRelativePath] ?? []
             let dates = (tripPhotos.compactMap(\.date) + walks.compactMap(\.date)).sorted()
+            let originals = tripPhotos.filter { !$0.isDerivedPhoto }
+            let ids = Set(originals.compactMap(\.mediaItemID))
+            var google = row.googlePhotos
+            google?.memberships.removeAll { !ids.contains($0.photoID) }
             return ArchiveBrowseEntry(
                 id: "trip|\(row.archiveRelativePath)",
                 kind: .trip,
@@ -273,7 +285,7 @@ struct ArchiveCatalogueBuilder {
                     ?? walks.compactMap(\.coverThumbnailPath).first
                     ?? tripPhotos.compactMap(\.thumbnailPath).first,
                 tripID: row.tripID,
-                locationLabelOverride: row.tripLocationOverride
+                locationLabelOverride: row.tripLocationOverride, googlePhotos: google, originalPhotoCount: originals.count
             )
         }
 
@@ -283,7 +295,7 @@ struct ArchiveCatalogueBuilder {
                     archiveRelativePath: row.archiveRelativePath, title: row.title,
                     startDate: parseDate(row.date), endDate: parseDate(row.endDate), location: row.location,
                     photoCount: row.photoCount ?? photos.filter { $0.archiveRelativePath.hasPrefix(row.archiveRelativePath + "/") }.count,
-                    walkCount: 0, coverThumbnailPath: row.thumbnailPath)
+                    walkCount: 0, coverThumbnailPath: row.thumbnailPath, googlePhotos: row.googlePhotos)
             })
         } else {
             browseEntries.append(contentsOf: try discoverHistoricalFolders(archiveRoot: archiveRoot,
@@ -391,7 +403,7 @@ struct ArchiveCatalogueBuilder {
         }
 
         if let enumerationError { throw enumerationError }
-        let entries = folders.values.map { folder in
+        let entries = try folders.values.map { folder in
             let sortedDates = folder.dates.sorted()
             let cover = folder.photoURLs.sorted { $0.path < $1.path }.compactMap { photoURL -> String? in
                 let thumbnailURL = ArchiveIndexStore.thumbnailURL(for: photoURL, archiveRoot: archiveRoot)
@@ -412,7 +424,7 @@ struct ArchiveCatalogueBuilder {
                 location: folder.path.replacingOccurrences(of: "/", with: " / "),
                 photoCount: Set(folder.photoURLs.map(ArchiveIndexStore.historicalGroupingKey)).count,
                 walkCount: 0,
-                coverThumbnailPath: cover
+                coverThumbnailPath: cover, googlePhotos: try ArchiveIndexStore(fileManager: fileManager).historicalGoogleRecord(folder: archiveRoot.appendingPathComponent(folder.path))
             )
         }
         .sorted(by: archiveEntryOrder)

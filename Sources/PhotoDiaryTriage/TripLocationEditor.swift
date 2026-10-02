@@ -22,7 +22,7 @@ enum TripManifestText {
         }
         let after = text[start.upperBound...]
         let end = after.range(of: "\n## ")?.lowerBound ?? text.endIndex
-        let rendered = try MachineDescriptionHistory.removing(in: renderer.renderTripManifest(manifest))
+        let rendered = try GooglePhotosRecord.removing(in: MachineDescriptionHistory.removing(in: renderer.renderTripManifest(manifest)))
         guard let newStart = rendered.range(of: marker) else { throw ArchiveFileVerification.failure("Trip membership rendering failed.") }
         var body = String(text[boundary.lowerBound...])
         let bodyStart = body.range(of: marker)!

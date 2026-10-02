@@ -254,7 +254,7 @@ struct TripManifestStore {
             endDate: compactDates.max(),
             memberWalkFolderPaths: members,
             locationLabelOverride: existing.locationLabelOverride,
-            descriptions: existing.descriptions
+            descriptions: existing.descriptions, googlePhotos: existing.googlePhotos
         )
         var rendered = renderer.renderTripManifest(manifest)
         if let original { rendered = try TripManifestText.settingMembership(manifest, in: original, renderer: renderer) }
@@ -299,7 +299,7 @@ struct TripManifestStore {
             endDate: endDate,
             memberWalkFolderPaths: members,
             locationLabelOverride: TripManifestText.headerValue("Location label override", in: text)?.nonEmpty,
-            descriptions: try? MachineDescriptionHistory.read(in: text)
+            descriptions: try? MachineDescriptionHistory.read(in: text), googlePhotos: try? GooglePhotosRecord.read(in: text)
         )
     }
 

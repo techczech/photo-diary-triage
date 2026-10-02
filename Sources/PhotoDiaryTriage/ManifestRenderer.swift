@@ -67,7 +67,8 @@ struct ManifestRenderer {
         }
 
         let text = lines.joined(separator: "\n")
-        return (try? manifest.descriptions?.setting(in: text)) ?? text
+        let described = (try? manifest.descriptions?.setting(in: text)) ?? text
+        return (try? manifest.googlePhotos?.setting(in: described)) ?? described
     }
 
     func renderTripManifest(_ manifest: TripManifest) -> String {
@@ -100,7 +101,8 @@ struct ManifestRenderer {
             }
         }
         let text = lines.joined(separator: "\n")
-        return (try? manifest.descriptions?.setting(in: text)) ?? text
+        let described = (try? manifest.descriptions?.setting(in: text)) ?? text
+        return (try? manifest.googlePhotos?.setting(in: described)) ?? described
     }
 
     func renderFileManifest(_ manifest: FileManifest) -> String {
@@ -166,7 +168,8 @@ struct ManifestRenderer {
         lines.append("")
         lines.append(manifest.notes.nonEmpty ?? "_No notes provided._")
         let text = lines.joined(separator: "\n")
-        return (try? manifest.descriptions?.setting(in: text)) ?? text
+        let described = (try? manifest.descriptions?.setting(in: text)) ?? text
+        return (try? manifest.googlePhotos?.setting(in: described)) ?? described
     }
 
     func renderLog(_ events: [SessionLogEvent]) -> String {

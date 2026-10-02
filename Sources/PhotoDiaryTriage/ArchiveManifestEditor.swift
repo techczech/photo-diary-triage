@@ -27,7 +27,7 @@ enum ArchiveManifestText {
 
     static func body(in text: String) -> String {
         guard text.hasPrefix("---\n"), let end = text.range(of: "\n---\n") else { return "" }
-        return MachineDescriptionHistory.humanText(in: String(text[end.upperBound...])).trimmingCharacters(in: .whitespacesAndNewlines)
+        return MachineDescriptionHistory.humanText(in: (try? GooglePhotosRecord.removing(in: String(text[end.upperBound...]))) ?? String(text[end.upperBound...])).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     static func removingScalar(_ key: String, in text: String) -> String {

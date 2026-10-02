@@ -47,6 +47,7 @@ struct ArchiveIndexEntry: Codable, Hashable, Sendable {
     var walkID: UUID?
     var captureDateEvidence: CaptureDateEvidence?
     var tripID: UUID?
+    var googlePhotos: GooglePhotosRecord? = nil
     var tripLocationOverride: String?
 
     init(
@@ -84,7 +85,8 @@ struct ArchiveIndexEntry: Codable, Hashable, Sendable {
         walkID: UUID? = nil,
         captureDateEvidence: CaptureDateEvidence? = nil,
         tripID: UUID? = nil,
-        tripLocationOverride: String? = nil
+        tripLocationOverride: String? = nil,
+        googlePhotos: GooglePhotosRecord? = nil
     ) {
         self.kind = kind
         self.year = year
@@ -121,6 +123,7 @@ struct ArchiveIndexEntry: Codable, Hashable, Sendable {
         self.captureDateEvidence = captureDateEvidence
         self.tripID = tripID
         self.tripLocationOverride = tripLocationOverride
+        self.googlePhotos = googlePhotos
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -132,6 +135,7 @@ struct ArchiveIndexEntry: Codable, Hashable, Sendable {
         case location
         case exifSummary = "exif_summary"
         case aiDescription = "ai_description"
+        case googlePhotos = "google_photos"
         case notes
         case thumbnailPath = "thumbnail_path"
         case walkPath = "walk_path"
@@ -299,6 +303,17 @@ final class ArchiveByteReadPolicyContext: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return allowed && currentGeneration == policyGeneration
+    }
+
+    func hasExplicitViewing(at url: URL, archiveRoot: URL) -> Bool {
+        let path = url.resolvingSymlinksInPath().standardizedFileURL.path
+        lock.lock()
+        let current = policy, generation = policyGeneration, granted = explicitViewPaths.contains(path)
+        lock.unlock()
+        guard granted, current.machineRole == .travel, current.archiveRoot.resolvingSymlinksInPath() == archiveRoot.resolvingSymlinksInPath(),
+              !current.escapesArchive(url), !current.isOnlineOnly(url) else { return false }
+        lock.lock(); defer { lock.unlock() }
+        return generation == policyGeneration && explicitViewPaths.contains(path)
     }
 
     func canRequestExplicitViewing(at url: URL) -> Bool {
@@ -696,7 +711,7 @@ struct ArchiveIndexStore {
                 notes: file.notes,
                 thumbnailPath: generatedThumbnailPaths[relativePath],
                 walkPath: walkPath.nonEmpty,
-                tripPath: walk?.tripFolderRelativePath
+                tripPath: walk?.tripFolderRelativePath, googlePhotos: file.googlePhotos
             ))
         }
 
@@ -748,6 +763,16 @@ struct ArchiveIndexStore {
             replacingWalkPaths: walkPaths,
             replacingTripPaths: tripPaths
         )
+    }
+
+    func refreshHistoricalGoogleRecord(path: String, archiveRoot: URL) throws {
+        let lock = try ArchiveMutationLock(archiveRoot: archiveRoot); defer { withExtendedLifetime(lock) {} }
+        let folder = try ArchiveIndexMediaLoader().indexedURL(path, archiveRoot: archiveRoot)
+        let record = try historicalGoogleRecord(folder: folder)
+        var entries = try ArchiveCatalogueBuilder().readIndexEntries(archiveRoot: archiveRoot)
+        guard let i = entries.firstIndex(where: { $0.kind == .unorganisedFolder && $0.archiveRelativePath == path }) else { throw ArchiveFileVerification.failure("Historical mark saved. Rebuild the main index to include this folder.") }
+        entries[i].googlePhotos = record
+        try replaceIndex(with: entries, archiveRoot: archiveRoot)
     }
 
     func entriesForWalkFolder(_ walkFolder: URL, archiveRoot: URL) throws -> [ArchiveIndexEntry] {
@@ -818,6 +843,7 @@ struct ArchiveIndexStore {
 
             if let identity = TripManifestText.headerValue("Trip ID", in: text) {
                 _ = try MachineDescriptionHistory.read(in: text)
+                _ = try GooglePhotosRecord.read(in: text)
                 guard UUID(uuidString: identity.trimmingCharacters(in: CharacterSet(charactersIn: "`"))) != nil else {
                     throw ArchiveFileVerification.failure("A canonical Trip has an invalid identity. The existing index has been retained.")
                 }
@@ -902,6 +928,13 @@ struct ArchiveIndexStore {
         return urls
     }
 
+    func historicalGoogleRecord(folder: URL) throws -> GooglePhotosRecord? {
+        let url = folder.appendingPathComponent(folder.lastPathComponent + ".md")
+        guard fileManager.fileExists(atPath: url.path) else { return nil }
+        guard try url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true else { throw ArchiveFileVerification.failure("A historical Google Photos record is linked.") }
+        return try GooglePhotosRecord.read(in: String(contentsOf: url, encoding: .utf8))
+    }
+
     private func entry(from manifest: WalkManifest, archiveRoot: URL) -> ArchiveIndexEntry {
         let relativePath = manifest.archiveFolderRelativePath
             ?? Self.archiveRelativePath(for: manifest.archiveFolder, archiveRoot: archiveRoot)
@@ -924,7 +957,7 @@ struct ArchiveIndexStore {
             latitude: manifest.latitude,
             longitude: manifest.longitude,
             coordinateSource: ArchiveCoordinate(latitude: manifest.latitude, longitude: manifest.longitude) != nil ? .walkPin : nil,
-            sessionID: manifest.sessionID, walkID: manifest.walkID
+            sessionID: manifest.sessionID, walkID: manifest.walkID, googlePhotos: manifest.googlePhotos
         )
     }
 
@@ -945,7 +978,7 @@ struct ArchiveIndexStore {
             notes: nil,
             thumbnailPath: nil,
             walkPath: nil,
-            tripPath: relativePath, tripID: manifest.tripID, tripLocationOverride: manifest.locationLabelOverride
+            tripPath: relativePath, tripID: manifest.tripID, tripLocationOverride: manifest.locationLabelOverride, googlePhotos: manifest.googlePhotos
         )
     }
 
@@ -979,7 +1012,7 @@ struct ArchiveIndexStore {
             coordinateSource: manifest.locationOverride?.coordinate != nil ? (manifest.locationOverride!.isShared ? .sharedOverride : .photoOverride)
                 : (pin != nil ? .walkPin : (gps != nil ? .photoGPS : nil)),
             gpsLatitude: gps?.latitude, gpsLongitude: gps?.longitude, locationOverride: manifest.locationOverride,
-            sessionID: walk.sessionID, walkID: walk.walkID, captureDateEvidence: manifest.captureDateEvidence
+            sessionID: walk.sessionID, walkID: walk.walkID, captureDateEvidence: manifest.captureDateEvidence, googlePhotos: manifest.googlePhotos
         )
     }
 
@@ -1029,7 +1062,8 @@ struct ArchiveIndexStore {
             ),
             importedFiles: files,
             excludedFiles: [],
-            descriptions: try MachineDescriptionHistory.read(in: text)
+            descriptions: try MachineDescriptionHistory.read(in: text),
+            googlePhotos: try GooglePhotosRecord.read(in: text)
         )
     }
 
@@ -1085,7 +1119,8 @@ struct ArchiveIndexStore {
             notes: notes,
             locationOverride: try PhotoLocationOverride.read(in: text),
             captureDateEvidence: try CaptureDateEvidence.read(in: text),
-            descriptions: try MachineDescriptionHistory.read(in: text)
+            descriptions: try MachineDescriptionHistory.read(in: text),
+            googlePhotos: try GooglePhotosRecord.read(in: text)
         )
     }
 
@@ -1342,6 +1377,11 @@ actor ArchiveIndexMutationQueue {
         guard policy.canWriteIndex else { return }
         try store.replaceWalkFolders(walkFolders, archiveRoot: archiveRoot,
             removingWalkPaths: removingWalkPaths, tripFolders: tripFolders)
+    }
+
+    func refreshHistoricalGoogleRecord(path: String, archiveRoot: URL, policy: ArchiveIndexWritePolicy) throws {
+        guard policy.canWriteIndex else { return }
+        try store.refreshHistoricalGoogleRecord(path: path, archiveRoot: archiveRoot)
     }
 
     func backfillThumbnails(
