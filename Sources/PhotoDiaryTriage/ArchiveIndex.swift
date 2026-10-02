@@ -40,6 +40,11 @@ struct ArchiveIndexEntry: Codable, Hashable, Sendable {
     var cropRelationship: CropRelationship?
     var coordinateSource: ArchiveCoordinateSource?
     var isDerivedPhoto: Bool?
+    var gpsLatitude: Double?
+    var gpsLongitude: Double?
+    var locationOverride: PhotoLocationOverride?
+    var sessionID: UUID?
+    var walkID: UUID?
 
     init(
         kind: ArchiveIndexEntryKind,
@@ -68,7 +73,12 @@ struct ArchiveIndexEntry: Codable, Hashable, Sendable {
         companionPaths: [String]? = nil,
         cropRelationship: CropRelationship? = nil,
         coordinateSource: ArchiveCoordinateSource? = nil,
-        isDerivedPhoto: Bool? = nil
+        isDerivedPhoto: Bool? = nil,
+        gpsLatitude: Double? = nil,
+        gpsLongitude: Double? = nil,
+        locationOverride: PhotoLocationOverride? = nil,
+        sessionID: UUID? = nil,
+        walkID: UUID? = nil
     ) {
         self.kind = kind
         self.year = year
@@ -97,6 +107,11 @@ struct ArchiveIndexEntry: Codable, Hashable, Sendable {
         self.cropRelationship = cropRelationship
         self.coordinateSource = coordinateSource
         self.isDerivedPhoto = isDerivedPhoto
+        self.gpsLatitude = gpsLatitude
+        self.gpsLongitude = gpsLongitude
+        self.locationOverride = locationOverride
+        self.sessionID = sessionID
+        self.walkID = walkID
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -127,6 +142,11 @@ struct ArchiveIndexEntry: Codable, Hashable, Sendable {
         case cropRelationship = "crop_relationship"
         case coordinateSource = "coordinate_source"
         case isDerivedPhoto = "is_derived_photo"
+        case gpsLatitude = "gps_latitude"
+        case gpsLongitude = "gps_longitude"
+        case locationOverride = "location_override"
+        case sessionID = "session_id"
+        case walkID = "walk_id"
     }
 }
 
@@ -591,6 +611,7 @@ struct ArchiveIndexStore {
     func rebuildIndex(archiveRoot: URL) throws -> ArchiveIndexRebuildResult {
         let mutationLock = try ArchiveMutationLock(archiveRoot: archiveRoot)
         defer { withExtendedLifetime(mutationLock) {} }
+        try ArchiveLocationEditor.assertNoPending(overlapping: archiveRoot, archiveRoot: archiveRoot)
         let entries = try entriesFromArchive(archiveRoot: archiveRoot)
         try replaceIndex(with: entries, archiveRoot: archiveRoot)
         let years = Array(Set(entries.map(\.year))).sorted()
@@ -697,6 +718,7 @@ struct ArchiveIndexStore {
         removingWalkPaths: Set<String> = [], tripFolders: [URL] = []) throws {
         let mutationLock = try ArchiveMutationLock(archiveRoot: archiveRoot)
         defer { withExtendedLifetime(mutationLock) {} }
+        for folder in walkFolders { try ArchiveLocationEditor.assertNoPending(overlapping: folder, archiveRoot: archiveRoot) }
         var entries: [ArchiveIndexEntry] = []
         for walkFolder in walkFolders {
             entries.append(contentsOf: try entriesForWalkFolder(walkFolder, archiveRoot: archiveRoot))
@@ -878,7 +900,8 @@ struct ArchiveIndexStore {
             tripPath: manifest.tripFolderRelativePath,
             latitude: manifest.latitude,
             longitude: manifest.longitude,
-            coordinateSource: ArchiveCoordinate(latitude: manifest.latitude, longitude: manifest.longitude) != nil ? .walkPin : nil
+            coordinateSource: ArchiveCoordinate(latitude: manifest.latitude, longitude: manifest.longitude) != nil ? .walkPin : nil,
+            sessionID: manifest.sessionID, walkID: manifest.walkID
         )
     }
 
@@ -911,14 +934,14 @@ struct ArchiveIndexStore {
         let year = relativePath.split(separator: "/").first.map(String.init) ?? "unknown"
         let gps = ArchiveCoordinate(latitude: manifest.latitude, longitude: manifest.longitude)
         let pin = ArchiveCoordinate(latitude: walk.latitude, longitude: walk.longitude)
-        let coordinate = gps ?? pin
+        let coordinate = manifest.locationOverride?.coordinate ?? pin ?? gps
         return ArchiveIndexEntry(
             kind: .photo,
             year: year,
             archiveRelativePath: relativePath,
             date: manifest.capturedAt.map(DateFormatting.iso8601.string(from:)),
             title: manifest.sourceFileName,
-            location: manifest.walkLocation.nonEmpty,
+            location: manifest.locationOverride?.name.nonEmpty ?? walk.location.nonEmpty,
             exifSummary: exifSummary(cameraModel: manifest.cameraModel, lensModel: manifest.lensModel, pixelWidth: manifest.pixelWidth, pixelHeight: manifest.pixelHeight),
             aiDescription: "",
             notes: manifest.notes,
@@ -930,7 +953,10 @@ struct ArchiveIndexStore {
             mediaItemID: manifest.mediaItemID, pixelWidth: manifest.pixelWidth, pixelHeight: manifest.pixelHeight,
             cameraModel: manifest.cameraModel, lensModel: manifest.lensModel,
             companionPaths: manifest.companionArchivePaths.compactMap { Self.archiveRelativePath(for: URL(fileURLWithPath: $0), archiveRoot: archiveRoot) },
-            coordinateSource: gps != nil ? .photoGPS : (pin != nil ? .walkPin : nil)
+            coordinateSource: manifest.locationOverride?.coordinate != nil ? (manifest.locationOverride!.isShared ? .sharedOverride : .photoOverride)
+                : (pin != nil ? .walkPin : (gps != nil ? .photoGPS : nil)),
+            gpsLatitude: gps?.latitude, gpsLongitude: gps?.longitude, locationOverride: manifest.locationOverride,
+            sessionID: walk.sessionID, walkID: walk.walkID
         )
     }
 
@@ -990,7 +1016,7 @@ struct ArchiveIndexStore {
         return try urls.compactMap { url in
             let text = try String(contentsOf: url, encoding: .utf8)
             guard text.contains("media_item_id:") else { return nil }
-            guard var manifest = parseFileManifest(text: text) else {
+            guard var manifest = try parseFileManifest(text: text) else {
                 throw ArchiveFileVerification.failure("Invalid photo manifest: \(url.lastPathComponent)")
             }
             let localFile = folder.appendingPathComponent(URL(fileURLWithPath: manifest.archivePath).lastPathComponent)
@@ -1010,7 +1036,7 @@ struct ArchiveIndexStore {
         }
     }
 
-    private func parseFileManifest(text: String) -> FileManifest? {
+    private func parseFileManifest(text: String) throws -> FileManifest? {
         guard let id = yamlValue("media_item_id", in: text).flatMap(UUID.init(uuidString:)),
               let archivePath = yamlValue("archive_path", in: text),
               let sourceFileName = yamlValue("source_file_name", in: text) else { return nil }
@@ -1032,7 +1058,8 @@ struct ArchiveIndexStore {
             longitude: yamlValue("longitude", in: text).flatMap(Double.init),
             walkTitle: yamlValue("walk_title", in: text) ?? "",
             walkLocation: yamlValue("walk_location", in: text) ?? "",
-            notes: notes
+            notes: notes,
+            locationOverride: try PhotoLocationOverride.read(in: text)
         )
     }
 
@@ -1238,6 +1265,14 @@ actor ArchiveIndexMutationQueue {
 
     init(store: ArchiveIndexStore = ArchiveIndexStore()) {
         self.store = store
+    }
+
+    func saveLocation(target: ArchiveLocationTarget, name: String, coordinate: ArchiveCoordinate?, archiveRoot: URL) throws -> ArchiveLocationSaveResult {
+        try ArchiveLocationEditor().save(target: target, name: name, coordinate: coordinate, archiveRoot: archiveRoot)
+    }
+
+    func resumeLocation(walkRelativePath: String, archiveRoot: URL) throws -> ArchiveLocationSaveResult {
+        try ArchiveLocationEditor().resume(walkRelativePath: walkRelativePath, archiveRoot: archiveRoot)
     }
 
     func updateAfterImport(result: ImportResult, policy: ArchiveIndexWritePolicy) async throws {

@@ -139,6 +139,14 @@ struct ManifestRenderer {
         if let longitude = manifest.longitude {
             lines.append("longitude: \(longitude)")
         }
+        if let location = manifest.locationOverride {
+            lines.append("location_override_name: \(escapeYAML(location.name))")
+            lines.append("location_override_latitude: \(location.latitude)")
+            lines.append("location_override_longitude: \(location.longitude)")
+            lines.append("location_assignment_id: \(location.assignmentID.uuidString)")
+            lines.append("location_assigned_at: \(DateFormatting.iso8601.string(from: location.assignedAt))")
+            lines.append("location_assignment_shared: \(location.isShared)")
+        }
         lines.append("walk_title: \(escapeYAML(manifest.walkTitle))")
         lines.append("walk_location: \(escapeYAML(manifest.walkLocation))")
         lines.append("---")

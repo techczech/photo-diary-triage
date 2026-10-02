@@ -142,6 +142,7 @@ struct ArchiveLayoutMigrator {
         let lock: ArchiveMutationLock
         do {
             lock = try ArchiveMutationLock(archiveRoot: root)
+            for walk in plan.walks { try ArchiveLocationEditor.assertNoPending(overlapping: walk.oldWalkURL, archiveRoot: root) }
             try ArchiveOperationRecovery(archiveRoot: root).save(Recovery(walks: plan.walks, months: plan.legacyMonthURLs), kind: "migration", sessionID: Self.recoveryID)
         } catch { result.failures = [error.localizedDescription]; return result }
         defer { withExtendedLifetime(lock) {} }

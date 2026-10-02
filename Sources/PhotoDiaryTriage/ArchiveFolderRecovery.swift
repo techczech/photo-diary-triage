@@ -73,6 +73,7 @@ struct ArchiveFolderOperation {
                 throw ArchiveFileVerification.failure("Finish the recorded import before moving its Walk.")
             }
         }
+        try ArchiveLocationEditor.assertNoPending(overlapping: source, archiveRoot: archiveRoot)
         let contents = try fileManager.contentsOfDirectory(at: source, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey])
         var renames: [ArchiveFolderRename] = []
         for (old, new) in names.sorted(by: { $0.key < $1.key }) where old != new {
@@ -141,6 +142,8 @@ struct ArchiveFolderOperation {
 
     func execute(_ initial: ArchiveFolderRecoveryRecord) throws -> ArchiveFolderRecoveryRecord {
         let record = initial
+        try ArchiveLocationEditor.assertNoPending(overlapping: record.source, archiveRoot: archiveRoot)
+        try ArchiveLocationEditor.assertNoPending(overlapping: record.destination, archiveRoot: archiveRoot)
         let resolver = ArchiveRelativePathResolver(root: archiveRoot.resolvingSymlinksInPath())
         guard resolver.relativePath(for: ArchivePathSafety.resolvedForWrite(record.source)) != nil,
               resolver.relativePath(for: ArchivePathSafety.resolvedForWrite(record.destination)) != nil else {

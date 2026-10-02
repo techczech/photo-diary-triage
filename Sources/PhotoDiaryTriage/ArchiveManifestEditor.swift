@@ -30,6 +30,13 @@ enum ArchiveManifestText {
         return String(text[end.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    static func removingScalar(_ key: String, in text: String) -> String {
+        guard let end = text.range(of: "\n---\n"), text.hasPrefix("---\n") else { return text }
+        let header = String(text[..<end.lowerBound]).components(separatedBy: "\n")
+            .filter { !$0.hasPrefix("\(key):") }.joined(separator: "\n")
+        return header + text[end.lowerBound...]
+    }
+
     static func settingScalar(_ key: String, to value: String, in text: String) -> String {
         guard let end = text.range(of: "\n---\n"), text.hasPrefix("---\n") else { return text }
         var header = String(text[..<end.lowerBound]).components(separatedBy: "\n")
@@ -40,13 +47,13 @@ enum ArchiveManifestText {
     }
 }
 
-private struct ArchiveMetadataChange: Codable {
+struct ArchiveMetadataChange: Codable {
     var url: URL
     var original: String
     var replacement: String
 }
 
-private struct ArchiveMetadataRecovery: Codable {
+struct ArchiveMetadataRecovery: Codable {
     var metadata: WalkMetadata
     var changes: [ArchiveMetadataChange]
     var complete = false
@@ -58,6 +65,7 @@ struct ArchiveManifestEditor {
         guard !folders.isEmpty else { return }
         let mutationLock = try ArchiveMutationLock(archiveRoot: session.archiveRoot)
         defer { withExtendedLifetime(mutationLock) {} }
+        for folder in folders { try ArchiveLocationEditor.assertNoPending(overlapping: folder, archiveRoot: session.archiveRoot) }
         let recovery = ArchiveOperationRecovery(archiveRoot: session.archiveRoot)
         var record: ArchiveMetadataRecovery
         if let saved = try recovery.load(ArchiveMetadataRecovery.self, kind: "metadata", sessionID: session.id), !saved.complete {
@@ -87,7 +95,7 @@ struct ArchiveManifestEditor {
                 ]
                 for (label, value, oldDefault) in headerValues {
                     if previousMetadata == nil || (value != oldDefault && headerValue(label, in: original) == oldDefault) {
-                        replacement = settingHeader(label, value: value, in: replacement)
+                        replacement = Self.settingHeader(label, value: value, in: replacement)
                     }
                 }
                 guard let notes = replacement.range(of: "## Notes\n"),
@@ -144,7 +152,7 @@ struct ArchiveManifestEditor {
             .dropFirst(label.count + 3).trimmingCharacters(in: .whitespaces).nonEmpty
     }
 
-    private func settingHeader(_ label: String, value: String?, in text: String) -> String {
+    static func settingHeader(_ label: String, value: String?, in text: String) -> String {
         guard let notes = text.range(of: "## Notes") else { return text }
         var header = String(text[..<notes.lowerBound]).components(separatedBy: "\n")
         let prefix = "- \(label):"

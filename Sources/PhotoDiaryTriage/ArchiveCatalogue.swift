@@ -96,12 +96,14 @@ struct ArchiveWalkSummary: Identifiable, Hashable, Sendable {
     let archiveRelativePath: String
     let title: String
     let date: Date?
-    let location: String?
+    var location: String?
     let photoCount: Int
     let coverThumbnailPath: String?
     var latitude: Double? = nil
     var longitude: Double? = nil
     var coordinateSource: ArchiveCoordinateSource? = nil
+    var sessionID: UUID? = nil
+    var walkID: UUID? = nil
 }
 
 struct ArchivePhotoSummary: Identifiable, Hashable, Sendable {
@@ -109,7 +111,7 @@ struct ArchivePhotoSummary: Identifiable, Hashable, Sendable {
     let archiveRelativePath: String
     let title: String
     let date: Date?
-    let location: String?
+    var location: String?
     let camera: String?
     let aiDescription: String?
     let notes: String?
@@ -121,6 +123,11 @@ struct ArchivePhotoSummary: Identifiable, Hashable, Sendable {
     var coordinateSource: ArchiveCoordinateSource? = nil
     var cropRole: CropRelationshipRole? = nil
     var isDerivedPhoto: Bool = false
+    var gpsLatitude: Double? = nil
+    var gpsLongitude: Double? = nil
+    var locationOverride: PhotoLocationOverride? = nil
+    var mediaItemID: UUID? = nil
+    var originalPhotoPath: String? = nil
 }
 
 struct ArchiveCatalogue: Equatable, Sendable {
@@ -215,7 +222,9 @@ struct ArchiveCatalogueBuilder {
                 thumbnailPath: $0.thumbnailPath,
                 walkPath: $0.walkPath,
                 tripPath: $0.tripPath, latitude: $0.latitude, longitude: $0.longitude,
-                coordinateSource: $0.coordinateSource, cropRole: $0.cropRelationship?.role, isDerivedPhoto: $0.isDerivedPhoto == true
+                coordinateSource: $0.coordinateSource, cropRole: $0.cropRelationship?.role, isDerivedPhoto: $0.isDerivedPhoto == true,
+                gpsLatitude: $0.gpsLatitude, gpsLongitude: $0.gpsLongitude, locationOverride: $0.locationOverride,
+                mediaItemID: $0.mediaItemID, originalPhotoPath: $0.cropRelationship?.originalRelativePath
             )
         }
         let photosByTripPath = Dictionary(grouping: photos.compactMap { photo -> ArchivePhotoSummary? in
@@ -237,7 +246,7 @@ struct ArchiveCatalogueBuilder {
                 location: row.location?.nonEmpty,
                 photoCount: memberPhotos.count,
                 coverThumbnailPath: row.thumbnailPath ?? memberPhotos.compactMap(\.thumbnailPath).first,
-                latitude: row.latitude, longitude: row.longitude, coordinateSource: row.coordinateSource
+                latitude: row.latitude, longitude: row.longitude, coordinateSource: row.coordinateSource, sessionID: row.sessionID, walkID: row.walkID
             )
         }) { $0.tripPath }
             .mapValues { $0.sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) } }
