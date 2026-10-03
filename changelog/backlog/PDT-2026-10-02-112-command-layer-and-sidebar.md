@@ -98,12 +98,10 @@ buttons/menu actions outside the shared path; the registered backend alone does 
 establish their mouse/keyboard agreement. Do not bundle/install or mark this item done.
 
 - Review Map: local presentation handler for the review Map button.
-- Main toolbar/Inspector: sidebar, Open, Compare, Inspector and selection/triage menus;
-  inspector show/hide controls. Use actual local targets where actions offer a row.
-- Source/import: New Log, Copy, Open Archive destination, Confirm Backup and Cleanup
-  in ContentViewSections and ContentInspectorWorkflowViews.
-- Browser: Back/Return to search, Expand/Collapse All, grid size actions, selection/
-  triage controls, thumbnail Prepare/Cancel; Archive Clear filters.
+- Review rows/groups and Inspector crop-version navigation: retain displayed photo,
+  group membership and session/source targets; preserve parent keyboard multi-selection.
+- Review browser: Expand/Collapse All, grouping/filter/layout/grid size actions and
+  selection/triage controls in the actual containing pane; Review Map remains local.
 - Menus/help: verify native refresh and inherited scoped bindings; rendered native
   menu behaviour is an acceptance candidate, not established by source declarations.
 - Final complete inventory/Astra review, full suite, signed bundle/body comparison,
@@ -253,3 +251,55 @@ cover this hierarchy, stale ancestors, siblings, disabled shadowing and collisio
   Image implementation is complete for this slice. Remaining Map/toolbar/Inspector/
   import/browser/native-menu inventory and final release work below/above stay active.
   Original native/real-copy/migration/OneDrive/LM Studio/Google acceptance stays open.
+
+## Remaining control target audit — 2026-10-03
+
+Implement the existing inventory without conflating its targets. Toolbar Open opens the
+focused photo; keyboard Open still opens the current folder/selection. Sidebar and
+Inspector workflow controls capture the displayed Log and a monotonic assignment
+revision, rejecting replacement and same-UUID/ABA changes before redraw. Recheck live
+eligibility before New Log, Copy, destination, backup and cleanup backends. A containing
+workflow scope offers only those actions and preserves native text editing.
+
+Review row triage/RAW/retry targets the clicked photo, while keyboard triage targets
+the current multi-selection. Group Compare captures that group's membership. Inspector
+crop-version navigation captures the displayed photo/session/source, never a relative
+path that could resolve to a different Log. Review Map belongs to the actual containing
+Review pane and inherits through the child keyboard surface. Browser/toolbar controls
+use their registered window or containing target; modal overlays suppress underlying
+actions. Test native text, retained callbacks and pre-redraw target/operation changes.
+These controls and native menu refresh remain unfinished until verified and reported.
+
+Astra cleanup preflight: disable cleanup during an existing cleanup and when only
+retained crop originals remain. Reproduce both against the existing rules before
+changing the shared candidate predicate. Keep source verification and confirmation.
+
+## Captured workflow and window controls checkpoint — 2026-10-03
+
+- Full suite: 586 tests / 2 suites, 47.825s. Twelve new workflow/control functions;
+  139 additions since installed 0.7.15. Focused 12/3.039s; broad command/workflow
+  135/26.319s before final review corrections. Final full run includes those fixes.
+- Actual containing Sidebar/Inspector workflow controls retain Log assignment,
+  root/Pictures/role generation and live backend eligibility. Same-ID/ABA replacement,
+  before-redraw busy changes and root round trips refuse stale Copy/backup actions.
+- Inbox New Log also retains creation scope, including folder selection ABA and the
+  exact containing lease after redraw; four session-wide actions use session authority.
+- Toolbar Open retains focused-photo intent; toolbar Deselect retains photo-only
+  selection under Sidebar/folder focus and never clears selected folders. Generic
+  keyboard Open/Deselect defaults keep their existing current-selection semantics.
+- Main toolbar, Inspector toggle, selection/triage, Back/Return, thumbnail Prepare/
+  Cancel and Archive Clear filters use the registered window route. Compare suppresses
+  underlying main-only controls; native field editing retains Cmd-A/C and text selection.
+- Explicit stacks/control size inside the hosting boundary preserve horizontal and
+  compact vertical controls. Actual hidden hosted Sidebar/Inspector Cmd-Shift-M opens
+  the correct Copy plan; measured 280/1000pt workflow layout passes.
+- Cleanup disables during an existing cleanup and when only retained crop originals
+  remain. UI/backend share the candidate predicate; verification and confirmation stay.
+- Red evidence: unguarded current-session prototype 4 tests/5 issues; existing cleanup
+  eligibility 2/4; reviewed Deselect/layout/inbox scope 3/8 after fixture correction.
+  AX/native NSButton traversal was unavailable in closed windows; final layout evidence
+  is hosted fitting-size measurement, not headed visual acceptance. Astra review clear.
+- Logs: /private/tmp/walkfolio-session-controls-{before,cleanup-before,review-before,
+  final-focused,final-full}.log. Original whole-workflow acceptance remains open.
+- Target 0.7.16/152 remains unbundled/uninstalled. Complete Review Map/control/row/group/
+  crop-version and native menu inventory before final release; installed 0.7.15/151 closed.

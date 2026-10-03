@@ -180,7 +180,7 @@ struct ContentView: View {
 
         ToolbarItemGroup {
             Button {
-                appState.toggleSidebarVisibility()
+                appState.commandCoordinator.executeWindowControl(.toggleSidebar)
             } label: {
                 Label("Sidebar", systemImage: sidebarState.snapshot.isVisible ? "sidebar.leading" : "sidebar.left")
             }
@@ -233,7 +233,7 @@ struct ContentView: View {
 
         ToolbarItemGroup {
             Button {
-                appState.openFocusedReviewItem()
+                appState.commandCoordinator.executeWindowControl(.openFocusedPhoto)
             } label: {
                 Label("Open", systemImage: "arrow.up.forward.square")
             }
@@ -241,7 +241,7 @@ struct ContentView: View {
             .help("Open focused photo preview")
 
             Button {
-                appState.openComparisonForCurrentSelection()
+                appState.commandCoordinator.executeWindowControl(.compare)
             } label: {
                 Label("Compare", systemImage: "rectangle.split.2x1")
             }
@@ -249,7 +249,7 @@ struct ContentView: View {
             .help("Compare the current selection")
 
             Button {
-                appState.toggleDetailsInspector()
+                appState.commandCoordinator.executeWindowControl(.toggleInspector)
             } label: {
                 Label("Inspector", systemImage: inspectorState.snapshot.isVisible ? "sidebar.right" : "sidebar.right")
             }
@@ -271,11 +271,11 @@ struct ContentView: View {
         if reviewState.snapshot.contextMediaItemCount > 0 {
             Menu {
                 Button("Select All") {
-                    appState.selectAllVisibleMedia()
+                    appState.commandCoordinator.executeWindowControl(.selectAll)
                 }
 
                 Button("Deselect") {
-                    appState.deselectAllVisibleMedia()
+                    appState.commandCoordinator.executeWindowControl(.deselectReviewPhotos)
                 }
                 .disabled(reviewState.snapshot.selectedMediaItemIDs.isEmpty)
 
@@ -283,27 +283,27 @@ struct ContentView: View {
                     Divider()
 
                     Button("Select For Import") {
-                        appState.markCurrentSelectionForImport()
+                        appState.commandCoordinator.executeWindowControl(.markIncluded)
                     }
                     .disabled(!reviewState.snapshot.canMarkSelectionForImport)
 
                     Button("Mark As Candidate") {
-                        appState.markCurrentSelectionAsCandidate()
+                        appState.commandCoordinator.executeWindowControl(.markCandidate)
                     }
                     .disabled(!reviewState.snapshot.canMarkSelectionAsCandidate)
 
                     Button("Exclude From Import") {
-                        appState.excludeCurrentSelectionFromImport()
+                        appState.commandCoordinator.executeWindowControl(.markExcluded)
                     }
                     .disabled(!reviewState.snapshot.canExcludeSelectionFromImport)
 
                     Button("Clear To Undecided") {
-                        appState.unmarkCurrentSelectionForImport()
+                        appState.commandCoordinator.executeWindowControl(.clearTriage)
                     }
                     .disabled(!reviewState.snapshot.canUnmarkSelectionForImport)
 
                     Button("Toggle RAW") {
-                        appState.toggleRawForCurrentMediaSelection()
+                        appState.commandCoordinator.executeWindowControl(.toggleRAW)
                     }
                     .disabled(!reviewState.snapshot.canToggleRawForSelection)
                 }

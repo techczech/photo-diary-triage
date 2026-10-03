@@ -180,9 +180,7 @@ struct ArchiveMainPaneView: View {
                             Text("Clear search or choose All entries and All years.")
                         } actions: {
                             Button("Clear filters") {
-                                appState.updateArchiveSearch("")
-                                appState.setArchiveKindFilter(.all)
-                                appState.setArchiveYearFilter(nil)
+                                appState.commandCoordinator.executeWindowControl(.clearArchiveFilters)
                             }
                         }
                     } else if snapshot.viewMode == .map {

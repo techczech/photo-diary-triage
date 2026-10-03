@@ -59,6 +59,9 @@ final class AppState: ObservableObject {
     }
     @Published var currentSession: ImportSession? {
         didSet {
+            // Assignment identity also catches same-ID replacement and A→B→A without
+            // comparing every photo in a large Log.
+            currentSessionRevision &+= 1
             if oldValue?.id != currentSession?.id { imagePresentationRevision &+= 1 }
             if oldValue?.id != currentSession?.id { reviewSearchQuery = "" }
             let updateKind = currentSessionUpdateKind
@@ -104,6 +107,7 @@ final class AppState: ObservableObject {
     }
     @Published var selectedFolderNodeIDs: Set<String> = [] {
         didSet {
+            if oldValue != selectedFolderNodeIDs { imagePresentationRevision &+= 1 }
             refreshInspectorState()
             refreshNavigationState()
         }
@@ -362,6 +366,7 @@ final class AppState: ObservableObject {
             }
         }
     }
+    private(set) var currentSessionRevision = 0
     private(set) var imagePresentationRevision = 0
     var commandImagePresentationContextKey: String {
         localCommandContextKey([commandDescriptionContextKey, String(imagePresentationRevision)])
@@ -518,7 +523,7 @@ final class AppState: ObservableObject {
         let outcome: SessionPersistenceOutcome
     }
     private var pendingSessionPersistence: [PendingSessionPersistence] = []
-    private var sourceCleanupIsRunning = false
+    @Published private(set) var sourceCleanupIsRunning = false
     private var restoredStateGeneration = 0
     private var estimatedVisibleReviewIndexRange: ClosedRange<Int>?
     private var inlineSectionCacheGeneration: Int = 0
@@ -1134,13 +1139,13 @@ final class AppState: ObservableObject {
     }
 
     var canCleanupImportedSources: Bool {
-        guard importOperation.isRunning == false else { return false }
+        guard !sourceCleanupIsRunning, importOperation.isRunning == false else { return false }
         guard let currentSession else { return false }
         guard currentSession.archiveMachineRole.allowsSourceCleanup else { return false }
         if settings.cleanupRequiresBackupConfirmation && currentSession.walkMetadata.backupConfirmedAt == nil {
             return false
         }
-        return currentSession.mediaItems.contains { $0.lifecycleState == .sourceCleanupPending }
+        return currentSession.mediaItems.contains { $0.isSourceCleanupCandidate }
     }
 
     var canNavigatePreviewBackward: Bool {
@@ -3506,7 +3511,7 @@ final class AppState: ObservableObject {
 
     func cleanupImportedSources() {
         guard let session = currentSession, canCleanupImportedSources else { return }
-        let pending = session.mediaItems.filter { $0.lifecycleState == .sourceCleanupPending && !($0.cropRelationship?.role == .original && $0.cropRelationship?.hasCrops == true) }
+        let pending = session.mediaItems.filter { $0.isSourceCleanupCandidate }
         guard !pending.isEmpty else { statusMessage = "Originals with crops are retained."; return }
         let count = pending.reduce(0) { $0 + 1 + ($1.importRawCompanions ? $1.companionFiles.count : 0) }
         let alert = NSAlert()

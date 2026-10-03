@@ -8,7 +8,7 @@ struct HeaderPaneView: View {
         HStack(alignment: .top, spacing: 16) {
             VStack(alignment: .leading, spacing: 3) {
                 if appState.workspaceMode == .archiveView, appState.canNavigateToParent {
-                    Button { appState.navigateToParent() } label: {
+                    Button { appState.commandCoordinator.executeWindowControl(.goUp) } label: {
                         Label("Back", systemImage: "chevron.left")
                     }
                     .buttonStyle(.plain)
@@ -54,13 +54,13 @@ struct HeaderPaneView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                 Button("Cancel") {
-                    appState.cancelArchiveIndexThumbnailBackfill()
+                    appState.commandCoordinator.executeWindowControl(.cancelBackfill)
                 }
                 .controlSize(.small)
             }
         } else if appState.canPrepareCurrentArchiveFolderThumbnails {
             Button {
-                appState.prepareCurrentArchiveFolderThumbnailsInteractively()
+                appState.commandCoordinator.executeWindowControl(.prepareThumbnails)
             } label: {
                 Label("Prepare Thumbnails…", systemImage: "photo.stack")
             }
@@ -123,7 +123,7 @@ struct BrowserOrReviewPaneView: View {
                             HStack {
                                 Label(message, systemImage: "exclamationmark.triangle").font(.callout)
                                 Spacer()
-                                Button("Return to search") { appState.navigateToParent() }
+                                Button("Return to search") { appState.commandCoordinator.executeWindowControl(.goUp) }
                             }.padding(8)
                         }
                         switch archiveState.snapshot.folderLoadState {
@@ -135,7 +135,7 @@ struct BrowserOrReviewPaneView: View {
                                 Label("Archive folder unavailable", systemImage: "exclamationmark.triangle")
                             } description: { Text(message) } actions: {
                                 RegisteredWindowControl(id: .retryArchiveFolderLoad, title: "Retry", appState: appState)
-                                Button("Back") { appState.navigateToParent() }
+                                Button("Back") { appState.commandCoordinator.executeWindowControl(.goUp) }
                             }
                         case .loaded where state.snapshot.contextMediaItemCount > 0:
                             DayContextPaneView(appState: appState, state: state, navigationState: navigationState)
@@ -146,7 +146,7 @@ struct BrowserOrReviewPaneView: View {
                                 Text("No supported photos are available in this folder's current Archive Index.")
                             } actions: {
                                 RegisteredWindowControl(id: .retryArchiveFolderLoad, title: "Refresh folder", appState: appState)
-                                Button("Back") { appState.navigateToParent() }
+                                Button("Back") { appState.commandCoordinator.executeWindowControl(.goUp) }
                             }
                         case .idle:
                             ContentUnavailableView("Choose an Archive folder", systemImage: "folder",

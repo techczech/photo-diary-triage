@@ -261,40 +261,45 @@ struct ActionButtonsPaneView: View {
     }
 
     private var actionButtons: some View {
-        Group {
-            if appState.canStartNewPhotoLogSession {
-                Button {
-                    appState.startNewPhotoLogSession()
-                } label: {
-                    Label(appState.photoLogSessionStartActionTitle, systemImage: "plus.square.on.square")
+        SessionWorkflowCommandSurface(appState: appState) { commands in
+            let layout = compact ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6)) : AnyLayout(HStackLayout())
+            layout {
+                if appState.canStartNewPhotoLogSession {
+                    Button {
+                        commands.run(.newPhotoLog)
+                    } label: {
+                        Label(appState.photoLogSessionStartActionTitle, systemImage: "plus.square.on.square")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!commands.isEnabled(.newPhotoLog))
+                    .help(appState.photoLogSessionStartActionHelp)
                 }
-                .buttonStyle(.borderedProminent)
-                .help(appState.photoLogSessionStartActionHelp)
-            }
 
-            Button("Copy To Archive") {
-                appState.commitImport()
-            }
-            .disabled(!appState.canCommitImport)
-            .help(appState.sidebarState.snapshot.importReadiness?.copyButtonHelp ?? "Copy included files into the archive.")
+                Button("Copy To Archive") {
+                    commands.run(.copyIncluded)
+                }
+                .disabled(!commands.isEnabled(.copyIncluded))
+                .help(appState.sidebarState.snapshot.importReadiness?.copyButtonHelp ?? "Copy included files into the archive.")
 
-            Button("Open Archive Folder") {
-                appState.openArchiveDestinationForCurrentSession()
-            }
-            .disabled(!appState.canOpenArchiveDestination)
-            .help("Open the folder containing copied photos before confirming backup.")
+                Button("Open Archive Folder") {
+                    commands.run(.openDestination)
+                }
+                .disabled(!commands.isEnabled(.openDestination))
+                .help("Open the folder containing copied photos before confirming backup.")
 
-            Button("Confirm Backup") {
-                appState.markBackupConfirmed()
-            }
-            .disabled(!appState.canConfirmBackup)
-            .help(appState.sidebarState.snapshot.importReadiness?.confirmBackupButtonHelp ?? "Confirm backup after copy verification.")
+                Button("Confirm Backup") {
+                    commands.run(.confirmBackup)
+                }
+                .disabled(!commands.isEnabled(.confirmBackup))
+                .help(appState.sidebarState.snapshot.importReadiness?.confirmBackupButtonHelp ?? "Confirm backup after copy verification.")
 
-            Button("Clean Source") {
-                appState.cleanupImportedSources()
+                Button("Clean Source") {
+                    commands.run(.cleanupSource)
+                }
+                .disabled(!commands.isEnabled(.cleanupSource))
+                .help(appState.sidebarState.snapshot.importReadiness?.cleanupButtonHelp ?? "Clean copied source files from the SSD when allowed.")
             }
-            .disabled(!appState.canCleanupImportedSources)
-            .help(appState.sidebarState.snapshot.importReadiness?.cleanupButtonHelp ?? "Clean copied source files from the SSD when allowed.")
+            .controlSize(compact ? .small : .regular)
         }
     }
 }

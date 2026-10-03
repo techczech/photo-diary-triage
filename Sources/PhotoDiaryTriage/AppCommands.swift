@@ -9,7 +9,7 @@ struct PhotoDiaryCommands: Commands {
         }
         CommandGroup(replacing: .appSettings) { RegisteredCommandButton(id: .settings, appState: appState) }
         CommandMenu("Archive") {
-            commands([.timeline, .contactSheet, .showArchiveMap, .searchArchive, .openArchive, .organiseFolder, .prepareThumbnails, .toggleCovers, .refreshArchive, .cancelBackfill])
+            commands([.timeline, .contactSheet, .showArchiveMap, .searchArchive, .openArchive, .organiseFolder, .prepareThumbnails, .toggleCovers, .refreshArchive, .cancelBackfill, .clearArchiveFilters])
         }
         CommandMenu("Review") {
             commands([.focusSidebar, .focusReview, .toggleSidebar, .toggleInspector, .flatReview, .groupedReview, .gridLayout, .listLayout,
@@ -19,7 +19,7 @@ struct PhotoDiaryCommands: Commands {
             commands([.groupDays, .groupDaysBursts, .groupDaysClusters, .groupDaysClustersBursts, .expandAll, .collapseAll, .previousGroup, .nextGroup, .expandGroup, .collapseGroup])
         }
         CommandMenu("Triage") {
-            commands([.markIncluded, .markExcluded, .markCandidate, .clearTriage, .toggleRAW, .createPhotoLog, .newPhotoLog, .compare, .open, .viewOriginal, .goUp, .selectAll, .deselectAll])
+            commands([.markIncluded, .markExcluded, .markCandidate, .clearTriage, .toggleRAW, .createPhotoLog, .newPhotoLog, .compare, .open, .openFocusedPhoto, .viewOriginal, .goUp, .selectAll, .deselectAll, .deselectReviewPhotos])
         }
         CommandMenu("Copy") { commands([.copyIncluded, .openDestination, .moveWalk, .confirmBackup, .cleanupSource]) }
         CommandMenu("Descriptions") {
