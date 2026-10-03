@@ -166,11 +166,11 @@ struct CommandPanelView: View {
                                 HStack {
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(command.title).font(.body)
-                                        Text(session.mode == .help ? command.task : (reason ?? command.task))
+                                        Text(reason ?? command.task)
                                             .font(.caption).foregroundStyle(.secondary)
                                     }
                                     Spacer()
-                                    Text(coordinator.registry.displayedShortcuts(command.id)).font(.caption.monospaced())
+                                    Text(coordinator.effectiveShortcutLabel(command.id, invocation: session.origin)).font(.caption.monospaced())
                                 }.padding(8).frame(maxWidth: .infinity, alignment: .leading)
                                     .background(session.highlighted == command.id ? Color.accentColor.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: 6))
                             }.buttonStyle(.plain).id(command.id)

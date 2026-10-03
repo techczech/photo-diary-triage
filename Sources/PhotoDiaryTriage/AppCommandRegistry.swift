@@ -12,6 +12,12 @@ struct ShortcutModifiers: OptionSet, Codable, Hashable, Sendable {
         if native.contains(.option) { value.insert(.option) }; if native.contains(.control) { value.insert(.control) }
         self = value
     }
+    var native: NSEvent.ModifierFlags {
+        var value: NSEvent.ModifierFlags = []
+        if contains(.shift) { value.insert(.shift) }; if contains(.command) { value.insert(.command) }
+        if contains(.option) { value.insert(.option) }; if contains(.control) { value.insert(.control) }
+        return value
+    }
     var swiftUI: EventModifiers {
         var value: EventModifiers = []
         if contains(.shift) { value.insert(.shift) }; if contains(.command) { value.insert(.command) }
@@ -45,10 +51,11 @@ struct AppShortcut: Codable, Hashable, Sendable {
         return (modifiers.contains(.control) ? "⌃" : "") + (modifiers.contains(.option) ? "⌥" : "")
             + (modifiers.contains(.shift) ? "⇧" : "") + (modifiers.contains(.command) ? "⌘" : "") + (keys[key] ?? key.uppercased())
     }
-    var menuKey: KeyEquivalent {
+    var nativeKeyEquivalent: String {
         let keys = ["left":"\u{f702}", "right":"\u{f703}", "up":"\u{f700}", "down":"\u{f701}", "return":"\r", "escape":"\u{1b}", "space":" "]
-        return KeyEquivalent(Character(keys[key] ?? key))
+        return keys[key] ?? key
     }
+    var menuKey: KeyEquivalent { KeyEquivalent(Character(nativeKeyEquivalent)) }
     var isValid: Bool {
         let arrows = ["left", "right", "up", "down"]
         guard modifiers.rawValue >= 0, modifiers.rawValue <= 15, modifiers.rawValue != 15,
@@ -286,7 +293,7 @@ struct AppCommandRegistry {
     static let contextualCommands: Set<AppCommandID> = [.openArchive, .organiseFolder, .moveWalk, .open, .viewOriginal,
         .markIncluded, .markExcluded, .markCandidate, .clearTriage, .toggleRAW, .createPhotoLog, .newPhotoLog, .compare,
         .describeSelection, .regenerateDescriptions, .describeTrip, .describeYear, .deliverTrip, .deliverPhotoLog,
-        .markPreviousUpload, .clearPreviousUpload, .cropVisible, .removeCompareItem, .confirmSheet, .confirmAndOpenSheet, .closeSheet, .confirmGoogleDelivery, .saveLogDetails, .saveLogAndStartNext, .openPhotoLog, .showPhotoLogContents, .editPhotoLogDetails, .editPhotoLogMembership, .addMarkedToPhotoLog, .deletePhotoLog, .saveLocation, .clearLocation, .retryLocationSave, .pinLocationAtMapCentre, .editTripLabel, .saveTripLabel, .useWalkLocations, .cancelTripLabelEdit, .mergeWalkProposal, .splitWalkProposal, .findGoogleAlbum, .adoptGoogleAlbum, .reviewGoogleAlbumAbsent, .abandonGoogleJob, .saveManualCrop, .cancelManualCrop, .downloadDisplayedOriginal, .cropDisplayedPhoto, .removeDisplayedComparePhoto, .openLinkedPhoto, .includeDisplayedPhoto, .candidateDisplayedPhoto, .excludeDisplayedPhoto, .clearDisplayedPhotoTriage, .toggleDisplayedPhotoRAW]
+        .markPreviousUpload, .clearPreviousUpload, .cropVisible, .removeCompareItem, .confirmSheet, .confirmAndOpenSheet, .closeSheet, .confirmGoogleDelivery, .saveLogDetails, .saveLogAndStartNext, .openPhotoLog, .showPhotoLogContents, .editPhotoLogDetails, .editPhotoLogMembership, .addMarkedToPhotoLog, .deletePhotoLog, .saveLocation, .clearLocation, .retryLocationSave, .pinLocationAtMapCentre, .editTripLabel, .saveTripLabel, .useWalkLocations, .cancelTripLabelEdit, .mergeWalkProposal, .splitWalkProposal, .findGoogleAlbum, .adoptGoogleAlbum, .reviewGoogleAlbumAbsent, .abandonGoogleJob, .saveManualCrop, .cancelManualCrop, .downloadDisplayedOriginal, .cropDisplayedPhoto, .removeDisplayedComparePhoto, .openLinkedPhoto, .includeDisplayedPhoto, .candidateDisplayedPhoto, .excludeDisplayedPhoto, .clearDisplayedPhotoTriage, .toggleDisplayedPhotoRAW, .includeDisplayedRAW, .excludeDisplayedRAW, .retryDisplayedThumbnail, .compareDisplayedGroup, .toggleDisplayedGroup, .focusDisplayedGroup, .showCropVersion]
 
     static let commands: [AppCommandDefinition] = {
         let mainScopes = Self.mainScopes, imageScopes = Self.imageScopes, allScopes = Self.allScopes

@@ -23,12 +23,12 @@ Content/Archive/Settings/Google/description/review views; command test files, Se
 ImageCommandActions/ImageOperationContext/CropService/ArchiveIndex/SessionWorkflowCommands/ReviewPaneCommands;
 APP_RELEASE.env and matching tracking. No new dependency.
 
-Full verification: 622 tests / 2 suites, 68.142 s: 124 command-file functions plus 14 new Google
+Full verification: 642 tests / 2 suites, 85.531 s: 144 command-file functions plus 14 new Google
 callback functions, 13 new description functions and 24 image command/completion functions
-(175 additions since installed 0.7.15). Native
+(195 additions since installed 0.7.15). Native
 hidden windows, real NSTextView/NSTextField editor and NSWindow event paths. Distinct
 pre-fix logs plus deliberate sheet/IME guard reversal prove the defects are detected.
-Final run: `/private/tmp/walkfolio-review-targets-final-full.log`.
+Final run: `/private/tmp/walkfolio-native-menus-final-full.log`.
 
 Not shipped. App target is 0.7.16/152 on `codex/walkfolio-command-layer`; installed
 0.7.15/151 remains closed. No headed/manual UI, live archive, private delivery or real
@@ -302,3 +302,38 @@ Remaining: legacy unused section-control inventory; native menu refresh/effectiv
 inherited bindings/help; final whole-inventory review and signed closed installation.
 Original native/real-copy/migration/OneDrive/model/Google acceptance remains open.
 Target 0.7.16/152 is unbundled/uninstalled; installed 0.7.15/151 remains closed.
+
+
+## Native menus and effective discovery checkpoint — 2026-10-03
+
+- Native menu entries retain stable command IDs and AppKit validation/action targets.
+  Adoption requires unique generated titles in declared menus; explicit foreign IDs,
+  unrelated placements, other owners and ambiguous labels are preserved. AppKit's
+  selector-derived unset identifier is recognised. Rebuilt SwiftUI placeholders use
+  the same captured action route while adoption is pending.
+- Menu tracking retains exact window registration, first responder, selection and
+  containing leases through activation/end ordering. Nested tracking and detached old
+  menus release ownership correctly. Closed/unknown windows fail closed; windowless
+  Settings remains available. Standard targets, delegates, represented objects and
+  automatic-enabling flags remain intact.
+- Dispatch, native keys and palette/context/help share effective leaf/explicit-parent
+  bindings. Discovery distinguishes an unavailable pane from an unassigned command;
+  displayed RAW/Retry/group/crop controls appear in contextual actions. Settings shows
+  the full configured bindings. Unreachable InlineDaySectionsPaneView and its entire
+  ContentInlineViews.swift subtree removed after inbound-reference/reachability checks.
+- Initial per-key full-menu refresh reproduced a 27.315s cost for 100 keys in a
+  30,000-photo/100-row fixture. Shared ownership checking and equivalent-only pre-key
+  refresh reduce the final production-Review measurement to 0.492s (one selected) and
+  0.483s (all 30,000 selected). Native eligibility remains validated at display/action.
+- Fault replay: lost tracking/key refresh/end ownership fails six functions with 20
+  reported issues; leaf-only lookup fails two functions with six issues. Working sources
+  restored and SHA-256 checked. Full suite: 642 tests/two suites, 85.531s; twenty new
+  functions and 195 additions since installed 0.7.15. Astra's native-menu review clear.
+- Tests use detached actual NSMenu and injected hidden NSWindow, never NSApp.mainMenu.
+  They establish native target/equivalent/validation behaviour and synthetic tracking
+  order, not the real SwiftUI menu-bar bootstrap or headed interaction. That acceptance
+  remains open. Target 0.7.16/152 unbundled/uninstalled; installed 0.7.15/151 stays closed.
+- Broader inventory now identifies active FolderBrowser native selection/key ownership,
+  retained source/Log sidebar targets and Archive-card select-then-global callbacks as
+  further work. Finish that inventory/corrections before final bundle and closed install.
+  Original headed/native/real-copy/migration/OneDrive/model/Google acceptance stays open.
