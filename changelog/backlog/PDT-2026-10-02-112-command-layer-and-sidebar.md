@@ -445,3 +445,58 @@ ancestor focus when a clicked row is replaced. Still unbundled 0.7.16/152.
   retained source/Log sidebar targets and Archive-card select-then-global callbacks as
   further work. Finish that inventory/corrections before final bundle and closed install.
   Original headed/native/real-copy/migration/OneDrive/model/Google acceptance stays open.
+
+
+## Source, folder and Archive navigation intent — 2026-10-03
+
+Use snapshot-issued selection-independent ownership for retained navigation targets.
+Source sidebar selections remain native List value entry and reject removed/replaced
+trees, source/root/workspace ABA and invalid target IDs. Folder selection rejects old
+parent navigation; ordinary selection changes retain authority. The containing folder
+scope owns registered Select All/Deselect/Open actions, preserves native arrows and
+range grammar, and never redirects a folder action to global photo selection. Cmd-Return
+and double-click open exactly one displayed folder. Focus review reaches the actual
+folder List when that is the displayed detail surface.
+
+Archive entry/Walk callbacks must capture rendered catalogue/navigation/filter/search/
+view/root authority, survive selection-only changes, and reject stale target membership
+or ABA before selecting, opening or organising anything. Finish in bounded slices;
+source/folder first. Add real hidden native List event tests plus retained binding/action
+tests and fault replay. No live photos, provider calls or headed UI. Target 0.7.16/152
+remains unbundled/uninstalled until the remaining inventory and verification pass.
+
+
+## Source and folder navigation checkpoint — 2026-10-03
+
+- Source tree and folder-parent contexts are issued with rendered snapshots. Tree
+  replacement/rebuild and parent navigation invalidate retained controls, including
+  ABA; selection-only changes keep displayed targets usable. Native List bindings
+  reject foreign IDs and removed/replaced/hidden/modal/window ownership. Row navigation
+  validates exact displayed membership; double-click uses the registered owned Open.
+- The containing folder scope offers Select All/Deselect/Open, with persisted rebinding,
+  palette/context/help discovery and live eligibility. Photo Select All is unavailable
+  there. Cmd-I retains whole-folder triage, normalising native folder ownership rather
+  than a shared pane flag. Arrows/range modifiers and plain Return remain unclaimed.
+- Folder focus shares the actual display predicate (context photos, mode, children),
+  avoiding filtered-empty Review and Photo Log library misclassification. Real hidden
+  SidebarPane inside CommandSidebarContainer verifies native Down/Up bindings and
+  Cmd-Return into the folder List. BrowserOrReviewPane verifies opening that List into
+  Review and settled native keyboard focus. Explicit hidden layout needs a subsequent
+  run-loop turn before asserting queued focus; existing focus guards remain intact.
+- All inherited commands validate the captured leaf and containing display contexts.
+  Weak view access avoids retaining AppState through a lease. Newly mounted queued-focus
+  fallback validates its discovered context/ancestors before focusing. Retained old
+  native folder/sidebar Lists cannot triage a new source before SwiftUI redraws.
+- Sixteen new regressions pass. Four initial fault variants fail 2/2/1/2 actual
+  functions with 7/5/4/3 assertion issues; the final leaf/ancestor guard removal fails
+  four functions/twelve issues. Raw probe counters included the run summary as a
+  function; corrected counts parse unique named test functions. All working source
+  bytes restored and SHA-256 checked before full verification. Full suite: 658 tests,
+  two suites, 95.350s; 211 additions since installed 0.7.15. Astra final read-only
+  review finds no concrete source/folder blocker; primary alone coded and ran tests.
+- Native tests use hidden synthetic windows/temp sources; no headed visual/mouse-gesture,
+  live photo/archive/provider/authorisation/delivery acceptance. Actual double-click
+  callback is wired/tested through its guarded factory, not a headed mouse gesture.
+  Target 0.7.16/152 remains unbundled/uninstalled. Archive entry/Walk card actions,
+  Inspector destination link and Photo Log collision navigation remain next, followed
+  by final inventory/full verification and signed bundle/closed installation.

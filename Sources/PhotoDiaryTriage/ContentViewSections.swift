@@ -16,24 +16,26 @@ struct SidebarPaneView: View {
             } else {
                 let snapshot = state.snapshot
                 VStack(alignment: .leading, spacing: 8) {
-                    List(selection: Binding(
-                        get: { state.snapshot.tree.selectedSidebarNodeID },
-                        set: { appState.selectSidebarNode($0) }
-                    )) {
-                        ForEach(snapshot.tree.browserRoots) { node in
-                            SidebarNodeTreeItem(
-                                appState: appState,
-                                node: node,
-                                expandedNodeIDs: $expandedNodeIDs
-                            )
+                    SourceSidebarCommandSurface(appState: appState, contextKey: snapshot.tree.commandContextKey) { handle in
+                        List(selection: sourceSidebarSelectionBinding(appState, context: snapshot.tree.commandContextKey, handle: handle)) {
+                            ForEach(snapshot.tree.browserRoots) { node in
+                                SidebarNodeTreeItem(
+                                    appState: appState,
+                                    node: node,
+                                    contextKey: snapshot.tree.commandContextKey,
+                                    handle: handle,
+                                    expandedNodeIDs: $expandedNodeIDs
+                                )
+                            }
                         }
-                    }
-                    .listStyle(.sidebar)
-                    .onAppear {
-                        applyAutomaticExpansion(to: snapshot.tree.browserRoots)
-                    }
-                    .onChange(of: snapshot.tree.browserRoots) { _, roots in
-                        applyAutomaticExpansion(to: roots)
+                        .listStyle(.sidebar)
+                        .onAppear {
+                            applyAutomaticExpansion(to: snapshot.tree.browserRoots)
+                        }
+                        .onChange(of: snapshot.tree.browserRoots) { _, roots in
+                            applyAutomaticExpansion(to: roots)
+                        }
+
                     }
 
                     SidebarStatusView(state: state, appRelease: appRelease)
@@ -57,6 +59,8 @@ struct SidebarPaneView: View {
 struct SidebarNodeTreeItem: View {
     let appState: AppState
     let node: BrowserNode
+    let contextKey: String
+    let handle: LocalCommandHandle
     @Binding var expandedNodeIDs: Set<String>
 
     var body: some View {
@@ -66,6 +70,8 @@ struct SidebarNodeTreeItem: View {
                     SidebarNodeTreeItem(
                         appState: appState,
                         node: child,
+                        contextKey: contextKey,
+                        handle: handle,
                         expandedNodeIDs: $expandedNodeIDs
                     )
                 }
@@ -73,11 +79,12 @@ struct SidebarNodeTreeItem: View {
                 SidebarNodeRow(node: node)
                     .contentShape(Rectangle())
                     .onTapGesture {
-                        appState.selectSidebarNode(node.id)
+                        selectDisplayedSourceNode(appState, node: node, context: contextKey, handle: handle)
                     }
                     .contextMenu {
                         if node.kind == .archiveWalkFolder {
                             Button("Move to Trip...") {
+                                guard handle.isCurrent(), contextKey == sourceBrowserCommandContextKey(appState), appState.browserNodeMap[node.id] == node else { return }
                                 appState.moveArchiveWalkToTrip(node)
                             }
                         }
@@ -88,11 +95,12 @@ struct SidebarNodeTreeItem: View {
             SidebarNodeRow(node: node)
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    appState.selectSidebarNode(node.id)
+                    selectDisplayedSourceNode(appState, node: node, context: contextKey, handle: handle)
                 }
                 .contextMenu {
                     if node.kind == .archiveWalkFolder {
                         Button("Move to Trip...") {
+                            guard handle.isCurrent(), contextKey == sourceBrowserCommandContextKey(appState), appState.browserNodeMap[node.id] == node else { return }
                             appState.moveArchiveWalkToTrip(node)
                         }
                     }

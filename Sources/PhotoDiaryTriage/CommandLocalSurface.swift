@@ -35,6 +35,10 @@ struct LocalCommandHandle {
             windowRegistrationID: owner.instanceID, requiresFocusedOwner: false, surfaces: surfaces)
         return (coordinator, origin)
     }
+    func isCurrent() -> Bool {
+        guard let (coordinator, origin) = capturedInvocation() else { return false }
+        return coordinator.isCurrent(origin)
+    }
     func isEnabled(_ id: AppCommandID) -> Bool {
         guard let (coordinator, origin) = capturedInvocation() else { return false }
         return coordinator.unavailableReason(id, invocation: origin) == nil
@@ -52,6 +56,7 @@ struct CommandLocalSurface<Content: View>: NSViewRepresentable {
     let scope: AppCommandScope
     let contextKey: String
     let actions: [AppCommandID: SheetCommandAction]
+    var contextIsCurrent: (() -> Bool)? = nil
     var ownsWindow = false
     var fillsAvailableHeight = false
     var focusesOnAttachment = false
@@ -62,7 +67,7 @@ struct CommandLocalSurface<Content: View>: NSViewRepresentable {
     func makeNSView(context: Context) -> CommandLocalSurfaceView { CommandLocalSurfaceView() }
     func updateNSView(_ view: CommandLocalSurfaceView, context: Context) {
         view.renderContent = { AnyView(content($0)) }
-        view.configure(coordinator: coordinator, scope: scope, contextKey: contextKey, actions: actions, ownsWindow: ownsWindow, focusesOnAttachment: focusesOnAttachment, focusTarget: focusTarget, openSettings: { openSettings() })
+        view.configure(coordinator: coordinator, scope: scope, contextKey: contextKey, actions: actions, contextIsCurrent: contextIsCurrent, ownsWindow: ownsWindow, focusesOnAttachment: focusesOnAttachment, focusTarget: focusTarget, openSettings: { openSettings() })
     }
     func sizeThatFits(_ proposal: ProposedViewSize, nsView view: CommandLocalSurfaceView, context: Context) -> CGSize? {
         let measured = view.measure(width: proposal.width.flatMap { $0.isFinite ? $0 : nil })
@@ -88,6 +93,7 @@ final class CommandLocalSurfaceView: NSView {
     private var contextKey: String?
     private var scope: AppCommandScope = .logDetails
     private var actions: [AppCommandID: SheetCommandAction] = [:]
+    private var capturedContextValidity: (() -> Bool)?
     private var hostedContent = AnyView(EmptyView())
     private var measuredWidth: CGFloat?
     override init(frame: NSRect) {
@@ -108,7 +114,7 @@ final class CommandLocalSurfaceView: NSView {
 
     @discardableResult
     func configure(coordinator: CommandKeyboardCoordinator, scope: AppCommandScope, contextKey: String,
-                   actions: [AppCommandID: SheetCommandAction], ownsWindow: Bool = false, focusesOnAttachment: Bool = false, focusTarget: ((CommandLocalSurfaceView) -> NSView?)? = nil, openSettings: (() -> Void)? = nil) -> LocalCommandHandle {
+                   actions: [AppCommandID: SheetCommandAction], contextIsCurrent: (() -> Bool)? = nil, ownsWindow: Bool = false, focusesOnAttachment: Bool = false, focusTarget: ((CommandLocalSurfaceView) -> NSView?)? = nil, openSettings: (() -> Void)? = nil) -> LocalCommandHandle {
         if self.coordinator !== coordinator || self.ownsWindow != ownsWindow { unregister() }
         self.coordinator = coordinator; self.ownsWindow = ownsWindow; self.focusesOnAttachment = focusesOnAttachment; self.ownedFocusTarget = focusTarget; self.openSettings = openSettings
         registerOwnedWindow(scope: scope)
@@ -119,11 +125,16 @@ final class CommandLocalSurfaceView: NSView {
         if lease == nil {
             lease = CommandSurfaceLease(view: self, token: token, scope: scope, active: true,
                 supports: { [weak self] in self?.actions[$0] != nil },
-                availability: { [weak self] in self?.actions[$0]?.enabled == true },
+                availability: { [weak self] in self?.actions[$0]?.isEnabled == true },
                 run: { [weak self] id in
-                    guard let action = self?.actions[id], action.enabled else { return false }
+                    guard let action = self?.actions[id], action.isEnabled else { return false }
                     action.run(); return true
                 })
+        }
+        capturedContextValidity = contextIsCurrent
+        lease?.contextIsCurrent = { [weak self] in
+            guard let self else { return false }
+            return self.capturedContextValidity?() ?? true
         }
         // An explicit provider returning nil is not permission to focus the container.
         lease?.focusTarget = focusTarget == nil ? nil : { [weak self] in
@@ -153,7 +164,7 @@ final class CommandLocalSurfaceView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if window == nil { unregister() } else if let coordinator, let contextKey {
-            configure(coordinator: coordinator, scope: scope, contextKey: contextKey, actions: actions, ownsWindow: ownsWindow, focusesOnAttachment: focusesOnAttachment, focusTarget: ownedFocusTarget, openSettings: openSettings)
+            configure(coordinator: coordinator, scope: scope, contextKey: contextKey, actions: actions, contextIsCurrent: capturedContextValidity, ownsWindow: ownsWindow, focusesOnAttachment: focusesOnAttachment, focusTarget: ownedFocusTarget, openSettings: openSettings)
         }
     }
     override func performKeyEquivalent(with event: NSEvent) -> Bool {

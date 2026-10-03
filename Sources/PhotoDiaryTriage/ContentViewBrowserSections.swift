@@ -161,7 +161,7 @@ struct BrowserOrReviewPaneView: View {
                     PhotoLogLibraryMainPane(appState: appState, state: sidebarState)
                     } else if state.snapshot.contextMediaItemCount > 0 {
                         DayContextPaneView(appState: appState, state: state, navigationState: navigationState)
-                    } else if !state.snapshot.detailFolderNodes.isEmpty {
+                    } else if sourceFolderBrowserIsDisplayed(mode: appState.workspaceMode, contextMediaItemCount: state.snapshot.contextMediaItemCount, hasFolders: !state.snapshot.detailFolderNodes.isEmpty) {
                         FolderBrowserPaneView(appState: appState, state: state)
                     } else {
                         ContentUnavailableView(
@@ -218,22 +218,26 @@ struct FolderBrowserPaneView: View {
     @ObservedObject var state: ReviewState
 
     var body: some View {
-        List(selection: Binding(
-            get: { appState.selectedFolderNodeIDs },
-            set: { appState.selectFolderNodes($0) }
-        )) {
-            ForEach(state.snapshot.detailFolderNodes) { node in
-                FolderNodeRow(node: node)
-                    .tag(node.id)
-                    .onTapGesture(count: 2) {
-                        appState.selectFolderNodes([node.id])
-                        appState.openCurrentSelection()
-                    }
+        let snapshot = state.snapshot
+        let context = snapshot.folderCommandContextKey
+        CommandLocalSurface(coordinator: appState.commandCoordinator, scope: .sourceFolders,
+            contextKey: context, actions: sourceFolderCommandActions(appState, context: context),
+            contextIsCurrent: { context == sourceFolderCommandContextKey(appState) && appState.isSourceFolderBrowserDisplayed },
+            fillsAvailableHeight: true, focusTarget: sourceNavigationFocusTarget) { handle in
+            List(selection: sourceFolderSelectionBinding(appState, context: context, handle: handle)) {
+                ForEach(snapshot.detailFolderNodes) { node in
+                    FolderNodeRow(node: node)
+                        .tag(node.id)
+                        .onTapGesture(count: 2) {
+                            openDisplayedSourceFolder(appState, node: node, context: context, handle: handle)
+                        }
+                }
             }
-        }
-        .onTapGesture {
-            appState.activePane = .folders
-            appState.deactivateReviewGridFocus()
+            .onTapGesture {
+                guard handle.isCurrent(), context == sourceFolderCommandContextKey(appState) else { return }
+                appState.activePane = .folders
+                appState.deactivateReviewGridFocus()
+            }
         }
     }
 }
