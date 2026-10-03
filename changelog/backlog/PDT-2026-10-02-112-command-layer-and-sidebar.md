@@ -1,7 +1,7 @@
 ---
 item_id: PDT-2026-10-02-112
 title: Complete command layer and owned keyboard navigation
-status: implementation_in_progress
+status: paused_for_review
 target_release_version: 0.7.16
 target_build: 152
 target_feature_slug: command-layer-and-sidebar
@@ -500,3 +500,52 @@ remains unbundled/uninstalled until the remaining inventory and verification pas
   Target 0.7.16/152 remains unbundled/uninstalled. Archive entry/Walk card actions,
   Inspector destination link and Photo Log collision navigation remain next, followed
   by final inventory/full verification and signed bundle/closed installation.
+
+
+## User-requested review freeze — 2026-10-03
+
+Dominik: "ok, it's time to wrap it up - stop at this version so I can check your work".
+Development stops at tested source ad75217576c70a2c69889b8888fe53a7ea203faf.
+The persistent autonomous goal is paused. This instruction supersedes the earlier
+requirement to complete the remaining inventory before bundling/installing: package
+the existing 0.7.16/152 checkpoint for review, without further implementation.
+All 658 tests/two suites passed in 95.350s at that source; no code changes follow.
+Signed bundle/body verification and installation are review preparation only.
+
+The whole command inventory is not complete. Retained Archive Timeline/contact/search
+entry, Trip Walk, search-photo and map actions still require captured display authority
+and exact displayed membership. Map annotations must retain issued authority instead
+of borrowing a new coordinator callback; same-value root/filter/catalogue ABA matters.
+Search selection must precede owned focus. Generic Archive pane actions need the same
+display lease validation. Astra supplied this advice read-only; no Archive fixes or
+new regressions were implemented before the user stopped development.
+Inspector destination links and the existing-Log collision action also remain.
+Original real SwiftUI menu bootstrap, headed/native, real-copy/historical migration,
+OneDrive, LM Studio quality and Google test-account acceptance remain open.
+Resume development only on Dominik's instruction after review. Do not interpret this
+freeze, packaging, installation or 658 passing tests as whole-objective completion.
+
+
+## Frozen review build installed — 2026-10-03
+
+Dominik closed the running 0.7.15 app and explicitly authorised installation.
+Existing bundle script completed successfully (1.51s build). Replaced the exact
+`/Applications/Walkfolio.app` target after confirming no app process. Retained
+the previous real bundle at `/private/tmp/walkfolio-before-review-20261003T045747Z/Walkfolio.app`.
+Built and installed bundles pass `codesign --verify --deep --strict --verbose=2`:
+`valid on disk`; `satisfies its Designated Requirement`. Signing is ad-hoc.
+Info.plist confirms 0.7.16/152 and command-layer-and-sidebar. Packaged release
+metadata matches source; installed executable SHA-256 matches packaged binary.
+Removing signatures from temporary compiled/packaged copies confirms code-body
+equality. No app launch or runtime/visual acceptance is claimed.
+Executable SHA-256: `660d59dad367c835424878acfe6a01de9cf377540fe607c4c40d323a65ed9a08`.
+Unsigned body SHA-256: `ddca1de3e9381493734e03ea571694c6ba9662558974612c28a9dbdf4292daa5`.
+Packaged release SHA-256: `c4b9ffa8f4f3320ffb4d08488bdca3280eb5625dc6aaa622dbf3f4a46854dc71`.
+Source/tests remain unchanged from ad75217; the prior complete 658-test pass
+still applies. Packaging did not justify another full run. The first installation
+attempt stopped before replacement because a presumed Swift output path did not
+exist; `swift build --show-bin-path` resolved out/Products/Debug, then verification
+and installation succeeded. No checks were bypassed. Development stays paused.
+Light review request: `_DTC/photo-diary-triage/2026-10-03-walkfolio-commands-navigation-0.7.16.md`.
+No watcher runs. Remaining Archive/Inspector/Log work and original acceptance
+remain exactly as listed in the review-freeze section.
