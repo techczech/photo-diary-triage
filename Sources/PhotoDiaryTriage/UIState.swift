@@ -505,6 +505,7 @@ struct ReviewSnapshot: Equatable, Sendable {
     let canExcludeSelectionFromImport: Bool
     let canUnmarkSelectionForImport: Bool
     let canToggleRawForSelection: Bool
+    var commandContextKey = ""
 
     static let empty = ReviewSnapshot(
         breadcrumbTitles: [],
@@ -599,6 +600,8 @@ struct InspectorSnapshot: Equatable, Sendable {
     let walkLocation: String?
     let mediaItem: MediaItem?
     let cropHistory: CropHistorySnapshot?
+    var commandContextKey = ""
+    var thumbnailFailed = false
 
     static let empty = InspectorSnapshot(
         isVisible: true,

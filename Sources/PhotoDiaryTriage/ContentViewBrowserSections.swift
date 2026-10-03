@@ -513,7 +513,7 @@ struct ReviewPaneView: View {
         } label: {
             Label("Filter: \(state.snapshot.reviewFilter.title)", systemImage: "line.3.horizontal.decrease.circle")
         }
-        .commandShortcutHint([.filterAll, .filterIncluded, .filterCandidate, .filterExcluded, .filterUndecided], appState: appState, scope: .review, help: "Filter review items to all, included, candidate, excluded, or undecided photos.")
+        .commandShortcutHint([.filterAll, .filterIncluded, .filterCandidate, .filterExcluded, .filterUndecided, .filterCropped], appState: appState, scope: .review, help: "Filter review items to all, included, candidate, excluded, undecided, or cropped photos.")
     }
 
     private func reviewPresentationMenu(_ commands: LocalCommandHandle) -> some View {
@@ -654,42 +654,14 @@ struct ReviewPaneView: View {
                 LazyVGrid(columns: columns, alignment: .leading, spacing: spacing) {
                     ForEach(visibleItems) { snapshot in
                         let item = snapshot.item
+                        let target = ReviewPhotoCommandTarget(appState, item: item, context: state.snapshot.commandContextKey)
                         ReviewGridCard(
-                            appState: appState,
-                            snapshot: snapshot,
-                            cardWidth: cardWidth,
+                            appState: appState, snapshot: snapshot, cardWidth: cardWidth,
                             canMutateImportSelection: state.snapshot.canMutateImportSelection,
                             onClick: { click in
+                                guard target.isCurrent(appState) else { return }
                                 appState.handleGridSelection(for: item.id, click: click)
-                            },
-                            retryThumbnail: {
-                                appState.requestThumbnail(for: item)
-                            },
-                            setIncludeRaw: { enabled in
-                                if appState.canMutateImportSelection {
-                                    appState.setImportRawCompanions(for: item, enabled: enabled)
-                                }
-                            },
-                            includeForImport: {
-                                guard appState.canMutateImportSelection else { return }
-                                appState.selectMediaItems([item.id])
-                                appState.markCurrentSelectionForImport()
-                            },
-                            markAsCandidate: {
-                                guard appState.canMutateImportSelection else { return }
-                                appState.selectMediaItems([item.id])
-                                appState.markCurrentSelectionAsCandidate()
-                            },
-                            excludeFromImport: {
-                                guard appState.canMutateImportSelection else { return }
-                                appState.selectMediaItems([item.id])
-                                appState.excludeCurrentSelectionFromImport()
-                            },
-                            clearTriageState: {
-                                guard appState.canMutateImportSelection else { return }
-                                appState.selectMediaItems([item.id])
-                                appState.unmarkCurrentSelectionForImport()
-                            }
+                            }, commandContextKey: state.snapshot.commandContextKey
                         )
                         .id(item.id)
                     }
@@ -770,45 +742,20 @@ struct ReviewPaneView: View {
 
     private var reviewList: some View {
         let visibleItems = state.snapshot.visibleItems
+        let context = state.snapshot.commandContextKey
         return List(selection: Binding(
             get: { state.snapshot.selectedMediaItemIDs },
-            set: { appState.selectMediaItems($0) }
+            set: { ids in
+                guard context == reviewTargetCommandContextKey(appState),
+                      ids.allSatisfy({ appState.commandDisplayedReviewPhoto($0) != nil }) else { return }
+                appState.selectMediaItems(ids)
+            }
         )) {
             ForEach(visibleItems) { snapshot in
                 let item = snapshot.item
-                MediaItemRow(
-                    appState: appState,
-                    snapshot: snapshot,
+                MediaItemRow(appState: appState, snapshot: snapshot,
                     canMutateImportSelection: state.snapshot.canMutateImportSelection,
-                    includeForImport: {
-                        guard state.snapshot.canMutateImportSelection else { return }
-                        appState.selectMediaItems([item.id])
-                        appState.markCurrentSelectionForImport()
-                    },
-                    markAsCandidate: {
-                        guard state.snapshot.canMutateImportSelection else { return }
-                        appState.selectMediaItems([item.id])
-                        appState.markCurrentSelectionAsCandidate()
-                    },
-                    excludeFromImport: {
-                        guard state.snapshot.canMutateImportSelection else { return }
-                        appState.selectMediaItems([item.id])
-                        appState.excludeCurrentSelectionFromImport()
-                    },
-                    clearTriageState: {
-                        guard state.snapshot.canMutateImportSelection else { return }
-                        appState.selectMediaItems([item.id])
-                        appState.unmarkCurrentSelectionForImport()
-                    },
-                    retryThumbnail: {
-                        appState.requestThumbnail(for: item)
-                    },
-                    setIncludeRaw: { enabled in
-                        if appState.canMutateImportSelection {
-                            appState.setImportRawCompanions(for: item, enabled: enabled)
-                        }
-                    }
-                )
+                    commandContextKey: state.snapshot.commandContextKey)
                 .tag(item.id)
             }
         }
@@ -943,15 +890,28 @@ private struct GroupedReviewSectionNodeView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
-            if isCollapsible {
-                Button {
-                    appState.focusInlineSection(section.id, scrollIntoView: false)
-                    appState.toggleInlineSectionExpansion(section.id)
-                } label: {
+        ReviewGroupCommandSurface(appState: appState, section: section, contextKey: state.snapshot.commandContextKey) { commands in
+            HStack(spacing: 10) {
+                if isCollapsible {
+                    Button {
+                        commands.run(.toggleDisplayedGroup)
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                                .font(.caption.weight(.semibold))
+                            Text(section.title)
+                                .font(headerFont)
+                            Text(sectionSummary)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!commands.isEnabled(.toggleDisplayedGroup))
+                    .commandShortcutHint(.toggleDisplayedGroup, appState: appState, scope: .reviewGroup, help: isExpanded ? "Collapse this group" : "Expand this group")
+                } else {
                     HStack(spacing: 8) {
-                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                            .font(.caption.weight(.semibold))
                         Text(section.title)
                             .font(headerFont)
                         Text(sectionSummary)
@@ -959,32 +919,23 @@ private struct GroupedReviewSectionNodeView: View {
                             .foregroundStyle(.secondary)
                     }
                     .contentShape(Rectangle())
+                    .onTapGesture {
+                        commands.run(.focusDisplayedGroup)
+                    }
+                    .disabled(!commands.isEnabled(.focusDisplayedGroup))
+                    .commandShortcutHint(.focusDisplayedGroup, appState: appState, scope: .reviewGroup, help: "Focus this group for keyboard navigation")
                 }
-                .buttonStyle(.plain)
-                .commandShortcutHint([.moveUp, .moveDown, .moveLeft, .moveRight], appState: appState, scope: .review, help: isExpanded ? "Collapse this focused group or move between groups" : "Expand this focused group or move between groups")
-            } else {
-                HStack(spacing: 8) {
-                    Text(section.title)
-                        .font(headerFont)
-                    Text(sectionSummary)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    appState.focusInlineSection(section.id, scrollIntoView: false)
-                }
-                .commandShortcutHint([.moveUp, .moveDown, .moveLeft, .moveRight], appState: appState, scope: .review, help: "Focus this group for keyboard navigation")
-            }
 
-            Spacer()
+                Spacer()
 
-            if canCompareSection {
-                Button("Compare") {
-                    appState.openComparison(for: compareItemIDs, title: "Compare \(section.title)")
+                if canCompareSection {
+                    Button("Compare") {
+                        commands.run(.compareDisplayedGroup)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!commands.isEnabled(.compareDisplayedGroup))
+                    .commandShortcutHint(.compareDisplayedGroup, appState: appState, scope: .reviewGroup, help: "Compare all photos in this group")
                 }
-                .buttonStyle(.bordered)
-                .help("Compare all photos in this group")
             }
         }
     }
@@ -1011,80 +962,22 @@ private struct GroupedReviewSectionNodeView: View {
 
     private func reviewGridCard(for snapshot: ReviewItemSnapshot) -> some View {
         let item = snapshot.item
+        let target = ReviewPhotoCommandTarget(appState, item: item, context: state.snapshot.commandContextKey)
         return ReviewGridCard(
-            appState: appState,
-            snapshot: snapshot,
-            cardWidth: cardWidth,
+            appState: appState, snapshot: snapshot, cardWidth: cardWidth,
             canMutateImportSelection: state.snapshot.canMutateImportSelection,
             onClick: { click in
+                guard target.isCurrent(appState) else { return }
                 appState.handleGridSelection(for: item.id, click: click)
-            },
-            retryThumbnail: {
-                appState.requestThumbnail(for: item)
-            },
-            setIncludeRaw: { enabled in
-                if state.snapshot.canMutateImportSelection {
-                    appState.setImportRawCompanions(for: item, enabled: enabled)
-                }
-            },
-            includeForImport: {
-                guard state.snapshot.canMutateImportSelection else { return }
-                appState.selectMediaItems([item.id])
-                appState.markCurrentSelectionForImport()
-            },
-            markAsCandidate: {
-                guard state.snapshot.canMutateImportSelection else { return }
-                appState.selectMediaItems([item.id])
-                appState.markCurrentSelectionAsCandidate()
-            },
-            excludeFromImport: {
-                guard state.snapshot.canMutateImportSelection else { return }
-                appState.selectMediaItems([item.id])
-                appState.excludeCurrentSelectionFromImport()
-            },
-            clearTriageState: {
-                guard state.snapshot.canMutateImportSelection else { return }
-                appState.selectMediaItems([item.id])
-                appState.unmarkCurrentSelectionForImport()
-            }
+            }, commandContextKey: state.snapshot.commandContextKey
         )
     }
 
     private func reviewListRow(for snapshot: ReviewItemSnapshot) -> some View {
         let item = snapshot.item
-        return MediaItemRow(
-            appState: appState,
-            snapshot: snapshot,
-            canMutateImportSelection: state.snapshot.canMutateImportSelection,
-            includeForImport: {
-                guard state.snapshot.canMutateImportSelection else { return }
-                appState.selectMediaItems([item.id])
-                appState.markCurrentSelectionForImport()
-            },
-            markAsCandidate: {
-                guard state.snapshot.canMutateImportSelection else { return }
-                appState.selectMediaItems([item.id])
-                appState.markCurrentSelectionAsCandidate()
-            },
-            excludeFromImport: {
-                guard state.snapshot.canMutateImportSelection else { return }
-                appState.selectMediaItems([item.id])
-                appState.excludeCurrentSelectionFromImport()
-            },
-            clearTriageState: {
-                guard state.snapshot.canMutateImportSelection else { return }
-                appState.selectMediaItems([item.id])
-                appState.unmarkCurrentSelectionForImport()
-            },
-            retryThumbnail: {
-                appState.requestThumbnail(for: item)
-            },
-            setIncludeRaw: { enabled in
-                if state.snapshot.canMutateImportSelection {
-                    appState.setImportRawCompanions(for: item, enabled: enabled)
-                }
-            }
-        )
+        return MediaItemRow(appState: appState, snapshot: snapshot,
+                    canMutateImportSelection: state.snapshot.canMutateImportSelection,
+                    commandContextKey: state.snapshot.commandContextKey)
         .tag(item.id)
     }
 }

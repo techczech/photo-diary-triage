@@ -130,6 +130,8 @@ final class CommandKeyboardCoordinator: ObservableObject {
     // Retain only for synchronous command execution, so unregistering an owner
     // cannot erase its identity and turn restoration into a search for another pane.
     private var executingSurface: CommandSurfaceLease?
+    private var executingSurfaceChain: [CommandSurfaceLease] = []
+    private var executingSurfaceSnapshots: [CommandSurfaceSnapshot] = []
     lazy var panels = CommandPanelController(coordinator: self)
     var presentsPanels = true
 
@@ -195,7 +197,8 @@ final class CommandKeyboardCoordinator: ObservableObject {
         leases[lease.token] = lease
     }
     func unregisterSurface(_ token: UUID) {
-        if let window = leases[token]?.registeredWindow { focusRevisions[ObjectIdentifier(window), default: 0] &+= 1 }
+        // Focus validates its exact target and ancestor capabilities. Replacing a
+        // different child must not cancel a stable containing pane's request.
         leases[token] = nil; leaseOrders[token] = nil
     }
     func registration(for window: NSWindow) -> CommandWindowRegistration? {
@@ -358,13 +361,19 @@ final class CommandKeyboardCoordinator: ObservableObject {
         guard let captured = invocation, isCurrent(captured), let window = captured.window, let state = appState else { return false }
         // AppState is shared across app windows. Native ownership, rather than the
         // last window's pane flag, determines which selection this command uses.
-        if captured.scope == .review { state.activePane = .media; state.reviewGridHasFocus = true }
+        let effectiveHandler = handler(for: id, invocation: captured)
+        if captured.scope == .review || effectiveHandler?.scope == .review { state.activePane = .media; state.reviewGridHasFocus = true }
         else if captured.scope == .sourceSidebar { state.activePane = .sidebar }
         let invocation = CommandInvocation(window: window, scope: captured.scope, lease: captured.lease, state: state, windowRegistrationID: captured.windowRegistrationID, requiresFocusedOwner: captured.requiresFocusedOwner, surfaces: captured.surfaces)
         guard unavailableReason(id, invocation: invocation) == nil else { return false }
-        let previous = executingWindow, previousSurface = executingSurface
-        executingWindow = window; executingSurface = handler(for: id, invocation: invocation) ?? invocation.lease
-        defer { executingWindow = previous; executingSurface = previousSurface }
+        let previous = executingWindow, previousSurface = executingSurface, previousChain = executingSurfaceChain, previousSnapshots = executingSurfaceSnapshots
+        executingWindow = window; executingSurface = effectiveHandler ?? invocation.lease
+        let chain = invocation.surfaces.compactMap(\.lease)
+        if let handler = executingSurface, let index = chain.firstIndex(where: { $0 === handler }) {
+            executingSurfaceChain = Array(chain[index...])
+            executingSurfaceSnapshots = Array(invocation.surfaces[index...])
+        } else { executingSurfaceChain = chain; executingSurfaceSnapshots = invocation.surfaces }
+        defer { executingWindow = previous; executingSurface = previousSurface; executingSurfaceChain = previousChain; executingSurfaceSnapshots = previousSnapshots }
         switch id {
         case .palette: panels.present(.palette, from: invocation)
         case .contextActions: panels.present(.contextual, from: invocation)
@@ -434,21 +443,28 @@ final class CommandKeyboardCoordinator: ObservableObject {
         let revision = focusRevisions[owner], fingerprint = CommandSelectionFingerprint(state)
         let registrationID = registration(for: window)?.instanceID
         let targetLease: CommandSurfaceLease?
-        if let surface = executingSurface, surface.scope == scope {
+        let focusChain: [CommandSurfaceSnapshot]?
+        if let index = executingSurfaceChain.firstIndex(where: { $0.scope == scope }) {
+            let surface = executingSurfaceChain[index]
             guard surface.active, surface.view?.window === window, leases[surface.token] === surface else { return }
-            // A clicked/inherited control restores its own containing surface, even
-            // when another same-scope container was registered more recently.
+            // Use the captured containing ancestor. A new parent cannot lend its
+            // authority after an action synchronously replaces or removes the old one.
             targetLease = surface
+            focusChain = Array(executingSurfaceSnapshots[index...])
         } else {
+            focusChain = nil
             targetLease = leases.values.filter { $0.scope == scope && $0.active && $0.view?.window === window }
                 .max { leaseOrders[$0.token, default: 0] < leaseOrders[$1.token, default: 0] }
         }
         let targetToken = targetLease?.token, prior = window.firstResponder
+        let focusOrigin = targetLease.map { CommandInvocation(window: window, scope: scope, lease: $0, state: state,
+            windowRegistrationID: registrationID!, requiresFocusedOwner: false, surfaces: focusChain ?? surfaceChain(for: $0)) }
         let requestedTarget = targetLease.flatMap { $0.focusTarget.map { $0() } ?? $0.view }
         DispatchQueue.main.async { [weak self, weak window, weak prior, weak targetLease, weak requestedTarget] in
             guard let self, let state = self.appState, let window, self.focusRevisions[owner] == revision,
                   self.registration(for: window)?.instanceID == registrationID,
                   fingerprint == .init(state), window.attachedSheet == nil, window.firstResponder === prior else { return }
+            if let focusOrigin, !self.isCurrent(focusOrigin) { return }
             let lease: CommandSurfaceLease?
             if let targetToken {
                 guard let targetLease, self.leases[targetToken] === targetLease else { return }

@@ -258,10 +258,9 @@ struct DetailsInspectorView: View {
                     ThumbnailImageSurface(
                         appState: appState,
                         item: item,
-                        thumbnailFailed: false,
-                        retryThumbnail: {
-                            appState.requestThumbnail(for: item)
-                        },
+                        thumbnailFailed: state.snapshot.thumbnailFailed,
+                        commandContextKey: state.snapshot.commandContextKey,
+                        owner: .inspector,
                         contentMode: .fit
                     )
                     .frame(maxWidth: .infinity)
@@ -294,7 +293,7 @@ struct DetailsInspectorView: View {
                     }
                     if let cropHistory = state.snapshot.cropHistory {
                         Divider()
-                        cropHistorySection(cropHistory)
+                        cropHistorySection(cropHistory, source: item)
                     }
                 } else {
                     Text("Select a photo to inspect its metadata.")
@@ -302,15 +301,10 @@ struct DetailsInspectorView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .task(id: state.snapshot.mediaItem?.id) {
-                if let item = state.snapshot.mediaItem {
-                    appState.requestThumbnail(for: item)
-                }
-            }
         }
     }
 
-    private func cropHistorySection(_ history: CropHistorySnapshot) -> some View {
+    private func cropHistorySection(_ history: CropHistorySnapshot, source: MediaItem) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Label("Crop Versions", systemImage: "crop")
@@ -323,12 +317,12 @@ struct DetailsInspectorView: View {
             }
 
             ForEach(history.versions) { version in
-                cropVersionRow(version)
+                cropVersionRow(version, source: source)
             }
         }
     }
 
-    private func cropVersionRow(_ version: CropVersionSnapshot) -> some View {
+    private func cropVersionRow(_ version: CropVersionSnapshot, source: MediaItem) -> some View {
         HStack(alignment: .center, spacing: 8) {
             Image(systemName: version.role == .crop ? "crop" : "photo")
                 .foregroundStyle(version.role == .crop ? Color.purple.opacity(0.95) : Color.teal.opacity(0.95))
@@ -356,15 +350,14 @@ struct DetailsInspectorView: View {
 
             Spacer(minLength: 6)
 
-            Button {
-                appState.openCropVersion(relativePath: version.relativePath)
-            } label: {
-                Image(systemName: "arrow.right.square")
+            CropVersionCommandSurface(appState: appState, source: source, version: version,
+                                      contextKey: state.snapshot.commandContextKey) { commands in
+                Button { commands.run(.showCropVersion) } label: { Image(systemName: "arrow.right.square") }
+                    .buttonStyle(.bordered).controlSize(.mini)
+                    .disabled(!commands.isEnabled(.showCropVersion))
+                    .commandShortcutHint(.showCropVersion, appState: appState, scope: .cropVersion,
+                        help: version.isLoaded ? "Show this crop version in the app" : "This crop version is not loaded in the current view")
             }
-            .buttonStyle(.bordered)
-            .controlSize(.mini)
-            .disabled(version.isCurrent || !version.isLoaded)
-            .help(version.isLoaded ? "Show this crop version in the app" : "This crop version is not loaded in the current view")
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)

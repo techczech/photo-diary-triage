@@ -138,7 +138,7 @@ final class AppState: ObservableObject {
     @Published var reviewSelectionAnchorID: UUID?
     @Published var activePane: ActivePane = .sidebar {
         didSet {
-            if oldValue != activePane { imagePresentationRevision &+= 1 }
+            if oldValue != activePane { imagePresentationRevision &+= 1; refreshInspectorState() }
             refreshNavigationState()
         }
     }
@@ -244,6 +244,10 @@ final class AppState: ObservableObject {
     }
     @Published var expandedInlineSectionIDs: Set<String> = [] {
         didSet {
+            if oldValue != expandedInlineSectionIDs {
+                reviewExpansionRevision &+= 1
+                cachedReviewInteractionGeneration = -1
+            }
             refreshReviewState()
         }
     }
@@ -287,7 +291,10 @@ final class AppState: ObservableObject {
     }
     @Published var previewingMediaItemID: UUID? {
         didSet {
-            if oldValue != previewingMediaItemID { imagePresentationRevision &+= 1 }
+            if oldValue != previewingMediaItemID {
+                imagePresentationRevision &+= 1; reviewOverlayRevision &+= 1
+                refreshReviewState(); refreshInspectorState()
+            }
             refreshPresentationState()
         }
     }
@@ -308,7 +315,10 @@ final class AppState: ObservableObject {
     }
     @Published var comparingMediaItemIDs: [UUID] = [] {
         didSet {
-            if oldValue != comparingMediaItemIDs { imagePresentationRevision &+= 1 }
+            if oldValue != comparingMediaItemIDs {
+                imagePresentationRevision &+= 1; reviewOverlayRevision &+= 1
+                refreshReviewState(); refreshInspectorState()
+            }
             refreshCompareState()
         }
     }
@@ -336,6 +346,7 @@ final class AppState: ObservableObject {
         didSet {
             refreshReviewState()
             refreshCompareState()
+            refreshInspectorState()
         }
     }
     @Published var archiveMediaCache: [String: [MediaItem]] = [:] {
@@ -376,6 +387,43 @@ final class AppState: ObservableObject {
     // Generic pane commands follow the live selection within one navigation target.
     // Triage/session metadata redraws preserve this identity; navigation ABA does not.
     private(set) var reviewPaneRevision = 0
+    private(set) var reviewOverlayRevision = 0
+    private var reviewExpansionRevision = 0
+    private var commandReviewMembershipKey: String?
+    private var commandReviewPhotos: [UUID: MediaItem] = [:]
+    private var commandReviewPhotoIDs: Set<UUID> = []
+    private var commandReviewSections: [String: InlineSection] = [:]
+
+    private func refreshCommandReviewMembership() {
+        let key = localCommandContextKey([commandReviewContextFingerprint, String(reviewExpansionRevision)])
+        guard commandReviewMembershipKey != key else { return }
+        commandReviewMembershipKey = key
+        commandReviewPhotos = Dictionary(uniqueKeysWithValues: visibleMediaItems.map { ($0.id, $0) })
+        commandReviewSections = [:]
+        if canUseGroupedReviewMode && dayDetailDisplayMode == .sections {
+            commandReviewPhotoIDs = []
+            func visit(_ sections: [InlineSection]) {
+                for section in sections {
+                    commandReviewSections[section.id] = section
+                    guard expandedInlineSectionIDs.contains(section.id) else { continue }
+                    let direct = section.photoItemIDs.isEmpty && section.children.isEmpty ? section.mediaItemIDs : section.photoItemIDs
+                    commandReviewPhotoIDs.formUnion(direct)
+                    visit(section.children)
+                }
+            }
+            visit(organizedInlineSections)
+        } else { commandReviewPhotoIDs = Set(commandReviewPhotos.keys) }
+    }
+    func commandDisplayedReviewPhoto(_ id: UUID) -> MediaItem? {
+        refreshCommandReviewMembership()
+        return commandReviewPhotoIDs.contains(id) ? commandReviewPhotos[id] : nil
+    }
+    func commandDisplayedReviewSection(_ id: String) -> InlineSection? {
+        refreshCommandReviewMembership(); return commandReviewSections[id]
+    }
+    func commandLoadedCropLinkedPhoto(for item: MediaItem) -> MediaItem? {
+        item.cropRelationship?.linkedPreviewRelativePath.flatMap { mediaItem(relativePath: $0) }
+    }
     var commandImagePresentationContextKey: String {
         localCommandContextKey([commandDescriptionContextKey, String(imagePresentationRevision)])
     }
@@ -975,6 +1023,11 @@ final class AppState: ObservableObject {
             return
         }
 
+        openCropVersion(target: target)
+    }
+
+    func openCropVersion(target: MediaItem) {
+        guard mediaItem(for: target.id) == target else { return }
         focusMediaItem(target)
         statusMessage = "Showing \(target.cropRelationship?.role == .crop ? "crop" : "original") \(target.fileName)."
     }
@@ -6734,6 +6787,7 @@ final class AppState: ObservableObject {
             canUnmarkSelectionForImport: canUnmarkSelectionForImport,
             canToggleRawForSelection: canToggleRawForSelection
         )
+        snapshot.commandContextKey = reviewTargetCommandContextKey(self)
         snapshot.findQuery = reviewSearchQuery
         reviewState.update(snapshot)
     }
@@ -6768,7 +6822,7 @@ final class AppState: ObservableObject {
         }
 
         let mediaItem = inspectorMediaItem
-        let snapshot = InspectorSnapshot(
+        var snapshot = InspectorSnapshot(
             isVisible: isDetailsInspectorVisible,
             browserNode: inspectorBrowserNode,
             fallbackFolderPath: currentSession?.sourceFolder.path,
@@ -6777,6 +6831,8 @@ final class AppState: ObservableObject {
             mediaItem: mediaItem,
             cropHistory: mediaItem.flatMap { cropHistory(for: $0) }
         )
+        snapshot.commandContextKey = reviewTargetCommandContextKey(self, inspector: true)
+        snapshot.thumbnailFailed = mediaItem.map { thumbnailFailures.contains($0.id) } ?? false
         inspectorState.update(snapshot)
     }
 
