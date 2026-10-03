@@ -112,7 +112,7 @@ final class AppState: ObservableObject {
     }
     @Published var selectedFolderNodeIDs: Set<String> = [] {
         didSet {
-            if oldValue != selectedFolderNodeIDs { imagePresentationRevision &+= 1 }
+            if oldValue != selectedFolderNodeIDs { imagePresentationRevision &+= 1; refreshReviewState() }
             refreshInspectorState()
             refreshNavigationState()
         }
@@ -386,6 +386,7 @@ final class AppState: ObservableObject {
     private(set) var imagePresentationRevision = 0
     // Generic pane commands follow the live selection within one navigation target.
     // Triage/session metadata redraws preserve this identity; navigation ABA does not.
+    private(set) var browserTreeRevision = 0
     private(set) var reviewPaneRevision = 0
     private(set) var reviewOverlayRevision = 0
     private var reviewExpansionRevision = 0
@@ -966,6 +967,14 @@ final class AppState: ObservableObject {
         return !visibleMediaItems.isEmpty
     }
 
+    var isSourceFolderBrowserDisplayed: Bool {
+        sourceFolderBrowserIsDisplayed(mode: workspaceMode, contextMediaItemCount: contextMediaItems.count, hasFolders: !detailFolderNodes.isEmpty)
+    }
+
+    var canFocusBrowserDetail: Bool {
+        canFocusReviewSurface || isSourceFolderBrowserDisplayed
+    }
+
     var canUseGroupedSectionNavigation: Bool {
         dayDetailDisplayMode == .sections && !groupedReviewSections.isEmpty
     }
@@ -1054,7 +1063,7 @@ final class AppState: ObservableObject {
             return canOpenSelectedArchiveItem
         }
         if activePane == .folders { return selectedFolderNodeIDs.count == 1 }
-        if activePane == .sidebar { return canFocusReviewSurface }
+        if activePane == .sidebar { return canFocusBrowserDetail }
         if activePane == .media { return focusedReviewItem != nil }
         return false
     }
@@ -4280,7 +4289,13 @@ final class AppState: ObservableObject {
     }
 
     func focusReviewSurface() {
-        guard canFocusReviewSurface else { return }
+        guard canFocusBrowserDetail else { return }
+        if isSourceFolderBrowserDisplayed {
+            activePane = .folders
+            reviewGridHasFocus = false
+            commandCoordinator.requestFocus(scope: .sourceFolders)
+            return
+        }
         if workspaceMode == .archiveView {
             switch archiveNavigationLevel {
             case .archive, .trip:
@@ -6272,6 +6287,7 @@ final class AppState: ObservableObject {
     }
 
     private func rebuildBrowserCaches() {
+        browserTreeRevision &+= 1
         cachedBrowserRoots = browserViewModel.browserRoots(
             currentSession: currentSession,
             bursts: burstGroups,
@@ -6621,7 +6637,8 @@ final class AppState: ObservableObject {
             archiveYearFolders: archiveYearFolders,
             tree: SidebarTreeSnapshot(
                 browserRoots: browserRoots,
-                selectedSidebarNodeID: selectedSidebarNodeID
+                selectedSidebarNodeID: selectedSidebarNodeID,
+                commandContextKey: sourceBrowserCommandContextKey(self)
             ),
             hiddenPhotoLogSummary: hiddenPhotoLogSummary,
             statusMessage: statusMessage,
@@ -6788,6 +6805,8 @@ final class AppState: ObservableObject {
             canToggleRawForSelection: canToggleRawForSelection
         )
         snapshot.commandContextKey = reviewTargetCommandContextKey(self)
+        snapshot.folderCommandContextKey = sourceFolderCommandContextKey(self)
+        snapshot.selectedFolderNodeIDs = selectedFolderNodeIDs
         snapshot.findQuery = reviewSearchQuery
         reviewState.update(snapshot)
     }

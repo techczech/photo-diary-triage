@@ -214,6 +214,8 @@ struct SidebarTreeSnapshot: Equatable, Sendable {
     let browserRoots: [BrowserNode]
     let selectedSidebarNodeID: String?
 
+    var commandContextKey = ""
+
     static let empty = SidebarTreeSnapshot(browserRoots: [], selectedSidebarNodeID: nil)
 }
 
@@ -506,6 +508,8 @@ struct ReviewSnapshot: Equatable, Sendable {
     let canUnmarkSelectionForImport: Bool
     let canToggleRawForSelection: Bool
     var commandContextKey = ""
+    var folderCommandContextKey = ""
+    var selectedFolderNodeIDs: Set<String> = []
 
     static let empty = ReviewSnapshot(
         breadcrumbTitles: [],

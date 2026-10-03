@@ -24,6 +24,7 @@ final class CommandSurfaceLease {
     let token: UUID
     var scope: AppCommandScope
     var active: Bool
+    var contextIsCurrent: () -> Bool = { true }
     var supports: (AppCommandID) -> Bool
     var availability: (AppCommandID) -> Bool
     var run: (AppCommandID) -> Bool
@@ -274,7 +275,7 @@ final class CommandKeyboardCoordinator: ObservableObject {
             guard let child = invocation.lease?.view, let container = modal.view, child.isDescendant(of: container) else { return false }
         }
         if let token = invocation.leaseToken {
-            guard let lease = invocation.lease, leases[token] === lease, (lease.active || lease.scope == .review), lease.view?.window === window, lease.view?.isHiddenOrHasHiddenAncestor == false,
+            guard let lease = invocation.lease, leases[token] === lease, lease.contextIsCurrent(), (lease.active || lease.scope == .review), lease.view?.window === window, lease.view?.isHiddenOrHasHiddenAncestor == false,
                   (!invocation.requiresFocusedOwner || activeLease(in: window) === lease) else { return false }
         }
         if let lease = invocation.lease {
@@ -283,7 +284,7 @@ final class CommandKeyboardCoordinator: ObservableObject {
             for (current, captured) in zip(currentChain, invocation.surfaces) {
                 guard let exact = captured.lease, current.lease === exact, current.token == captured.token,
                       current.sourceScope == captured.sourceScope, current.effectiveScope == captured.effectiveScope,
-                      leases[captured.token] === exact, exact.active || exact.scope == .review,
+                      leases[captured.token] === exact, exact.contextIsCurrent(), exact.active || exact.scope == .review,
                       exact.view?.window === window, exact.view?.isHiddenOrHasHiddenAncestor == false else { return false }
             }
         }
@@ -387,6 +388,7 @@ final class CommandKeyboardCoordinator: ObservableObject {
         // last window's pane flag, determines which selection this command uses.
         let effectiveHandler = handler(for: id, invocation: captured)
         if captured.scope == .review || effectiveHandler?.scope == .review { state.activePane = .media; state.reviewGridHasFocus = true }
+        else if captured.scope == .sourceFolders || effectiveHandler?.scope == .sourceFolders { state.activePane = .folders; state.reviewGridHasFocus = false }
         else if captured.scope == .sourceSidebar { state.activePane = .sidebar }
         let invocation = CommandInvocation(window: window, scope: captured.scope, lease: captured.lease, state: state, windowRegistrationID: captured.windowRegistrationID, requiresFocusedOwner: captured.requiresFocusedOwner, surfaces: captured.surfaces)
         guard unavailableReason(id, invocation: invocation) == nil else { return false }
@@ -504,6 +506,13 @@ final class CommandKeyboardCoordinator: ObservableObject {
             }
             guard let lease, lease.active, lease.scope == scope, let view = lease.view,
                   view.window === window, !view.isHiddenOrHasHiddenAncestor else { return }
+            if targetToken == nil {
+                // A surface first discovered after mounting still owns a display
+                // context, including any containing capabilities.
+                let mountedOrigin = CommandInvocation(window: window, scope: scope, lease: lease, state: state,
+                    windowRegistrationID: registrationID!, requiresFocusedOwner: false, surfaces: self.surfaceChain(for: lease))
+                guard self.isCurrent(mountedOrigin) else { return }
+            }
             let target: NSView
             if let resolve = lease.focusTarget {
                 guard let explicit = resolve() else { return }; target = explicit
@@ -559,6 +568,8 @@ final class CommandWindowAnchorView: NSView {
 struct SheetCommandAction {
     var enabled = true
     let run: () -> Void
+    var liveEnabled: (() -> Bool)? = nil
+    var isEnabled: Bool { liveEnabled?() ?? enabled }
 }
 
 struct CommandSheetAnchor: NSViewRepresentable {
