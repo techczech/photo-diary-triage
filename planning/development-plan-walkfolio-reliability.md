@@ -1,9 +1,9 @@
 ---
 title: Walkfolio development goals and acceptance tests
-status: active
-updated: 2026-10-02
+status: paused_for_review
+updated: 2026-10-03
 owner: Walkfolio
-release: 0.7.15
+release: 0.7.16
 source_records:
   - planning/dictated-idea-scope.md
   - CONTEXT.md
@@ -17,6 +17,13 @@ source_records:
 ---
 
 # Walkfolio: the outcome and how to prove it
+
+**Current state, 3 October:** Walkfolio 0.7.16/build 152 is installed for user review,
+with all 658 tests passing. Dominik explicitly paused development. The historical
+0.7.15 evidence and next-step descriptions below remain the record of that stage;
+the [detailed report](/Volumes/BigData/gitrepos/06_apps-utilities/01_desktop-apps/photo-diary-triage/planning/report-walkfolio-development-0.7.16.md) and current command/control
+report record the frozen changes, unfinished Archive/Log/inspector controls and open
+native/real-copy/cloud/provider acceptance. Do not resume autonomously.
 
 **Walkfolio should manage a photographic life: new camera and phone photos, an older archive, and the stories attached to both.** Fast triage is essential, but the intended destination is an archive manager that remains useful on a travel Mac and keeps its records in readable files.
 
