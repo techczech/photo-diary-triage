@@ -340,3 +340,52 @@ Primary codes/tests; Astra reviews read-only. Still unbundled 0.7.16/152.
   section controls, native menu refresh/inherited binding/help inventory, then final
   review/full tests and signed closed install. Original acceptance gates remain open.
 - Target 0.7.16/152 is still unbundled/uninstalled; installed 0.7.15/151 remains closed.
+
+
+## Captured photo/group/version implementation intent — 2026-10-03
+
+Capture exact displayed photo values, pane/session assignment and display membership
+for row triage/RAW, Retry, linked crop badges and grid click selection. Unrelated
+photo selection does not revoke a row button; Log/source/filter/group replacement
+and copy/lifecycle locks do. Preserve select-exact-row then backend triage/advance.
+RAW setters preserve the requested Boolean. Native action bars and individual Retry/
+badge controls offer explicit keyless photo commands; inherited Review commands
+remain on their parent. Thumbnail lifetime/appearance work stays outside commands.
+
+Group headers capture current organised section identity, ordered membership/title/
+kind and exact compared photo values. Resolve the current visible section before
+Compare/focus/toggle; expansion remains live. Inspector crop versions capture the
+displayed source photo plus exact loaded version ID/path/value and history membership.
+Eliminate path-only UI opening and keep current/not-loaded eligibility.
+
+Focus restoration uses the exact captured executing ancestor chain. Replacing an
+unrelated row must not cancel a stable Review-ancestor request; replacing the target
+or its ancestor must. Validate the queued target chain and keyboard descendant.
+Keep native text/keyboard semantics, grid/list dimensions and large-session lookup
+cost bounded through shared membership indexes. No dependency, headed UI or live
+Archive/provider operations. Primary implements/tests; Astra consults read-only.
+
+Regression conditions: reused IDs/filenames across Logs and ABA before redraw,
+changed item/lifecycle/Copy eligibility, filter/collapsed-group removal, exact RAW
+values, Retry/linked-crop ownership, changed group membership, Inspector selection
+round trips, actual hosted native button scopes/layout/keyboard inheritance, and
+ancestor focus when a clicked row is replaced. Still unbundled 0.7.16/152.
+
+
+## Captured Review target checkpoint — 2026-10-03
+
+- Actual row triage/RAW/Retry/crop badges, group focus/expansion/Compare and Inspector
+  crop-version controls now retain UI-issued context and exact displayed targets.
+- Shared membership cache follows filters and collapsed groups; 30,000-photo fixture
+  performs 500 checks in 25ms. Row action selection independence and RAW Bool preserved.
+- Exact original focus ancestry, inherited photo-selection ownership, coactive shortcut
+  validation, fresh Inspector epochs and thumbnail-failure presentation corrected.
+- Red evidence: original target seam 7 functions/14 issues; later focus/thumbnail 2/2;
+  inherited keyboard/shortcuts 2/4; Inspector context 1/6. Astra final review clear.
+- Final full suite 622 tests/two suites, 68.142s; 22 new functions and 175 additions since
+  installed 0.7.15. Actual hidden grid/list host dimensions/actions and native shortcuts
+  verified; no headed/native/provider acceptance implied.
+- Continue legacy unused-section inventory and native menu refresh/effective inherited
+  bindings/help; then final whole-inventory review/tests, signed bundle/body verification
+  and closed installation. Original full-scope acceptance gates remain active.
+- Target 0.7.16/152 stays unbundled/uninstalled; installed 0.7.15/151 unchanged and closed.

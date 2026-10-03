@@ -23,12 +23,12 @@ Content/Archive/Settings/Google/description/review views; command test files, Se
 ImageCommandActions/ImageOperationContext/CropService/ArchiveIndex/SessionWorkflowCommands/ReviewPaneCommands;
 APP_RELEASE.env and matching tracking. No new dependency.
 
-Full verification: 600 tests / 2 suites, 53.769 s: 102 command-file functions plus 14 new Google
+Full verification: 622 tests / 2 suites, 68.142 s: 124 command-file functions plus 14 new Google
 callback functions, 13 new description functions and 24 image command/completion functions
-(153 additions since installed 0.7.15). Native
+(175 additions since installed 0.7.15). Native
 hidden windows, real NSTextView/NSTextField editor and NSWindow event paths. Distinct
 pre-fix logs plus deliberate sheet/IME guard reversal prove the defects are detected.
-Final run: `/private/tmp/walkfolio-review-controls-final-full.log`.
+Final run: `/private/tmp/walkfolio-review-targets-final-full.log`.
 
 Not shipped. App target is 0.7.16/152 on `codex/walkfolio-command-layer`; installed
 0.7.15/151 remains closed. No headed/manual UI, live archive, private delivery or real
@@ -252,3 +252,53 @@ inherited effective bindings/help; final whole-inventory review and signed close
 installation. Original native/real-copy/migration/OneDrive/model/Google acceptance
 remains open. Target 0.7.16/152 remains unbundled/uninstalled; installed 0.7.15/151
 verified closed. No headed screen, live Archive, provider authorisation or delivery.
+
+
+## Captured Review photos, groups and crop versions
+
+The actual grid/list triage, RAW setters, failed-thumbnail Retry and crop-link badges
+now retain the displayed photo value and the UI-issued ownership epoch. Row actions
+ignore unrelated selection changes but reject changed Logs/sources/authority, exact
+photo replacement, filters/collapsed groups, overlays and Copy/lifecycle locks before
+selecting or mutating. RAW uses distinct include/exclude commands to preserve the
+requested Bool. Grid selection and the native List binding also retain pane context.
+Background thumbnail appearance is guarded by the same captured target.
+
+Group focus/expansion and Compare retain the displayed section identity, ordered
+membership and member values. Inspector crop versions retain both the displayed
+source and the exact loaded photo UUID/path/value and history membership; mouse
+controls no longer resolve a filename into a newer Log. Current and unloaded versions
+remain disabled. Failed thumbnail state now reaches and refreshes the Inspector.
+
+Inherited native Review shortcuts resolve their containing handler before activating
+photo selection. Row/group scopes declare Review coactivity so Settings rejects a
+binding that would shadow an inherited command. Queued focus retains the original
+execution ancestry, while replacing an unrelated photo row no longer cancels the
+stable containing Review request. Fresh Inspector context follows Preview/Compare and
+pane changes, and excludes unrelated Review layout/filter cache state.
+
+Verification: 22 new functions; full suite 622 tests/two suites in 68.142s. The first
+seven target tests reproduced 14 issues against an unguarded factory mirroring the
+previous UI callbacks. Two later failures exposed replaced focus ancestry and missing
+Inspector thumbnail refresh. Native inheritance/shortcut tests reproduced four issues
+in two functions; UI-issued Inspector epoch tests reproduced six issues in one function.
+All corrected cases and positive workflows pass. Actual hidden hosted grid/list controls
+retain dimensions and act on their displayed photo after selection changes. Native
+Cmd-I/Cmd-Shift-X from row/group controls with prior sidebar/folder focus changes only
+the selected photo. A 30,000-photo shared membership index performs 500 target checks
+in 0.025020042s in the full run (0.02325675s in focused verification).
+
+Logs: `/private/tmp/walkfolio-review-targets-before.log`,
+`/private/tmp/walkfolio-review-targets-extra-before.log`,
+`/private/tmp/walkfolio-review-targets-inheritance-red.log`,
+`/private/tmp/walkfolio-review-targets-inspector-context-before.log`,
+`/private/tmp/walkfolio-review-targets-final-focused.log` (22/10.908s), and
+`/private/tmp/walkfolio-review-targets-final-full.log` (622/68.142s). The initial burst
+fixture was corrected to assign its member photos before collecting valid red evidence.
+Astra's final read-only source review clears its concrete findings; test execution is
+primary evidence. No new dependency, headed window, live Archive or real provider use.
+
+Remaining: legacy unused section-control inventory; native menu refresh/effective
+inherited bindings/help; final whole-inventory review and signed closed installation.
+Original native/real-copy/migration/OneDrive/model/Google acceptance remains open.
+Target 0.7.16/152 is unbundled/uninstalled; installed 0.7.15/151 remains closed.

@@ -6,62 +6,48 @@ struct ThumbnailImageSurface: View {
     let appState: AppState
     let item: MediaItem
     let thumbnailFailed: Bool
-    let retryThumbnail: () -> Void
+    let commandContextKey: String
+    let owner: ReviewPhotoCommandOwner
     let contentMode: ContentMode
     let compactRetry: Bool
 
     @ObservedObject private var slot: ThumbnailSlot
 
-    init(
-        appState: AppState,
-        item: MediaItem,
-        thumbnailFailed: Bool,
-        retryThumbnail: @escaping () -> Void,
-        contentMode: ContentMode = .fill,
-        compactRetry: Bool = false
-    ) {
-        self.appState = appState
-        self.item = item
-        self.thumbnailFailed = thumbnailFailed
-        self.retryThumbnail = retryThumbnail
-        self.contentMode = contentMode
-        self.compactRetry = compactRetry
+    init(appState: AppState, item: MediaItem, thumbnailFailed: Bool, commandContextKey: String,
+         owner: ReviewPhotoCommandOwner = .row, contentMode: ContentMode = .fill, compactRetry: Bool = false) {
+        self.appState = appState; self.item = item; self.thumbnailFailed = thumbnailFailed
+        self.commandContextKey = commandContextKey; self.owner = owner
+        self.contentMode = contentMode; self.compactRetry = compactRetry
         _slot = ObservedObject(wrappedValue: appState.thumbnailSlot(for: item))
     }
 
-    @ViewBuilder
     var body: some View {
-        if let image = slot.image {
-            Image(nsImage: image)
-                .resizable()
-                .aspectRatio(contentMode: contentMode)
-                .onAppear {
-                    appState.requestThumbnail(for: item)
-                    _ = appState.thumbnailImage(for: item)
-                }
-        } else if thumbnailFailed {
-            Rectangle()
-                .fill(.quaternary)
-                .overlay {
+        let target = ReviewPhotoCommandTarget(appState, item: item, owner: owner, context: commandContextKey)
+        Group {
+            if let image = slot.image {
+                Image(nsImage: image).resizable().aspectRatio(contentMode: contentMode)
+            } else if thumbnailFailed {
+                Rectangle().fill(.quaternary).overlay {
                     VStack(spacing: compactRetry ? 4 : 8) {
                         Image(systemName: "exclamationmark.triangle")
-                        Button("Retry", action: retryThumbnail)
-                            .buttonStyle(.bordered)
-                            .controlSize(compactRetry ? .mini : .small)
+                        ReviewPhotoCommandSurface(appState: appState, item: item, contextKey: commandContextKey, owner: owner) { commands in
+                            Button("Retry") { commands.run(.retryDisplayedThumbnail) }
+                                .buttonStyle(.bordered)
+                                .controlSize(compactRetry ? .mini : .small)
+                                .disabled(!commands.isEnabled(.retryDisplayedThumbnail))
+                                .commandShortcutHint(.retryDisplayedThumbnail, appState: appState,
+                                    scope: owner == .row ? .reviewItem : .inspectorPhoto, help: "Retry this photo's thumbnail")
+                        }
                     }
                 }
-                .onAppear {
-                    appState.requestThumbnail(for: item)
-                    _ = appState.thumbnailImage(for: item)
-                }
-        } else {
-            Rectangle()
-                .fill(.quaternary)
-                .overlay(ProgressView())
-                .onAppear {
-                    appState.requestThumbnail(for: item)
-                    _ = appState.thumbnailImage(for: item)
-                }
+            } else {
+                Rectangle().fill(.quaternary).overlay(ProgressView())
+            }
+        }
+        .task(id: target.key) {
+            guard target.isCurrent(appState) else { return }
+            appState.requestThumbnail(for: item)
+            _ = appState.thumbnailImage(for: item)
         }
     }
 }
@@ -73,12 +59,7 @@ struct ReviewGridCard: View {
     let cardWidth: CGFloat
     let canMutateImportSelection: Bool
     let onClick: (ReviewGridClickContext) -> Void
-    let retryThumbnail: () -> Void
-    let setIncludeRaw: (Bool) -> Void
-    let includeForImport: () -> Void
-    let markAsCandidate: () -> Void
-    let excludeFromImport: () -> Void
-    let clearTriageState: () -> Void
+    let commandContextKey: String
 
     private var item: MediaItem {
         snapshot.item
@@ -136,7 +117,7 @@ struct ReviewGridCard: View {
                 appState: appState,
                 item: item,
                 thumbnailFailed: snapshot.thumbnailFailed,
-                retryThumbnail: retryThumbnail
+                commandContextKey: commandContextKey
             )
             .frame(height: CGFloat(ReviewGridMetrics.thumbnailHeight(for: cardWidth)))
             .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -177,8 +158,10 @@ struct ReviewGridCard: View {
             if let badge = item.googlePhotos?.badge { Label(badge, systemImage: "cloud").font(.caption2).foregroundStyle(.secondary) }
 
             if let cropRelationship = item.cropRelationship {
-                CropRelationshipBadge(relationship: cropRelationship) {
-                    appState.openCropLinkedPreview(for: item.id)
+                ReviewPhotoCommandSurface(appState: appState, item: item, contextKey: commandContextKey) { commands in
+                    CropRelationshipBadge(relationship: cropRelationship) { commands.run(.openLinkedPhoto) }
+                        .disabled(!commands.isEnabled(.openLinkedPhoto))
+                        .commandShortcutHint(.openLinkedPhoto, appState: appState, scope: .reviewItem, help: cropRelationship.helpText)
                 }
             }
 
@@ -194,54 +177,34 @@ struct ReviewGridCard: View {
         .literalGestureHint("Shift-click / Cmd-click / Double-click", help: "Click to select. Shift-click extends the selection, Command-click toggles selection, and double-click opens preview.")
     }
 
-    @ViewBuilder
     private var actionRow: some View {
-        HStack(spacing: 6) {
-            Button("S", action: includeForImport)
-                .buttonStyle(.bordered)
-                .controlSize(.mini)
-                .disabled(item.selectionState.isIncluded)
-                .commandShortcutHint(.markIncluded, appState: appState, scope: .review, help: "Select this item for import")
-
-            Button("C", action: markAsCandidate)
-                .buttonStyle(.bordered)
-                .controlSize(.mini)
-                .disabled(item.selectionState.isCandidate)
-                .commandShortcutHint(.markCandidate, appState: appState, scope: .review, help: "Mark this item as a candidate")
-
-            Button("X", action: excludeFromImport)
-                .buttonStyle(.bordered)
-                .controlSize(.mini)
-                .disabled(item.selectionState.isExcluded)
-                .commandShortcutHint(.markExcluded, appState: appState, scope: .review, help: "Exclude this item from import")
-
-            if !item.selectionState.isUndecided {
-                Button("D", action: clearTriageState)
-                    .buttonStyle(.bordered)
-                    .controlSize(.mini)
-                    .commandShortcutHint(.clearTriage, appState: appState, scope: .review, help: "Clear this item back to undecided")
-            }
-
-            if !item.companionFiles.isEmpty {
-                if item.importRawCompanions {
-                    Button("R") {
-                        setIncludeRaw(false)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.mini)
-                    .commandShortcutHint(.toggleRAW, appState: appState, scope: .review, help: "Toggle RAW companions for this item")
-                } else {
-                    Button("R") {
-                        setIncludeRaw(true)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.mini)
-                    .commandShortcutHint(.toggleRAW, appState: appState, scope: .review, help: "Toggle RAW companions for this item")
+        ReviewPhotoCommandSurface(appState: appState, item: item, contextKey: commandContextKey) { commands in
+            HStack(spacing: 6) {
+                triageButton("S", .includeDisplayedPhoto, commands, help: "Select this item for import")
+                triageButton("C", .candidateDisplayedPhoto, commands, help: "Mark this item as a candidate")
+                triageButton("X", .excludeDisplayedPhoto, commands, help: "Exclude this item from import")
+                if !item.selectionState.isUndecided {
+                    triageButton("D", .clearDisplayedPhotoTriage, commands, help: "Clear this item back to undecided")
                 }
+                if !item.companionFiles.isEmpty {
+                    if item.importRawCompanions {
+                        Button("R") { commands.run(.excludeDisplayedRAW) }
+                            .buttonStyle(.borderedProminent).controlSize(.mini)
+                            .disabled(!commands.isEnabled(.excludeDisplayedRAW))
+                            .commandShortcutHint(.excludeDisplayedRAW, appState: appState, scope: .reviewItem, help: "Exclude RAW companions for this item")
+                    } else {
+                        triageButton("R", .includeDisplayedRAW, commands, help: "Include RAW companions for this item")
+                    }
+                }
+                Spacer(minLength: 0)
             }
-
-            Spacer(minLength: 0)
         }
+    }
+
+    private func triageButton(_ label: String, _ id: AppCommandID, _ commands: LocalCommandHandle, help: String) -> some View {
+        Button(label) { commands.run(id) }.buttonStyle(.bordered).controlSize(.mini)
+            .disabled(!commands.isEnabled(id))
+            .commandShortcutHint(id, appState: appState, scope: .reviewItem, help: help)
     }
 
     private func statusBadgeColor(for statusKind: ReviewDisplayStatusKind) -> Color {
@@ -265,12 +228,7 @@ struct MediaItemRow: View {
     let appState: AppState
     let snapshot: ReviewItemSnapshot
     let canMutateImportSelection: Bool
-    let includeForImport: () -> Void
-    let markAsCandidate: () -> Void
-    let excludeFromImport: () -> Void
-    let clearTriageState: () -> Void
-    let retryThumbnail: () -> Void
-    let setIncludeRaw: (Bool) -> Void
+    let commandContextKey: String
 
     private var item: MediaItem {
         snapshot.item
@@ -294,7 +252,7 @@ struct MediaItemRow: View {
                     appState: appState,
                     item: item,
                     thumbnailFailed: snapshot.thumbnailFailed,
-                    retryThumbnail: retryThumbnail,
+                    commandContextKey: commandContextKey,
                     compactRetry: true
                 )
                 .frame(width: 72, height: 72)
@@ -325,8 +283,10 @@ struct MediaItemRow: View {
                     if let badge = item.googlePhotos?.badge { Label(badge, systemImage: "cloud").font(.caption2).foregroundStyle(.secondary) }
 
             if let cropRelationship = item.cropRelationship {
-                        CropRelationshipBadge(relationship: cropRelationship) {
-                            appState.openCropLinkedPreview(for: item.id)
+                        ReviewPhotoCommandSurface(appState: appState, item: item, contextKey: commandContextKey) { commands in
+                            CropRelationshipBadge(relationship: cropRelationship) { commands.run(.openLinkedPhoto) }
+                                .disabled(!commands.isEnabled(.openLinkedPhoto))
+                                .commandShortcutHint(.openLinkedPhoto, appState: appState, scope: .reviewItem, help: cropRelationship.helpText)
                         }
                     }
 
@@ -353,45 +313,31 @@ struct MediaItemRow: View {
     @ViewBuilder
     private var compactActionRow: some View {
         if canMutateImportSelection && !snapshot.isTriageActionLocked {
-            HStack(spacing: 6) {
-                Button("S", action: includeForImport)
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(item.selectionState.isIncluded)
-                    .commandShortcutHint(.markIncluded, appState: appState, scope: .review, help: "Select this item for import")
-
-                Button("C", action: markAsCandidate)
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(item.selectionState.isCandidate)
-                    .commandShortcutHint(.markCandidate, appState: appState, scope: .review, help: "Mark this item as a candidate")
-
-                Button("X", action: excludeFromImport)
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(item.selectionState.isExcluded)
-                    .commandShortcutHint(.markExcluded, appState: appState, scope: .review, help: "Exclude this item from import")
-
-                if !item.selectionState.isUndecided {
-                    Button("D", action: clearTriageState)
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .commandShortcutHint(.clearTriage, appState: appState, scope: .review, help: "Clear this item back to undecided")
+            ReviewPhotoCommandSurface(appState: appState, item: item, contextKey: commandContextKey) { commands in
+                HStack(spacing: 6) {
+                    triageButton("S", .includeDisplayedPhoto, commands, help: "Select this item for import")
+                    triageButton("C", .candidateDisplayedPhoto, commands, help: "Mark this item as a candidate")
+                    triageButton("X", .excludeDisplayedPhoto, commands, help: "Exclude this item from import")
+                    if !item.selectionState.isUndecided {
+                        triageButton("D", .clearDisplayedPhotoTriage, commands, help: "Clear this item back to undecided")
+                    }
+                    if !item.companionFiles.isEmpty {
+                        Toggle("RAW", isOn: Binding(get: { item.importRawCompanions },
+                            set: { commands.run($0 ? .includeDisplayedRAW : .excludeDisplayedRAW) }))
+                            .toggleStyle(.switch).controlSize(.small)
+                            .disabled(!commands.isEnabled(item.importRawCompanions ? .excludeDisplayedRAW : .includeDisplayedRAW))
+                            .commandShortcutHint(.toggleDisplayedPhotoRAW, appState: appState, scope: .reviewItem, help: "Include RAW companions for this item")
+                    }
+                    Spacer(minLength: 0)
                 }
-
-                if !item.companionFiles.isEmpty {
-                    Toggle("RAW", isOn: Binding(
-                        get: { item.importRawCompanions },
-                        set: setIncludeRaw
-                    ))
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-                    .commandShortcutHint(.toggleRAW, appState: appState, scope: .review, help: "Include RAW companions for this item")
-                }
-
-                Spacer(minLength: 0)
             }
         }
+    }
+
+    private func triageButton(_ label: String, _ id: AppCommandID, _ commands: LocalCommandHandle, help: String) -> some View {
+        Button(label) { commands.run(id) }.buttonStyle(.bordered).controlSize(.small)
+            .disabled(!commands.isEnabled(id))
+            .commandShortcutHint(id, appState: appState, scope: .reviewItem, help: help)
     }
 
     private func statusBadgeColor(for statusKind: ReviewDisplayStatusKind) -> Color {

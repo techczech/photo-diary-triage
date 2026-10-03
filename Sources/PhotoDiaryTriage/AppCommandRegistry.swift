@@ -67,7 +67,7 @@ struct AppShortcutOverride: Codable, Hashable, Sendable {
 
 enum AppCommandScope: String, CaseIterable, Hashable, Sendable {
     case main, settings, editor, review, preview, compare, archiveCards, archiveSidebar, sourceSidebar, commandPanel, helpPanel, shortcutCapture, form, formEditor, information, settingsEditor
-    case compareItem, sessionWorkflow
+    case compareItem, sessionWorkflow, reviewItem, reviewGroup, inspectorPhoto, cropVersion
     case logDetails, logDetailsEditor, location, locationEditor, tripLabel, tripLabelEditor, photoLogActions, walkProposal, walkProposalEditor, googleJob, googleJobEditor, googleAlbum, googleAlbumEditor, googleAccount, googleAccountEditor
 
     var isTextEditing: Bool {
@@ -92,6 +92,7 @@ enum AppCommandScope: String, CaseIterable, Hashable, Sendable {
     var coactiveAncestors: Set<Self> {
         switch self {
         case .compareItem: [.compare]
+        case .reviewItem, .reviewGroup: [.review]
         case .walkProposal: [.form]
         case .walkProposalEditor: [.formEditor]
         case .googleJob: [.information]
@@ -160,6 +161,7 @@ enum AppCommandID: String, CaseIterable, Codable, Hashable, Sendable {
     case compare
     case open
     case openFocusedPhoto, clearArchiveFilters, deselectReviewPhotos, toggleReviewMap
+    case includeDisplayedRAW, excludeDisplayedRAW, retryDisplayedThumbnail, compareDisplayedGroup, toggleDisplayedGroup, focusDisplayedGroup, showCropVersion
     case viewOriginal
     case goUp
     case deselectAll
@@ -425,6 +427,13 @@ struct AppCommandRegistry {
                 defaults: save ? [.init(.init(key: "return", modifiers: [.command]), scopes: scopes)] : [],
                 enabled: { _ in true }, run: { _ in }, needsSurfaceHandler: true, commitsDraft: save || commitsDraft))
         }
+        local(.includeDisplayedRAW, "Include this photo's RAW companions", "Photo", [.reviewItem])
+        local(.excludeDisplayedRAW, "Exclude this photo's RAW companions", "Photo", [.reviewItem])
+        local(.retryDisplayedThumbnail, "Retry this photo's thumbnail", "Photo", [.reviewItem, .inspectorPhoto])
+        local(.compareDisplayedGroup, "Compare this photo group", "Grouping", [.reviewGroup])
+        local(.toggleDisplayedGroup, "Expand or collapse this photo group", "Grouping", [.reviewGroup])
+        local(.focusDisplayedGroup, "Focus this photo group", "Grouping", [.reviewGroup])
+        local(.showCropVersion, "Show this crop version", "Photo", [.cropVersion])
         local(.toggleReviewMap, "Show or hide Review Map", "Review", [.review])
         local(.saveLogDetails, "Save edited Log details", "Photo Logs", [.logDetails, .logDetailsEditor], save: true)
         local(.saveLogAndStartNext, "Save edited Log and start the next", "Photo Logs", [.logDetails, .logDetailsEditor], commitsDraft: true)
@@ -463,12 +472,12 @@ struct AppCommandRegistry {
         local(.fewerCompareColumns, "Fewer Compare columns", "Compare", [.compare])
         local(.moreCompareColumns, "More Compare columns", "Compare", [.compare])
         local(.resetCompareColumns, "Reset Compare columns", "Compare", [.compare])
-        local(.openLinkedPhoto, "Open linked crop or original", "Images", [.preview, .compareItem])
-        local(.includeDisplayedPhoto, "Include this displayed photo", "Compare photo", [.compareItem])
-        local(.excludeDisplayedPhoto, "Exclude this displayed photo", "Compare photo", [.compareItem])
-        local(.candidateDisplayedPhoto, "Mark this displayed photo as candidate", "Compare photo", [.compareItem])
-        local(.clearDisplayedPhotoTriage, "Clear this displayed photo decision", "Compare photo", [.compareItem])
-        local(.toggleDisplayedPhotoRAW, "Toggle this displayed photo's RAW companions", "Compare photo", [.compareItem])
+        local(.openLinkedPhoto, "Open linked crop or original", "Images", [.preview, .compareItem, .reviewItem])
+        local(.includeDisplayedPhoto, "Include this displayed photo", "Photo", [.compareItem, .reviewItem])
+        local(.excludeDisplayedPhoto, "Exclude this displayed photo", "Photo", [.compareItem, .reviewItem])
+        local(.candidateDisplayedPhoto, "Mark this displayed photo as candidate", "Photo", [.compareItem, .reviewItem])
+        local(.clearDisplayedPhotoTriage, "Clear this displayed photo decision", "Photo", [.compareItem, .reviewItem])
+        local(.toggleDisplayedPhotoRAW, "Toggle this displayed photo's RAW companions", "Photo", [.compareItem, .reviewItem])
         local(.cropDisplayedPhoto, "Crop this displayed photo's visible area", "Compare photo", [.compareItem])
         local(.removeDisplayedComparePhoto, "Remove this displayed photo from Compare", "Compare photo", [.compareItem])
         local(.downloadDisplayedOriginal, "Download this displayed original to view", "Images", [.preview, .compareItem])
