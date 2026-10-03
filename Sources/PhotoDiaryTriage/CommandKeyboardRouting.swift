@@ -40,6 +40,7 @@ struct CommandSelectionFingerprint: Equatable {
     let root: String, role: ArchiveMachineRole, pictures: String
     let contextGeneration: Int
     let imagePresentationRevision: Int
+    let reviewPaneRevision: Int
     let sessionID: UUID?, node: String?, folders: Set<String>, photos: Set<UUID>, focused: UUID?, preview: UUID?, compare: [UUID]
     let archiveSelection: String
     let reviewContext: String
@@ -48,6 +49,7 @@ struct CommandSelectionFingerprint: Equatable {
         googleContext = state.commandGoogleContextKey
         contextGeneration = ArchiveByteReadPolicyContext.shared.generation
         imagePresentationRevision = state.imagePresentationRevision
+        reviewPaneRevision = state.reviewPaneRevision
         root = state.settings.archiveRoot.standardizedFileURL.path; role = state.settings.archiveMachineRole
         pictures = state.settings.oneDrivePicturesRoot.standardizedFileURL.path
         sessionID = state.currentSession?.id; node = state.selectedSidebarNodeID
@@ -125,6 +127,9 @@ final class CommandKeyboardCoordinator: ObservableObject {
     private var leaseOrder = 0
     private var closeObserver: Any?
     weak var executingWindow: NSWindow?
+    // Retain only for synchronous command execution, so unregistering an owner
+    // cannot erase its identity and turn restoration into a search for another pane.
+    private var executingSurface: CommandSurfaceLease?
     lazy var panels = CommandPanelController(coordinator: self)
     var presentsPanels = true
 
@@ -357,7 +362,9 @@ final class CommandKeyboardCoordinator: ObservableObject {
         else if captured.scope == .sourceSidebar { state.activePane = .sidebar }
         let invocation = CommandInvocation(window: window, scope: captured.scope, lease: captured.lease, state: state, windowRegistrationID: captured.windowRegistrationID, requiresFocusedOwner: captured.requiresFocusedOwner, surfaces: captured.surfaces)
         guard unavailableReason(id, invocation: invocation) == nil else { return false }
-        let previous = executingWindow; executingWindow = window; defer { executingWindow = previous }
+        let previous = executingWindow, previousSurface = executingSurface
+        executingWindow = window; executingSurface = handler(for: id, invocation: invocation) ?? invocation.lease
+        defer { executingWindow = previous; executingSurface = previousSurface }
         switch id {
         case .palette: panels.present(.palette, from: invocation)
         case .contextActions: panels.present(.contextual, from: invocation)
@@ -426,10 +433,19 @@ final class CommandKeyboardCoordinator: ObservableObject {
         focusRevisions[owner, default: 0] &+= 1
         let revision = focusRevisions[owner], fingerprint = CommandSelectionFingerprint(state)
         let registrationID = registration(for: window)?.instanceID
-        let targetLease = leases.values.filter { $0.scope == scope && $0.active && $0.view?.window === window }
-            .max { leaseOrders[$0.token, default: 0] < leaseOrders[$1.token, default: 0] }
+        let targetLease: CommandSurfaceLease?
+        if let surface = executingSurface, surface.scope == scope {
+            guard surface.active, surface.view?.window === window, leases[surface.token] === surface else { return }
+            // A clicked/inherited control restores its own containing surface, even
+            // when another same-scope container was registered more recently.
+            targetLease = surface
+        } else {
+            targetLease = leases.values.filter { $0.scope == scope && $0.active && $0.view?.window === window }
+                .max { leaseOrders[$0.token, default: 0] < leaseOrders[$1.token, default: 0] }
+        }
         let targetToken = targetLease?.token, prior = window.firstResponder
-        DispatchQueue.main.async { [weak self, weak window, weak prior, weak targetLease] in
+        let requestedTarget = targetLease.flatMap { $0.focusTarget.map { $0() } ?? $0.view }
+        DispatchQueue.main.async { [weak self, weak window, weak prior, weak targetLease, weak requestedTarget] in
             guard let self, let state = self.appState, let window, self.focusRevisions[owner] == revision,
                   self.registration(for: window)?.instanceID == registrationID,
                   fingerprint == .init(state), window.attachedSheet == nil, window.firstResponder === prior else { return }
@@ -442,9 +458,19 @@ final class CommandKeyboardCoordinator: ObservableObject {
                 lease = self.leases.values.filter { $0.scope == scope && $0.active && $0.view?.window === window }
                     .max { self.leaseOrders[$0.token, default: 0] < self.leaseOrders[$1.token, default: 0] }
             }
-            guard let lease, lease.active, lease.scope == scope, let view = lease.view, view.window === window else { return }
-            let target = lease.focusTarget?() ?? view
-            guard target.window === window, target.acceptsFirstResponder else { return }
+            guard let lease, lease.active, lease.scope == scope, let view = lease.view,
+                  view.window === window, !view.isHiddenOrHasHiddenAncestor else { return }
+            let target: NSView
+            if let resolve = lease.focusTarget {
+                guard let explicit = resolve() else { return }; target = explicit
+            } else { target = view }
+            guard targetToken == nil || requestedTarget === target,
+                  target.window === window, !target.isHiddenOrHasHiddenAncestor,
+                  target === view || target.isDescendant(of: view), target.acceptsFirstResponder else { return }
+            if let boundary = self.modalLease(in: window)?.view {
+                guard (view === boundary || view.isDescendant(of: boundary)),
+                      (target === boundary || target.isDescendant(of: boundary)) else { return }
+            }
             if !window.makeFirstResponder(target), let prior { window.makeFirstResponder(prior) }
         }
     }

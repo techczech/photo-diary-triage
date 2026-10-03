@@ -63,6 +63,9 @@ final class AppState: ObservableObject {
             // comparing every photo in a large Log.
             currentSessionRevision &+= 1
             if oldValue?.id != currentSession?.id { imagePresentationRevision &+= 1 }
+            if oldValue?.id != currentSession?.id
+                || oldValue?.sourceFolder != currentSession?.sourceFolder
+                || oldValue?.workspaceSourceFolder != currentSession?.workspaceSourceFolder { reviewPaneRevision &+= 1 }
             if oldValue?.id != currentSession?.id { reviewSearchQuery = "" }
             let updateKind = currentSessionUpdateKind
             currentSessionUpdateKind = .full
@@ -81,7 +84,9 @@ final class AppState: ObservableObject {
             refreshSidebarState()
         }
     }
-    @Published private(set) var workspaceMode: WorkspaceMode = .archiveView
+    @Published private(set) var workspaceMode: WorkspaceMode = .archiveView {
+        didSet { if oldValue != workspaceMode { reviewPaneRevision &+= 1 } }
+    }
     @Published var burstGroups: [BurstGroup] = [] {
         didSet {
             rebuildBrowserCaches()
@@ -96,7 +101,7 @@ final class AppState: ObservableObject {
     }
     @Published var selectedSidebarNodeID: String? {
         didSet {
-            if oldValue != selectedSidebarNodeID { imagePresentationRevision &+= 1 }
+            if oldValue != selectedSidebarNodeID { imagePresentationRevision &+= 1; reviewPaneRevision &+= 1 }
             if oldValue != selectedSidebarNodeID { reviewSearchQuery = "" }
             invalidateInlineSectionCaches()
             refreshSidebarState()
@@ -368,6 +373,9 @@ final class AppState: ObservableObject {
     }
     private(set) var currentSessionRevision = 0
     private(set) var imagePresentationRevision = 0
+    // Generic pane commands follow the live selection within one navigation target.
+    // Triage/session metadata redraws preserve this identity; navigation ABA does not.
+    private(set) var reviewPaneRevision = 0
     var commandImagePresentationContextKey: String {
         localCommandContextKey([commandDescriptionContextKey, String(imagePresentationRevision)])
     }
