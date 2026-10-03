@@ -133,6 +133,7 @@ final class CommandKeyboardCoordinator: ObservableObject {
     private var executingSurfaceChain: [CommandSurfaceLease] = []
     private var executingSurfaceSnapshots: [CommandSurfaceSnapshot] = []
     lazy var panels = CommandPanelController(coordinator: self)
+    lazy var nativeMenus = CommandNativeMenus(coordinator: self)
     var presentsPanels = true
 
     init(appState: AppState) {
@@ -325,6 +326,30 @@ final class CommandKeyboardCoordinator: ObservableObject {
         // An explicit child handler shadows its ancestor, including when disabled.
         return invocation.surfaces.first { $0.lease?.supports(id) == true }?.lease
     }
+    /// The same explicit leaf/containing-handler route powers events and discovery.
+    private func bindingsForCurrentOrigin(_ id: AppCommandID, _ invocation: CommandInvocation) -> [AppCommandBinding] {
+        let definition = AppCommandRegistry.definition(id)
+        let active = invocation.surfaces.filter { definition.scopes.contains($0.effectiveScope) }
+        return registry.bindings(id).filter { binding in
+            binding.scopes.contains(invocation.scope) || active.contains {
+                binding.scopes.contains($0.effectiveScope) && $0.lease?.supports(id) == true
+            }
+        }
+    }
+    func effectiveBindings(_ id: AppCommandID, invocation: CommandInvocation?) -> [AppCommandBinding] {
+        guard let invocation, isCurrent(invocation) else { return [] }
+        return bindingsForCurrentOrigin(id, invocation)
+    }
+    /// One synchronous native refresh shares the ownership check across its keys.
+    func effectiveBindings(_ ids: Set<AppCommandID>, invocation: CommandInvocation?) -> [AppCommandID: [AppCommandBinding]] {
+        guard let invocation, isCurrent(invocation) else { return [:] }
+        return Dictionary(uniqueKeysWithValues: ids.map { ($0, bindingsForCurrentOrigin($0, invocation)) })
+    }
+    func effectiveShortcutLabel(_ id: AppCommandID, invocation: CommandInvocation?) -> String {
+        let chords = effectiveBindings(id, invocation: invocation).map(\.shortcut.display)
+        if !chords.isEmpty { return Array(NSOrderedSet(array: chords)).compactMap { $0 as? String }.joined(separator: " · ") }
+        return registry.bindings(id).isEmpty ? "Unassigned" : "Available in another pane"
+    }
     func offeredIDs(in invocation: CommandInvocation) -> Set<AppCommandID> {
         Set(AppCommandRegistry.commands.filter { command in
             command.scopes.contains(invocation.scope) || invocation.surfaces.dropFirst().contains {
@@ -343,8 +368,7 @@ final class CommandKeyboardCoordinator: ObservableObject {
             cachedOfferedIDs = offered; cachedRuntimeOverrides = overrides; cachedRuntimeScopes = scopes
             var chords: [AppShortcut: Set<AppCommandID>] = [:]
             for id in offered {
-                let active = invocation.surfaces.filter { AppCommandRegistry.definition(id).scopes.contains($0.effectiveScope) }
-                for binding in registry.bindings(id) where binding.scopes.contains(invocation.scope) || active.contains(where: { binding.scopes.contains($0.effectiveScope) && $0.lease?.supports(id) == true }) {
+                for binding in effectiveBindings(id, invocation: invocation) {
                     chords[binding.shortcut, default: []].insert(id)
                 }
             }
@@ -416,20 +440,24 @@ final class CommandKeyboardCoordinator: ObservableObject {
     @discardableResult
     func handle(_ event: NSEvent, in window: NSWindow) -> Bool {
         guard event.type == .keyDown, registration(for: window) != nil else { return false }
+        nativeMenus.prepareForKeyboardDispatch(in: window)
+        // Menu navigation owns its key events while tracking, including Return.
+        guard !nativeMenus.isTracking else { return false }
         // Composition owns candidate navigation, Return and cancellation, including
         // shortcut capture. Falling through would execute the highlighted command.
         if let text = window.firstResponder as? NSTextView, text.hasMarkedText(),
            !event.modifierFlags.contains(.command) || ["return", "escape"].contains(AppShortcut(event: event)?.key ?? "") { return false }
         if panels.handleCapture(event, in: window) { return true }
         guard let origin = invocation(in: window) else { return false }
-        var claimed = Set(registry.claims(for: event, scope: origin.scope))
-        for parent in origin.surfaces.dropFirst() {
-            for id in registry.claims(for: event, scope: parent.effectiveScope) where parent.lease?.supports(id) == true { claimed.insert(id) }
+        guard let shortcut = AppShortcut(event: event) else { return false }
+        let claims = offeredIDs(in: origin).filter { id in
+            // Filter the chord before repeating native ownership checks.
+            registry.bindings(id).contains { $0.shortcut == shortcut }
+                && effectiveBindings(id, invocation: origin).contains { $0.shortcut == shortcut }
         }
-        let claims = Array(claimed)
         guard !claims.isEmpty else { return false }
         guard claims.count == 1 else { return true }
-        let id = claims[0]
+        let id = claims.first!
         // IME Escape belongs to composition, before any pane or panel cancellation.
         if let text = window.firstResponder as? NSTextView, text.hasMarkedText(), AppShortcut(event: event)?.key == "escape" { return false }
         _ = execute(id, invocation: origin)

@@ -2,7 +2,97 @@ import AppKit
 import SwiftUI
 
 struct PhotoDiaryCommands: Commands {
-    @ObservedObject var appState: AppState
+    let appState: AppState
+    static let nativeCommandParentTitles: [AppCommandID: String] = [
+        .backfillThumbnails: "File",
+        .cancelBackfill: "Archive",
+        .cancelDescriptions: "Descriptions",
+        .chooseArchiveRoot: "File",
+        .chooseDefaultSourceRoot: "File",
+        .chooseHistoricalSource: "File",
+        .chooseSource: "File",
+        .cleanupSource: "Copy",
+        .clearArchiveFilters: "Archive",
+        .clearPreviousUpload: "Google Photos",
+        .clearTriage: "Triage",
+        .collapseAll: "Grouping",
+        .collapseGroup: "Grouping",
+        .compare: "Triage",
+        .confirmBackup: "Copy",
+        .contactSheet: "Archive",
+        .contextActions: "Commands",
+        .copyIncluded: "Copy",
+        .createPhotoLog: "Triage",
+        .deliverPhotoLog: "Google Photos",
+        .deliverTrip: "Google Photos",
+        .describeSelection: "Descriptions",
+        .describeTrip: "Descriptions",
+        .describeYear: "Descriptions",
+        .descriptionQueue: "Descriptions",
+        .deselectAll: "Triage",
+        .deselectReviewPhotos: "Triage",
+        .discardDescriptions: "Descriptions",
+        .expandAll: "Grouping",
+        .expandGroup: "Grouping",
+        .exportBackup: "File",
+        .filterAll: "Review",
+        .filterCandidate: "Review",
+        .filterCropped: "Review",
+        .filterExcluded: "Review",
+        .filterIncluded: "Review",
+        .filterUndecided: "Review",
+        .find: "Commands",
+        .flatReview: "Review",
+        .focusReview: "Review",
+        .focusSidebar: "Review",
+        .goUp: "Triage",
+        .googleQueue: "Google Photos",
+        .gridLayout: "Review",
+        .groupDays: "Grouping",
+        .groupDaysBursts: "Grouping",
+        .groupDaysClusters: "Grouping",
+        .groupDaysClustersBursts: "Grouping",
+        .groupedReview: "Review",
+        .importBackup: "File",
+        .keyboardHelp: "Help",
+        .listLayout: "Review",
+        .markCandidate: "Triage",
+        .markExcluded: "Triage",
+        .markIncluded: "Triage",
+        .markPreviousUpload: "Google Photos",
+        .migrateLayout: "File",
+        .moveWalk: "Copy",
+        .newPhotoLog: "Triage",
+        .nextGroup: "Grouping",
+        .open: "Triage",
+        .openArchive: "Archive",
+        .openDefaultSource: "File",
+        .openDestination: "Copy",
+        .openFocusedPhoto: "Triage",
+        .organiseFolder: "Archive",
+        .palette: "Commands",
+        .prepareThumbnails: "Archive",
+        .previousGroup: "Grouping",
+        .rebuildIndex: "File",
+        .refreshArchive: "Archive",
+        .regenerateDescriptions: "Descriptions",
+        .reloadSource: "File",
+        .resumeDescriptions: "Descriptions",
+        .searchArchive: "Archive",
+        .selectAll: "Triage",
+        .settings: "@application",
+        .showArchive: "Commands",
+        .showArchiveMap: "Archive",
+        .showCamera: "Commands",
+        .showPhotoLogs: "Commands",
+        .timeline: "Archive",
+        .toggleCovers: "Archive",
+        .toggleInspector: "Review",
+        .toggleRAW: "Triage",
+        .toggleSidebar: "Review",
+        .viewOriginal: "Triage",
+    ]
+    static let nativeCommandIDs = Set(nativeCommandParentTitles.keys)
     var body: some Commands {
         CommandGroup(after: .newItem) {
             commands([.chooseSource, .chooseDefaultSourceRoot, .chooseHistoricalSource, .openDefaultSource, .reloadSource, .chooseArchiveRoot, .migrateLayout, .backfillThumbnails, .rebuildIndex, .exportBackup, .importBackup])
@@ -34,23 +124,19 @@ struct PhotoDiaryCommands: Commands {
     }
 }
 
+/// Static construction preserves SwiftUI's standard menu tree. AppKit owns the
+/// live validation and key equivalents after the generated item is attached.
 struct RegisteredCommandButton: View {
     let id: AppCommandID
-    @ObservedObject var appState: AppState
+    let appState: AppState
     @Environment(\.openSettings) private var openSettings
     var body: some View {
-        let coordinator = appState.commandCoordinator
-        let origin = NSApp?.keyWindow.flatMap { coordinator.invocation(in: $0) }
-        let binding = coordinator.registry.bindings(id).first { binding in origin.map { binding.scopes.contains($0.scope) } ?? true }
-        let button = Button(AppCommandRegistry.definition(id).title) {
-            coordinator.execute(id, invocation: NSApp?.keyWindow.flatMap { coordinator.invocation(in: $0) }, settingsOpener: { openSettings() })
+        Button(AppCommandRegistry.definition(id).title) {
+            let coordinator = appState.commandCoordinator
+            coordinator.nativeMenus.perform(id, settingsOpener: { openSettings() })
         }
-        .disabled(id != .settings && coordinator.unavailableReason(id, invocation: origin) != nil)
-        if let binding { button.keyboardShortcut(binding.shortcut.menuKey, modifiers: binding.shortcut.modifiers.swiftUI) }
-        else { button }
     }
 }
-
 
 struct RegisteredWindowControl: View {
     let id: AppCommandID

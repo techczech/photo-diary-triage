@@ -389,3 +389,59 @@ ancestor focus when a clicked row is replaced. Still unbundled 0.7.16/152.
   bindings/help; then final whole-inventory review/tests, signed bundle/body verification
   and closed installation. Original full-scope acceptance gates remain active.
 - Target 0.7.16/152 stays unbundled/uninstalled; installed 0.7.15/151 unchanged and closed.
+
+
+## Native menus and effective discovery intent — 2026-10-03
+
+- Preserve SwiftUI's standard App/Edit/Window/Services tree and existing delegates and
+  automatic-enabling flags. Adopt unique app-generated menu entries into stable native
+  command identities, with retained AppKit validation/action target; re-adopt replacements.
+- Refresh keys/eligibility from the current registered window before keyboard dispatch
+  and menu tracking. Pin the tracking owner/selection/lease through activation; refuse
+  changed/unregistered/replaced windows and surfaces. Keep Settings usable with no window.
+- Use exact effective leaf/explicit containing-handler bindings in dispatch, menus and
+  palette/context/help. Settings remains the full configured-binding view; distinguish
+  unavailable-in-this-pane from actually unassigned. Surface new row/group/crop actions.
+- Hidden NSMenu/NSWindow tests: no-AppState focus transitions, inherited keys, rebind/
+  unassign/default before display, native text Cmd-A/C, standard siblings/delegate/flags,
+  replacement/duplicate-title bootstrap, tracking ownership and all-window-closed cases.
+  Reinstate faulty guards to prove failures. No headed native menu-bar acceptance claim.
+- Remove unreachable InlineDaySectionsPaneView and ContentInlineViews.swift subtree.
+  Live DayContext uses ReviewPaneView; sidebar/folder controls remain in final audit.
+- Continue target 0.7.16/152 unbundled; final full-inventory/native acceptance required
+  before release. Primary performs coding/tests; Astra consults read-only.
+
+
+## Native menus and effective discovery checkpoint — 2026-10-03
+
+- Native menu entries retain stable command IDs and AppKit validation/action targets.
+  Adoption requires unique generated titles in declared menus; explicit foreign IDs,
+  unrelated placements, other owners and ambiguous labels are preserved. AppKit's
+  selector-derived unset identifier is recognised. Rebuilt SwiftUI placeholders use
+  the same captured action route while adoption is pending.
+- Menu tracking retains exact window registration, first responder, selection and
+  containing leases through activation/end ordering. Nested tracking and detached old
+  menus release ownership correctly. Closed/unknown windows fail closed; windowless
+  Settings remains available. Standard targets, delegates, represented objects and
+  automatic-enabling flags remain intact.
+- Dispatch, native keys and palette/context/help share effective leaf/explicit-parent
+  bindings. Discovery distinguishes an unavailable pane from an unassigned command;
+  displayed RAW/Retry/group/crop controls appear in contextual actions. Settings shows
+  the full configured bindings. Unreachable InlineDaySectionsPaneView and its entire
+  ContentInlineViews.swift subtree removed after inbound-reference/reachability checks.
+- Initial per-key full-menu refresh reproduced a 27.315s cost for 100 keys in a
+  30,000-photo/100-row fixture. Shared ownership checking and equivalent-only pre-key
+  refresh reduce the final production-Review measurement to 0.492s (one selected) and
+  0.483s (all 30,000 selected). Native eligibility remains validated at display/action.
+- Fault replay: lost tracking/key refresh/end ownership fails six functions with 20
+  reported issues; leaf-only lookup fails two functions with six issues. Working sources
+  restored and SHA-256 checked. Full suite: 642 tests/two suites, 85.531s; twenty new
+  functions and 195 additions since installed 0.7.15. Astra's native-menu review clear.
+- Tests use detached actual NSMenu and injected hidden NSWindow, never NSApp.mainMenu.
+  They establish native target/equivalent/validation behaviour and synthetic tracking
+  order, not the real SwiftUI menu-bar bootstrap or headed interaction. That acceptance
+  remains open. Target 0.7.16/152 unbundled/uninstalled; installed 0.7.15/151 stays closed.
+- Broader inventory now identifies active FolderBrowser native selection/key ownership,
+  retained source/Log sidebar targets and Archive-card select-then-global callbacks as
+  further work. Finish that inventory/corrections before final bundle and closed install.
+  Original headed/native/real-copy/migration/OneDrive/model/Google acceptance stays open.

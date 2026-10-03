@@ -213,58 +213,6 @@ struct DayContextPaneView: View {
     }
 }
 
-struct InlineDaySectionsPaneView: View {
-    @ObservedObject var appState: AppState
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Picker("Show By", selection: Binding(
-                    get: { appState.dayOrganizationMode },
-                    set: { appState.setDayOrganizationMode($0) }
-                )) {
-                    ForEach(DayOrganizationMode.allCases, id: \.self) { mode in
-                        Text(mode.title).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .frame(maxWidth: 520)
-                .commandShortcutHint([.groupDays, .groupDaysBursts, .groupDaysClusters, .groupDaysClustersBursts], appState: appState, scope: .review, help: "Choose how photos are grouped")
-
-                Spacer()
-
-                Button("Expand All") {
-                    appState.expandAllInlineSections()
-                }
-                .commandShortcutHint(.expandAll, appState: appState, scope: .review, help: "Expand all grouped sections")
-
-                Button("Collapse All") {
-                    appState.collapseAllInlineSections()
-                }
-                .commandShortcutHint(.collapseAll, appState: appState, scope: .review, help: "Collapse all grouped sections")
-            }
-
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 14) {
-                        ForEach(appState.organizedInlineSections) { section in
-                            InlineSectionNodeView(appState: appState, section: section, sectionPath: [section.id])
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-                .onChange(of: appState.pendingInlineScrollTargetID) { _, targetID in
-                    guard let targetID else { return }
-                    DispatchQueue.main.async {
-                        proxy.scrollTo(targetID, anchor: .center)
-                        appState.pendingInlineScrollTargetID = nil
-                    }
-                }
-            }
-        }
-    }
-}
-
 struct FolderBrowserPaneView: View {
     let appState: AppState
     @ObservedObject var state: ReviewState
