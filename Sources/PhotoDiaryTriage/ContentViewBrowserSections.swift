@@ -300,104 +300,106 @@ struct ReviewPaneView: View {
         let snapshot = state.snapshot
         let navigation = navigationState.snapshot
 
-        VStack(alignment: .leading, spacing: 6) {
-            compactReviewTopBar
+        ReviewPaneCommandSurface(appState: appState, showMap: $showMap) { commands in
+            VStack(alignment: .leading, spacing: 6) {
+                compactReviewTopBar(commands)
 
-            if showMap {
-                MapPanelView(appState: appState, items: snapshot.visibleItems)
-                    .frame(height: 320)
-            }
+                if showMap {
+                    MapPanelView(appState: appState, items: snapshot.visibleItems)
+                        .frame(height: 320)
+                }
 
-            GeometryReader { proxy in
-                ZStack(alignment: .topLeading) {
-                    ReviewKeyInputView(
-                        appState: appState,
-                        isFocused: navigation.reviewGridHasFocus,
-                        onArrow: { dx, dy, extending in
-                            appState.handleReviewArrowKey(dx: dx, dy: dy, extending: extending)
-                        },
-                        onSectionArrow: { dx, dy in
-                            appState.handleGroupedSectionArrowKey(dx: dx, dy: dy)
-                        },
-                        onSectionExpandCollapse: { expand in
-                            appState.handleGroupedSectionExpandCollapse(expand: expand)
-                        },
-                        onSingleKey: { key in
-                            appState.performReviewShortcut(key)
-                        },
-                        onPan: nil,
-                        onSpace: {
-                            appState.toggleFocusedReviewItemSelection()
-                        },
-                        onOpen: {
-                            appState.activateCurrentReviewTarget()
-                        },
-                        onCommandOpen: {
-                            appState.openCurrentSelection()
-                        },
-                        onEscape: {
-                            appState.handleReviewEscape()
-                        },
-                        onSelectAll: {
-                            appState.selectAllVisibleMedia()
-                        },
-                        onDeselectAll: {
-                            appState.deselectAllVisibleMedia()
-                        },
-                        onZoomIn: {
-                            appState.increaseReviewGridColumnCount()
-                        },
-                        onZoomOut: {
-                            appState.decreaseReviewGridColumnCount()
-                        },
-                        onZoomReset: {
-                            appState.resetReviewGridColumnCount()
-                        },
-                        onCropVisible: { },
-                        onToggleSidebar: {
-                            appState.toggleSidebarVisibility()
-                        },
-                        onToggleInspector: {
-                            appState.toggleDetailsInspector()
-                        }
-                    )
-                    .frame(width: 1, height: 1)
+                GeometryReader { proxy in
+                    ZStack(alignment: .topLeading) {
+                        ReviewKeyInputView(
+                            appState: appState,
+                            isFocused: navigation.reviewGridHasFocus,
+                            onArrow: { dx, dy, extending in
+                                appState.handleReviewArrowKey(dx: dx, dy: dy, extending: extending)
+                            },
+                            onSectionArrow: { dx, dy in
+                                appState.handleGroupedSectionArrowKey(dx: dx, dy: dy)
+                            },
+                            onSectionExpandCollapse: { expand in
+                                appState.handleGroupedSectionExpandCollapse(expand: expand)
+                            },
+                            onSingleKey: { key in
+                                appState.performReviewShortcut(key)
+                            },
+                            onPan: nil,
+                            onSpace: {
+                                appState.toggleFocusedReviewItemSelection()
+                            },
+                            onOpen: {
+                                appState.activateCurrentReviewTarget()
+                            },
+                            onCommandOpen: {
+                                appState.openCurrentSelection()
+                            },
+                            onEscape: {
+                                appState.handleReviewEscape()
+                            },
+                            onSelectAll: {
+                                appState.selectAllVisibleMedia()
+                            },
+                            onDeselectAll: {
+                                appState.deselectAllVisibleMedia()
+                            },
+                            onZoomIn: {
+                                appState.increaseReviewGridColumnCount()
+                            },
+                            onZoomOut: {
+                                appState.decreaseReviewGridColumnCount()
+                            },
+                            onZoomReset: {
+                                appState.resetReviewGridColumnCount()
+                            },
+                            onCropVisible: { },
+                            onToggleSidebar: {
+                                appState.toggleSidebarVisibility()
+                            },
+                            onToggleInspector: {
+                                appState.toggleDetailsInspector()
+                            }
+                        )
+                        .frame(width: 1, height: 1)
 
-                    if snapshot.visibleItems.isEmpty {
-                        reviewFilterEmptyState
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                    } else if snapshot.reviewPresentationMode == .grid {
-                        if isGroupedReviewMode {
-                            groupedReviewGrid(availableWidth: proxy.size.width)
+                        if snapshot.visibleItems.isEmpty {
+                            reviewFilterEmptyState
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                        } else if snapshot.reviewPresentationMode == .grid {
+                            if isGroupedReviewMode {
+                                groupedReviewGrid(availableWidth: proxy.size.width)
+                            } else {
+                                reviewGrid(availableWidth: proxy.size.width)
+                            }
                         } else {
-                            reviewGrid(availableWidth: proxy.size.width)
-                        }
-                    } else {
-                        if isGroupedReviewMode {
-                            groupedReviewList
-                        } else {
-                            reviewList
+                            if isGroupedReviewMode {
+                                groupedReviewList
+                            } else {
+                                reviewList
+                            }
                         }
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .clipped()
+                    .onAppear {
+                        appState.updateReviewGridMetrics(
+                            availableWidth: proxy.size.width,
+                            availableHeight: proxy.size.height
+                        )
+                    }
+                    .onChange(of: proxy.size) { _, size in
+                        appState.updateReviewGridMetrics(
+                            availableWidth: size.width,
+                            availableHeight: size.height
+                        )
+                    }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .clipped()
-                .onAppear {
-                    appState.updateReviewGridMetrics(
-                        availableWidth: proxy.size.width,
-                        availableHeight: proxy.size.height
-                    )
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    appState.activateReviewGridFocus()
                 }
-                .onChange(of: proxy.size) { _, size in
-                    appState.updateReviewGridMetrics(
-                        availableWidth: size.width,
-                        availableHeight: size.height
-                    )
-                }
-            }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                appState.activateReviewGridFocus()
             }
         }
     }
@@ -415,7 +417,7 @@ struct ReviewPaneView: View {
     }
 
     @ViewBuilder
-    private var compactReviewTopBar: some View {
+    private func compactReviewTopBar(_ commands: LocalCommandHandle) -> some View {
         if state.snapshot.contextMediaItemCount > 0 {
             HStack(alignment: .center, spacing: 8) {
                 Text(state.snapshot.breadcrumbTitles.joined(separator: " / "))
@@ -436,28 +438,29 @@ struct ReviewPaneView: View {
 
                 Spacer(minLength: 6)
 
-                detailDisplayMenu
+                detailDisplayMenu(commands)
 
                 if state.snapshot.canUseGroupedReviewMode && state.snapshot.dayDetailDisplayMode == .sections {
-                    groupedOrganizationMenu
+                    groupedOrganizationMenu(commands)
                 }
 
-                reviewFilterMenu
-                reviewPresentationMenu
+                reviewFilterMenu(commands)
+                reviewPresentationMenu(commands)
 
                 Button {
-                    showMap.toggle()
+                    commands.run(.toggleReviewMap)
                 } label: {
                     Label("Map", systemImage: showMap ? "map.fill" : "map")
                 }
                 .buttonStyle(.bordered)
-                .help("Show a map of the photos that have GPS locations")
+                .commandShortcutHint(.toggleReviewMap, appState: appState, scope: .review, help: "Show a map of the photos that have GPS locations")
+                .disabled(!commands.isEnabled(.toggleReviewMap))
 
-                sizeControls
-                reviewActionsMenu
+                sizeControls(commands)
+                reviewActionsMenu(commands)
 
                 if state.snapshot.canUseGroupedReviewMode && state.snapshot.dayDetailDisplayMode == .sections {
-                    groupedSectionButtons
+                    groupedSectionButtons(commands)
                 }
 
                 if !state.snapshot.selectedMediaItemIDs.isEmpty {
@@ -471,13 +474,13 @@ struct ReviewPaneView: View {
         }
     }
 
-    private var detailDisplayMenu: some View {
+    private func detailDisplayMenu(_ commands: LocalCommandHandle) -> some View {
         Menu {
             ForEach(state.snapshot.availableDayDetailDisplayModes, id: \.self) { mode in
                 Button(mode.title) {
-                    appState.setDayDetailDisplayMode(mode)
-                    returnToReviewFocus()
+                    commands.run(mode.reviewCommandID)
                 }
+                .disabled(!commands.isEnabled(mode.reviewCommandID))
             }
         } label: {
             Label(state.snapshot.dayDetailDisplayMode == .sections ? "Grouped" : "Flat", systemImage: "rectangle.grid.2x2")
@@ -485,13 +488,13 @@ struct ReviewPaneView: View {
         .commandShortcutHint([.flatReview, .groupedReview], appState: appState, scope: .review, help: "Switch between flat review and grouped review")
     }
 
-    private var groupedOrganizationMenu: some View {
+    private func groupedOrganizationMenu(_ commands: LocalCommandHandle) -> some View {
         Menu {
             ForEach(DayOrganizationMode.allCases, id: \.self) { mode in
                 Button(mode.title) {
-                    appState.setDayOrganizationMode(mode)
-                    returnToReviewFocus()
+                    commands.run(mode.reviewCommandID)
                 }
+                .disabled(!commands.isEnabled(mode.reviewCommandID))
             }
         } label: {
             Label(compactOrganizationTitle(state.snapshot.dayOrganizationMode), systemImage: "calendar")
@@ -499,13 +502,13 @@ struct ReviewPaneView: View {
         .commandShortcutHint([.groupDays, .groupDaysBursts, .groupDaysClusters, .groupDaysClustersBursts], appState: appState, scope: .review, help: "Choose how photos are grouped")
     }
 
-    private var reviewFilterMenu: some View {
+    private func reviewFilterMenu(_ commands: LocalCommandHandle) -> some View {
         Menu {
             ForEach(ReviewFilter.allCases, id: \.self) { filter in
                 Button(filter.title) {
-                    appState.setReviewFilter(filter)
-                    returnToReviewFocus()
+                    commands.run(filter.reviewCommandID)
                 }
+                .disabled(!commands.isEnabled(filter.reviewCommandID))
             }
         } label: {
             Label("Filter: \(state.snapshot.reviewFilter.title)", systemImage: "line.3.horizontal.decrease.circle")
@@ -513,13 +516,13 @@ struct ReviewPaneView: View {
         .commandShortcutHint([.filterAll, .filterIncluded, .filterCandidate, .filterExcluded, .filterUndecided], appState: appState, scope: .review, help: "Filter review items to all, included, candidate, excluded, or undecided photos.")
     }
 
-    private var reviewPresentationMenu: some View {
+    private func reviewPresentationMenu(_ commands: LocalCommandHandle) -> some View {
         Menu {
             ForEach(ReviewPresentationMode.allCases, id: \.self) { mode in
                 Button(mode.rawValue.capitalized) {
-                    appState.setReviewPresentationMode(mode)
-                    returnToReviewFocus()
+                    commands.run(mode.reviewCommandID)
                 }
+                .disabled(!commands.isEnabled(mode.reviewCommandID))
             }
         } label: {
             Label(state.snapshot.reviewPresentationMode.rawValue.capitalized, systemImage: state.snapshot.reviewPresentationMode == .grid ? "square.grid.3x3" : "list.bullet")
@@ -527,120 +530,104 @@ struct ReviewPaneView: View {
         .commandShortcutHint([.gridLayout, .listLayout], appState: appState, scope: .review, help: "Switch between grid and list layout")
     }
 
-    private var sizeControls: some View {
+    private func sizeControls(_ commands: LocalCommandHandle) -> some View {
         HStack(spacing: 6) {
             Button {
-                appState.decreaseReviewGridColumnCount()
-                returnToReviewFocus()
+                commands.run(.zoomOut)
             } label: {
                 Image(systemName: "minus")
             }
             .commandShortcutHint(.zoomOut, appState: appState, scope: .review, help: "Show fewer review columns (-)")
-            .disabled(state.snapshot.reviewGridPreferredColumnCount <= 1)
+            .disabled(!commands.isEnabled(.zoomOut))
 
             Text("\(state.snapshot.reviewGridPreferredColumnCount)")
                 .font(.caption.monospacedDigit())
                 .frame(width: 28)
 
             Button {
-                appState.increaseReviewGridColumnCount()
-                returnToReviewFocus()
+                commands.run(.zoomIn)
             } label: {
                 Image(systemName: "plus")
             }
             .commandShortcutHint(.zoomIn, appState: appState, scope: .review, help: "Show more review columns (+)")
-            .disabled(state.snapshot.reviewGridPreferredColumnCount >= ReviewGridMetrics.maxSuggestedColumns)
+            .disabled(!commands.isEnabled(.zoomIn))
 
             Button {
-                appState.resetReviewGridColumnCount()
-                returnToReviewFocus()
+                commands.run(.zoomReset)
             } label: {
                 Image(systemName: "arrow.counterclockwise")
             }
             .commandShortcutHint(.zoomReset, appState: appState, scope: .review, help: "Reset review columns (0)")
-            .disabled(state.snapshot.reviewGridPreferredColumnCount == ReviewGridMetrics.defaultRequestedColumnCount())
+            .disabled(!commands.isEnabled(.zoomReset))
         }
         .buttonStyle(.bordered)
     }
 
-    private var reviewActionsMenu: some View {
+    private func reviewActionsMenu(_ commands: LocalCommandHandle) -> some View {
         Menu("Actions") {
             Button("Select All") {
-                appState.selectAllVisibleMedia()
-                returnToReviewFocus()
+                commands.run(.selectAll)
             }
+            .disabled(!commands.isEnabled(.selectAll))
 
             Button("Deselect") {
-                appState.deselectAllVisibleMedia()
-                returnToReviewFocus()
+                commands.run(.deselectReviewPhotos)
             }
-            .disabled(state.snapshot.selectedMediaItemIDs.isEmpty)
+            .disabled(!commands.isEnabled(.deselectReviewPhotos))
 
             if state.snapshot.canMutateImportSelection {
                 Divider()
 
                 Button("Select For Import") {
-                    appState.markCurrentSelectionForImport()
-                    returnToReviewFocus()
+                    commands.run(.markIncluded)
                 }
-                .disabled(!state.snapshot.canMarkSelectionForImport)
+                .disabled(!commands.isEnabled(.markIncluded))
 
                 Button("Mark As Candidate") {
-                    appState.markCurrentSelectionAsCandidate()
-                    returnToReviewFocus()
+                    commands.run(.markCandidate)
                 }
-                .disabled(!state.snapshot.canMarkSelectionAsCandidate)
+                .disabled(!commands.isEnabled(.markCandidate))
 
                 Button("Exclude From Import") {
-                    appState.excludeCurrentSelectionFromImport()
-                    returnToReviewFocus()
+                    commands.run(.markExcluded)
                 }
-                .disabled(!state.snapshot.canExcludeSelectionFromImport)
+                .disabled(!commands.isEnabled(.markExcluded))
 
                 Button("Clear To Undecided") {
-                    appState.unmarkCurrentSelectionForImport()
-                    returnToReviewFocus()
+                    commands.run(.clearTriage)
                 }
-                .disabled(!state.snapshot.canUnmarkSelectionForImport)
+                .disabled(!commands.isEnabled(.clearTriage))
 
                 Button("Toggle RAW") {
-                    appState.toggleRawForCurrentMediaSelection()
-                    returnToReviewFocus()
+                    commands.run(.toggleRAW)
                 }
-                .disabled(!state.snapshot.canToggleRawForSelection)
+                .disabled(!commands.isEnabled(.toggleRAW))
             }
         }
         .help("Selection and import actions")
     }
 
-    private var groupedSectionButtons: some View {
+    private func groupedSectionButtons(_ commands: LocalCommandHandle) -> some View {
         HStack(spacing: 6) {
             Button {
-                appState.expandAllInlineSections()
-                returnToReviewFocus()
+                commands.run(.expandAll)
             } label: {
                 Image(systemName: "arrow.down.right.and.arrow.up.left")
             }
             .help("Expand all groups")
             .commandShortcutHint(.expandAll, appState: appState, scope: .review, help: "Expand all grouped sections")
+            .disabled(!commands.isEnabled(.expandAll))
 
             Button {
-                appState.collapseAllInlineSections()
-                returnToReviewFocus()
+                commands.run(.collapseAll)
             } label: {
                 Image(systemName: "arrow.up.left.and.arrow.down.right")
             }
             .help("Collapse all groups")
             .commandShortcutHint(.collapseAll, appState: appState, scope: .review, help: "Collapse all grouped sections")
+            .disabled(!commands.isEnabled(.collapseAll))
         }
         .buttonStyle(.bordered)
-    }
-
-    private func returnToReviewFocus() {
-        guard state.snapshot.canFocusReviewSurface else { return }
-        DispatchQueue.main.async {
-            appState.activateReviewGridFocus()
-        }
     }
 
     private func compactOrganizationTitle(_ mode: DayOrganizationMode) -> String {

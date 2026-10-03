@@ -19,16 +19,16 @@ cross-window focus/triage defects. Settings persistence errors remain visible.
 
 Files: AppCommandRegistry, CommandKeyboardRouting, CommandPaletteView,
 ArchiveSidebarNavigation, ReviewCommandInputView; AppCommands/AppState/Models/UIState;
-Content/Archive/Settings/Google/description/review views; command test files, SessionWorkflowCommandTests, GooglePhotosTests, DescriptionTests and ImageCompletionTests;
-ImageCommandActions/ImageOperationContext/CropService/ArchiveIndex/SessionWorkflowCommands;
+Content/Archive/Settings/Google/description/review views; command test files, SessionWorkflowCommandTests, ReviewPaneCommandTests, GooglePhotosTests, DescriptionTests and ImageCompletionTests;
+ImageCommandActions/ImageOperationContext/CropService/ArchiveIndex/SessionWorkflowCommands/ReviewPaneCommands;
 APP_RELEASE.env and matching tracking. No new dependency.
 
-Full verification: 586 tests / 2 suites, 47.825 s: 88 command-file functions plus 14 new Google
+Full verification: 600 tests / 2 suites, 53.769 s: 102 command-file functions plus 14 new Google
 callback functions, 13 new description functions and 24 image command/completion functions
-(139 additions since installed 0.7.15). Native
+(153 additions since installed 0.7.15). Native
 hidden windows, real NSTextView/NSTextField editor and NSWindow event paths. Distinct
 pre-fix logs plus deliberate sheet/IME guard reversal prove the defects are detected.
-Final run: `/private/tmp/walkfolio-session-controls-final-full.log`.
+Final run: `/private/tmp/walkfolio-review-controls-final-full.log`.
 
 Not shipped. App target is 0.7.16/152 on `codex/walkfolio-command-layer`; installed
 0.7.15/151 remains closed. No headed/manual UI, live archive, private delivery or real
@@ -201,3 +201,54 @@ Remaining: actual containing Review Map/group/filter/layout/grid/selection actio
 photo rows/groups/Inspector crop versions; native menu refresh/inherited bindings; final
 whole-inventory review/full tests and signed closed installation. Original native/real-
 copy/migration/OneDrive/model/Google acceptance stays open. Not bundled or installed.
+
+
+## Containing Review controls and focus
+
+The actual Review top bar, Map and scrolling grid/list now share one containing
+registered surface with available-height sizing. Map is keyless, discoverable and
+rebindable; display, grouping, filters, layout, grid size, selection, triage and
+expansion use the clicked capability. Per-mode command IDs avoid independent mouse
+logic. Photo-only Deselect preserves folder selection and keyboard triage still
+advances through the actual keyboard child's callbacks. Empty filtered results keep
+filter/layout recovery commands available through the original photo context.
+
+Generic pane identity changes on Log/source/workspace/sidebar navigation, including
+ABA before redraw. Selection, triage and ordinary saved metadata preserve the pane
+lease and apply the current photo selection. Live eligibility is rechecked before
+the backend. Authority generations remain part of the captured capability.
+
+Focus requests capture the exact registered lease and native target. Explicit child
+providers fail closed; owner/target visibility, window, descendant ancestry, modal
+boundary and replacement are rechecked at queued execution. The synchronous command
+retains its exact executing owner only until defer, choosing its own grid over a
+newer Review container and refusing restoration if the action removes its owner.
+Ordinary updates do not reacquire focus; native Map text typing/selection/copy and
+generated Help remain intact.
+
+Verification: fourteen new functions; full suite 600 tests/two suites in 53.769s.
+Initial queued-focus tests reproduced five issues in four functions. Deliberate
+context/empty-result/owner-preference guard reversal reproduced fifteen issues in
+three functions. Astra's synchronous unregister/detach finding reproduced four
+issues in one function before the final fix. The actual hosted Review retains its
+window height with Map shown and its keyboard child after switching to list; real
+NSWindow Arrow/Space events move and toggle the photo selection. Separate tests
+cover competing containers, retained child after parent replacement, current photo
+selection, bounds, field editor, navigation/source/authority ABA and queued races.
+Astra's final scoped source/test review clears the material finding; this is a
+read-only model review, while execution evidence comes from primary's test runs.
+
+Logs: `/private/tmp/walkfolio-review-focus-before.log`,
+`/private/tmp/walkfolio-review-controls-guard-reversal.log`,
+`/private/tmp/walkfolio-review-owner-removal-before.log`,
+`/private/tmp/walkfolio-review-controls-focused.log` (thirteen functions before the
+last owner-removal fix) and `/private/tmp/walkfolio-review-controls-final-full.log`.
+The first live-selection fixture expected the original photo after intentional
+triage advance; the final fixture explicitly selects the next current photo.
+
+Remaining: captured photo-row triage/RAW/retry, group Compare membership, Inspector
+crop-version targets and unused legacy section controls; native menu refresh and
+inherited effective bindings/help; final whole-inventory review and signed closed
+installation. Original native/real-copy/migration/OneDrive/model/Google acceptance
+remains open. Target 0.7.16/152 remains unbundled/uninstalled; installed 0.7.15/151
+verified closed. No headed screen, live Archive, provider authorisation or delivery.

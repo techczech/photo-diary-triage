@@ -55,13 +55,14 @@ struct CommandLocalSurface<Content: View>: NSViewRepresentable {
     var ownsWindow = false
     var fillsAvailableHeight = false
     var focusesOnAttachment = false
+    var focusTarget: ((CommandLocalSurfaceView) -> NSView?)? = nil
     @Environment(\.openSettings) private var openSettings
     @ViewBuilder let content: (LocalCommandHandle) -> Content
 
     func makeNSView(context: Context) -> CommandLocalSurfaceView { CommandLocalSurfaceView() }
     func updateNSView(_ view: CommandLocalSurfaceView, context: Context) {
         view.renderContent = { AnyView(content($0)) }
-        view.configure(coordinator: coordinator, scope: scope, contextKey: contextKey, actions: actions, ownsWindow: ownsWindow, focusesOnAttachment: focusesOnAttachment, openSettings: { openSettings() })
+        view.configure(coordinator: coordinator, scope: scope, contextKey: contextKey, actions: actions, ownsWindow: ownsWindow, focusesOnAttachment: focusesOnAttachment, focusTarget: focusTarget, openSettings: { openSettings() })
     }
     func sizeThatFits(_ proposal: ProposedViewSize, nsView view: CommandLocalSurfaceView, context: Context) -> CGSize? {
         let measured = view.measure(width: proposal.width.flatMap { $0.isFinite ? $0 : nil })
@@ -80,6 +81,7 @@ final class CommandLocalSurfaceView: NSView {
     private weak var registeredWindow: NSWindow?
     private var ownsWindow = false
     private var focusesOnAttachment = false
+    private var ownedFocusTarget: ((CommandLocalSurfaceView) -> NSView?)?
     private weak var focusRequestedWindow: NSWindow?
     private var openSettings: (() -> Void)?
     private var lease: CommandSurfaceLease?
@@ -106,9 +108,9 @@ final class CommandLocalSurfaceView: NSView {
 
     @discardableResult
     func configure(coordinator: CommandKeyboardCoordinator, scope: AppCommandScope, contextKey: String,
-                   actions: [AppCommandID: SheetCommandAction], ownsWindow: Bool = false, focusesOnAttachment: Bool = false, openSettings: (() -> Void)? = nil) -> LocalCommandHandle {
+                   actions: [AppCommandID: SheetCommandAction], ownsWindow: Bool = false, focusesOnAttachment: Bool = false, focusTarget: ((CommandLocalSurfaceView) -> NSView?)? = nil, openSettings: (() -> Void)? = nil) -> LocalCommandHandle {
         if self.coordinator !== coordinator || self.ownsWindow != ownsWindow { unregister() }
-        self.coordinator = coordinator; self.ownsWindow = ownsWindow; self.focusesOnAttachment = focusesOnAttachment; self.openSettings = openSettings
+        self.coordinator = coordinator; self.ownsWindow = ownsWindow; self.focusesOnAttachment = focusesOnAttachment; self.ownedFocusTarget = focusTarget; self.openSettings = openSettings
         registerOwnedWindow(scope: scope)
         let owner = window.flatMap { coordinator.registration(for: $0)?.instanceID }
         if self.scope != scope || self.contextKey != contextKey
@@ -122,6 +124,10 @@ final class CommandLocalSurfaceView: NSView {
                     guard let action = self?.actions[id], action.enabled else { return false }
                     action.run(); return true
                 })
+        }
+        // An explicit provider returning nil is not permission to focus the container.
+        lease?.focusTarget = focusTarget == nil ? nil : { [weak self] in
+            guard let self else { return nil }; return self.ownedFocusTarget?(self)
         }
         register()
         let handle = LocalCommandHandle(coordinator: coordinator, lease: lease)
@@ -147,7 +153,7 @@ final class CommandLocalSurfaceView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if window == nil { unregister() } else if let coordinator, let contextKey {
-            configure(coordinator: coordinator, scope: scope, contextKey: contextKey, actions: actions, ownsWindow: ownsWindow, focusesOnAttachment: focusesOnAttachment, openSettings: openSettings)
+            configure(coordinator: coordinator, scope: scope, contextKey: contextKey, actions: actions, ownsWindow: ownsWindow, focusesOnAttachment: focusesOnAttachment, focusTarget: ownedFocusTarget, openSettings: openSettings)
         }
     }
     override func performKeyEquivalent(with event: NSEvent) -> Bool {

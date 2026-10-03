@@ -159,7 +159,7 @@ enum AppCommandID: String, CaseIterable, Codable, Hashable, Sendable {
     case newPhotoLog
     case compare
     case open
-    case openFocusedPhoto, clearArchiveFilters, deselectReviewPhotos
+    case openFocusedPhoto, clearArchiveFilters, deselectReviewPhotos, toggleReviewMap
     case viewOriginal
     case goUp
     case deselectAll
@@ -425,6 +425,7 @@ struct AppCommandRegistry {
                 defaults: save ? [.init(.init(key: "return", modifiers: [.command]), scopes: scopes)] : [],
                 enabled: { _ in true }, run: { _ in }, needsSurfaceHandler: true, commitsDraft: save || commitsDraft))
         }
+        local(.toggleReviewMap, "Show or hide Review Map", "Review", [.review])
         local(.saveLogDetails, "Save edited Log details", "Photo Logs", [.logDetails, .logDetailsEditor], save: true)
         local(.saveLogAndStartNext, "Save edited Log and start the next", "Photo Logs", [.logDetails, .logDetailsEditor], commitsDraft: true)
         local(.openPhotoLog, "Continue this Photo Log", "Photo Logs", [.photoLogActions])

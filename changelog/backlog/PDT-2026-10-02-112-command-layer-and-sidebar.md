@@ -303,3 +303,40 @@ changing the shared candidate predicate. Keep source verification and confirmati
   final-focused,final-full}.log. Original whole-workflow acceptance remains open.
 - Target 0.7.16/152 remains unbundled/uninstalled. Complete Review Map/control/row/group/
   crop-version and native menu inventory before final release; installed 0.7.15/151 closed.
+
+
+## Review pane implementation intent — 2026-10-03
+
+Contain the actual Review top bar, Map, grid/list and keyboard child in one owned
+Review surface that fills the available height. Map becomes keyless and rebindable.
+Display, grouping, filtering, layout, column size, selection, triage and expansion
+controls execute registered commands through the clicked containing capability.
+Pane identity changes on Log/source, workspace and sidebar navigation, including
+ABA round trips. Ordinary selection, triage, filters and layout retain this generic
+pane capability; per-photo controls will use separate strict targets in the next
+slice. Recheck live eligibility before execution. Preserve the keyboard child's
+selection/advance behaviour and photo-only Deselect. Empty filter results must
+retain filter/layout recovery controls.
+
+Explicit focus after a control action belongs to the keyboard child of that exact
+Review container. Queued requests recheck both owner and final target, visibility,
+ancestry and current modal boundary; an absent explicit child fails closed. No
+redraw reacquires focus. Tests cover hidden native event routes, text editing,
+retained child after parent replacement, source/navigation/authority ABA, current
+selection, bounds, modal/hidden/detached focus races and actual hosted grid height.
+Primary codes/tests; Astra reviews read-only. Still unbundled 0.7.16/152.
+
+
+## Review controls verified checkpoint — 2026-10-03
+
+- Fourteen new functions. Final full suite: 600 tests/two suites, 53.769s; 153 additions
+  since installed 0.7.15. Actual contained Review fills the window with Map shown,
+  focuses its keyboard child after layout changes and dispatches native Arrow/Space.
+- Pane/context, empty-result recovery and exact executing-owner checks validated.
+  Initial queued focus: four functions/five issues. Deliberate guard reversal:
+  three functions/fifteen issues. Synchronous owner removal: one function/four issues.
+- Astra reviewed read-only; final ownership finding reproduced/fixed and review clear.
+- Continue captured photo rows/group membership/Inspector crop versions and legacy
+  section controls, native menu refresh/inherited binding/help inventory, then final
+  review/full tests and signed closed install. Original acceptance gates remain open.
+- Target 0.7.16/152 is still unbundled/uninstalled; installed 0.7.15/151 remains closed.
