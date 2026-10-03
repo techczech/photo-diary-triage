@@ -67,6 +67,7 @@ struct AppShortcutOverride: Codable, Hashable, Sendable {
 
 enum AppCommandScope: String, CaseIterable, Hashable, Sendable {
     case main, settings, editor, review, preview, compare, archiveCards, archiveSidebar, sourceSidebar, commandPanel, helpPanel, shortcutCapture, form, formEditor, information, settingsEditor
+    case compareItem
     case logDetails, logDetailsEditor, location, locationEditor, tripLabel, tripLabelEditor, photoLogActions, walkProposal, walkProposalEditor, googleJob, googleJobEditor, googleAlbum, googleAlbumEditor, googleAccount, googleAccountEditor
 
     var isTextEditing: Bool {
@@ -90,6 +91,7 @@ enum AppCommandScope: String, CaseIterable, Hashable, Sendable {
     }
     var coactiveAncestors: Set<Self> {
         switch self {
+        case .compareItem: [.compare]
         case .walkProposal: [.form]
         case .walkProposalEditor: [.formEditor]
         case .googleJob: [.information]
@@ -242,6 +244,10 @@ enum AppCommandID: String, CaseIterable, Codable, Hashable, Sendable {
     case mergeWalkProposal, splitWalkProposal
     case connectGoogleAccount, cancelGoogleSignIn, disconnectGoogleAccount, refreshGoogleAccount, saveGoogleClientSecret
     case findGoogleAlbum, adoptGoogleAlbum, reviewGoogleAlbumAbsent, abandonGoogleJob
+    case previousPreviewPhoto, nextPreviewPhoto, closeImageSurface, saveManualCrop, cancelManualCrop
+    case toggleManualCrop, toggleComparePanLock, fewerCompareColumns, moreCompareColumns, resetCompareColumns
+    case openLinkedPhoto, includeDisplayedPhoto, excludeDisplayedPhoto, candidateDisplayedPhoto
+    case clearDisplayedPhotoTriage, toggleDisplayedPhotoRAW, cropDisplayedPhoto, removeDisplayedComparePhoto, downloadDisplayedOriginal
 }
 
 @MainActor
@@ -275,7 +281,7 @@ struct AppCommandRegistry {
     static let contextualCommands: Set<AppCommandID> = [.openArchive, .organiseFolder, .moveWalk, .open, .viewOriginal,
         .markIncluded, .markExcluded, .markCandidate, .clearTriage, .toggleRAW, .createPhotoLog, .newPhotoLog, .compare,
         .describeSelection, .regenerateDescriptions, .describeTrip, .describeYear, .deliverTrip, .deliverPhotoLog,
-        .markPreviousUpload, .clearPreviousUpload, .cropVisible, .removeCompareItem, .confirmSheet, .confirmAndOpenSheet, .closeSheet, .confirmGoogleDelivery, .saveLogDetails, .saveLogAndStartNext, .openPhotoLog, .showPhotoLogContents, .editPhotoLogDetails, .editPhotoLogMembership, .addMarkedToPhotoLog, .deletePhotoLog, .saveLocation, .clearLocation, .retryLocationSave, .pinLocationAtMapCentre, .editTripLabel, .saveTripLabel, .useWalkLocations, .cancelTripLabelEdit, .mergeWalkProposal, .splitWalkProposal, .findGoogleAlbum, .adoptGoogleAlbum, .reviewGoogleAlbumAbsent, .abandonGoogleJob]
+        .markPreviousUpload, .clearPreviousUpload, .cropVisible, .removeCompareItem, .confirmSheet, .confirmAndOpenSheet, .closeSheet, .confirmGoogleDelivery, .saveLogDetails, .saveLogAndStartNext, .openPhotoLog, .showPhotoLogContents, .editPhotoLogDetails, .editPhotoLogMembership, .addMarkedToPhotoLog, .deletePhotoLog, .saveLocation, .clearLocation, .retryLocationSave, .pinLocationAtMapCentre, .editTripLabel, .saveTripLabel, .useWalkLocations, .cancelTripLabelEdit, .mergeWalkProposal, .splitWalkProposal, .findGoogleAlbum, .adoptGoogleAlbum, .reviewGoogleAlbumAbsent, .abandonGoogleJob, .saveManualCrop, .cancelManualCrop, .downloadDisplayedOriginal, .cropDisplayedPhoto, .removeDisplayedComparePhoto, .openLinkedPhoto, .includeDisplayedPhoto, .candidateDisplayedPhoto, .excludeDisplayedPhoto, .clearDisplayedPhotoTriage, .toggleDisplayedPhotoRAW]
 
     static let commands: [AppCommandDefinition] = {
         let mainScopes = Self.mainScopes, imageScopes = Self.imageScopes, allScopes = Self.allScopes
@@ -329,7 +335,7 @@ struct AppCommandRegistry {
             .init(id: .newPhotoLog, title: "Start new Photo Log", task: "Sources", scopes: mainScopes, defaults: [], enabled: { s in s.canStartNewPhotoLogSession }, run: { s in s.startNewPhotoLogSession() }, needsSurfaceHandler: false),
             .init(id: .compare, title: "Compare selected photos", task: "Review", scopes: mainScopes, defaults: [.init(.init(key: "c", modifiers: [.command, .shift]), scopes: mainScopes)], enabled: { s in s.canOpenComparison }, run: { s in s.openComparisonForCurrentSelection() }, needsSurfaceHandler: false),
             .init(id: .open, title: "Open current selection", task: "Navigation", scopes: mainScopes.union([.compare]), defaults: [.init(.init(key: "return", modifiers: [.command]), scopes: mainScopes.union([.compare]))], enabled: { s in s.canOpenCurrentSelection }, run: { s in s.openCurrentSelection() }, needsSurfaceHandler: false),
-            .init(id: .viewOriginal, title: "Download selected Archive photo to view", task: "Archive", scopes: mainScopes, defaults: [.init(.init(key: "d", modifiers: [.command, .shift]), scopes: mainScopes)], enabled: { s in s.canDownloadBlockedArchiveSelectionToView }, run: { s in s.downloadBlockedArchiveSelectionToView() }, needsSurfaceHandler: false),
+            .init(id: .viewOriginal, title: "Download selected Archive photo to view", task: "Archive", scopes: mainScopes.union([.preview, .compare]), defaults: [.init(.init(key: "d", modifiers: [.command, .shift]), scopes: mainScopes.union([.preview, .compare]))], enabled: { s in s.canDownloadBlockedArchiveSelectionToView }, run: { s in s.downloadBlockedArchiveSelectionToView() }, needsSurfaceHandler: false),
             .init(id: .goUp, title: "Go to parent", task: "Navigation", scopes: mainScopes, defaults: [.init(.init(key: "u", modifiers: [.command, .option]), scopes: mainScopes)], enabled: { s in s.canNavigateToParent }, run: { s in s.navigateToParent() }, needsSurfaceHandler: false),
             .init(id: .deselectAll, title: "Deselect all photos", task: "Review", scopes: mainScopes.union(imageScopes), defaults: [.init(.init(key: "a", modifiers: [.command, .shift]), scopes: mainScopes.union(imageScopes))], enabled: { s in s.canClearCurrentSelection }, run: { s in s.clearCurrentSelection() }, needsSurfaceHandler: false),
             .init(id: .copyIncluded, title: "Copy included files into Archive", task: "Import", scopes: mainScopes, defaults: [.init(.init(key: "m", modifiers: [.command, .shift]), scopes: mainScopes)], enabled: { s in s.canCommitImport }, run: { s in s.commitImport() }, needsSurfaceHandler: false),
@@ -440,6 +446,25 @@ struct AppCommandRegistry {
         local(.adoptGoogleAlbum, "Use this album for the captured delivery", "Google Photos", [.googleAlbum, .googleAlbumEditor])
         local(.reviewGoogleAlbumAbsent, "Review confirmation that this delivery created no album…", "Google Photos", [.googleJob, .googleJobEditor])
         local(.abandonGoogleJob, "Stop this saved Google Photos delivery", "Google Photos", [.googleJob, .googleJobEditor])
+        local(.previousPreviewPhoto, "Show previous photo", "Preview", [.preview])
+        local(.nextPreviewPhoto, "Show next photo", "Preview", [.preview])
+        local(.closeImageSurface, "Close image view", "Images", [.preview, .compare])
+        local(.saveManualCrop, "Save selected crop", "Images", [.preview, .compare], commitsDraft: true)
+        local(.cancelManualCrop, "Cancel selected crop", "Images", [.preview, .compare])
+        local(.toggleManualCrop, "Toggle Compare drag crop", "Compare", [.compare])
+        local(.toggleComparePanLock, "Toggle Compare pan lock", "Compare", [.compare])
+        local(.fewerCompareColumns, "Fewer Compare columns", "Compare", [.compare])
+        local(.moreCompareColumns, "More Compare columns", "Compare", [.compare])
+        local(.resetCompareColumns, "Reset Compare columns", "Compare", [.compare])
+        local(.openLinkedPhoto, "Open linked crop or original", "Images", [.preview, .compareItem])
+        local(.includeDisplayedPhoto, "Include this displayed photo", "Compare photo", [.compareItem])
+        local(.excludeDisplayedPhoto, "Exclude this displayed photo", "Compare photo", [.compareItem])
+        local(.candidateDisplayedPhoto, "Mark this displayed photo as candidate", "Compare photo", [.compareItem])
+        local(.clearDisplayedPhotoTriage, "Clear this displayed photo decision", "Compare photo", [.compareItem])
+        local(.toggleDisplayedPhotoRAW, "Toggle this displayed photo's RAW companions", "Compare photo", [.compareItem])
+        local(.cropDisplayedPhoto, "Crop this displayed photo's visible area", "Compare photo", [.compareItem])
+        local(.removeDisplayedComparePhoto, "Remove this displayed photo from Compare", "Compare photo", [.compareItem])
+        local(.downloadDisplayedOriginal, "Download this displayed original to view", "Images", [.preview, .compareItem])
         func alias(_ id: AppCommandID, _ key: String, _ mods: ShortcutModifiers = [], scopes: Set<AppCommandScope>) {
             guard let index = result.firstIndex(where: { $0.id == id }) else { return }
             let old = result[index]

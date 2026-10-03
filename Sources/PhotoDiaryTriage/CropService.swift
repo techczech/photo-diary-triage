@@ -139,8 +139,14 @@ struct CropService {
         item: MediaItem,
         normalizedRect: CropNormalizedRect,
         trigger: CropTrigger,
-        appRelease: AppRelease = .current
+        appRelease: AppRelease = .current,
+        contextIsCurrent: @Sendable () -> Bool = { true }
     ) throws -> CropResult {
+        func validateContext() throws {
+            try Task.checkCancellation()
+            guard contextIsCurrent() else { throw CancellationError() }
+        }
+        try validateContext()
         guard normalizedRect.isUsableCrop else {
             throw CropServiceError.unusableCrop
         }
@@ -155,10 +161,12 @@ struct CropService {
             throw CropServiceError.cannotReadSource(sourceURL.path)
         }
 
+        try validateContext()
         guard let fullImage = makeOrientationAppliedImage(from: source) else {
             throw CropServiceError.cannotDecodeImage(sourceURL.path)
         }
 
+        try validateContext()
         let pixelRect = normalizedRect.pixelRect(sourceWidth: fullImage.width, sourceHeight: fullImage.height)
         guard let croppedImage = fullImage.cropping(to: pixelRect.cgRect) else {
             throw CropServiceError.cannotCreateCrop
@@ -199,6 +207,7 @@ struct CropService {
         }
 
         do {
+            try validateContext()
             try fileManager.moveItem(at: temporaryURL, to: destinationURL)
             movedCropToFinalDestination = true
         } catch {
@@ -225,6 +234,7 @@ struct CropService {
         )
 
         do {
+            try validateContext()
             try appendManifestEntry(entry, for: item, manifestURL: manifestURL)
         } catch {
             if movedCropToFinalDestination {

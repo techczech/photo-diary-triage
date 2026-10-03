@@ -39,6 +39,7 @@ final class CommandSurfaceLease {
 struct CommandSelectionFingerprint: Equatable {
     let root: String, role: ArchiveMachineRole, pictures: String
     let contextGeneration: Int
+    let imagePresentationRevision: Int
     let sessionID: UUID?, node: String?, folders: Set<String>, photos: Set<UUID>, focused: UUID?, preview: UUID?, compare: [UUID]
     let archiveSelection: String
     let reviewContext: String
@@ -46,6 +47,7 @@ struct CommandSelectionFingerprint: Equatable {
     @MainActor init(_ state: AppState) {
         googleContext = state.commandGoogleContextKey
         contextGeneration = ArchiveByteReadPolicyContext.shared.generation
+        imagePresentationRevision = state.imagePresentationRevision
         root = state.settings.archiveRoot.standardizedFileURL.path; role = state.settings.archiveMachineRole
         pictures = state.settings.oneDrivePicturesRoot.standardizedFileURL.path
         sessionID = state.currentSession?.id; node = state.selectedSidebarNodeID
@@ -299,7 +301,8 @@ final class CommandKeyboardCoordinator: ObservableObject {
         }
         if definition.commitsDraft,
            let editor = invocation.window?.firstResponder as? NSTextView, editor.hasMarkedText() { return "Finish composing the text before confirming this form." }
-        if id == .toggleInspector, registration(for: invocation.window!)?.scope != .main { return "The Inspector belongs to the main Walkfolio window." }
+        if id == .toggleInspector, registration(for: invocation.window!)?.scope != .main,
+           !(registration(for: invocation.window!)?.scope == .preview && invocation.scope == .preview && handler != nil) { return "The Inspector belongs to the main Walkfolio window." }
         if id == .find { return registration(for: invocation.window!)?.findAction != nil ? nil : "Find is available in the main Walkfolio view." }
         if isPresentationCommand(id) { return nil }
         if let handler {

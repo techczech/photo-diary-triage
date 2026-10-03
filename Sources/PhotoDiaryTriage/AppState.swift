@@ -59,6 +59,7 @@ final class AppState: ObservableObject {
     }
     @Published var currentSession: ImportSession? {
         didSet {
+            if oldValue?.id != currentSession?.id { imagePresentationRevision &+= 1 }
             if oldValue?.id != currentSession?.id { reviewSearchQuery = "" }
             let updateKind = currentSessionUpdateKind
             currentSessionUpdateKind = .full
@@ -92,6 +93,7 @@ final class AppState: ObservableObject {
     }
     @Published var selectedSidebarNodeID: String? {
         didSet {
+            if oldValue != selectedSidebarNodeID { imagePresentationRevision &+= 1 }
             if oldValue != selectedSidebarNodeID { reviewSearchQuery = "" }
             invalidateInlineSectionCaches()
             refreshSidebarState()
@@ -110,6 +112,7 @@ final class AppState: ObservableObject {
     @Published var archiveLocationRecoveryWalkPath: String?
     @Published var selectedMediaItemIDs: Set<UUID> = [] {
         didSet {
+            if oldValue != selectedMediaItemIDs { imagePresentationRevision &+= 1 }
             refreshReviewState()
             refreshInspectorState()
             refreshCompareState()
@@ -117,6 +120,7 @@ final class AppState: ObservableObject {
     }
     @Published var focusedReviewItemID: UUID? {
         didSet {
+            if oldValue != focusedReviewItemID { imagePresentationRevision &+= 1 }
             refreshReviewState()
             refreshInspectorState()
             refreshCompareState()
@@ -125,6 +129,7 @@ final class AppState: ObservableObject {
     @Published var reviewSelectionAnchorID: UUID?
     @Published var activePane: ActivePane = .sidebar {
         didSet {
+            if oldValue != activePane { imagePresentationRevision &+= 1 }
             refreshNavigationState()
         }
     }
@@ -273,6 +278,7 @@ final class AppState: ObservableObject {
     }
     @Published var previewingMediaItemID: UUID? {
         didSet {
+            if oldValue != previewingMediaItemID { imagePresentationRevision &+= 1 }
             refreshPresentationState()
         }
     }
@@ -293,6 +299,7 @@ final class AppState: ObservableObject {
     }
     @Published var comparingMediaItemIDs: [UUID] = [] {
         didSet {
+            if oldValue != comparingMediaItemIDs { imagePresentationRevision &+= 1 }
             refreshCompareState()
         }
     }
@@ -355,8 +362,14 @@ final class AppState: ObservableObject {
             }
         }
     }
+    private(set) var imagePresentationRevision = 0
+    var commandImagePresentationContextKey: String {
+        localCommandContextKey([commandDescriptionContextKey, String(imagePresentationRevision)])
+    }
     @Published private(set) var originalViewingRevision = 0
     var testingOriginalViewingService: ArchiveOriginalViewingService?
+    var testingCropOperation: (@Sendable (MediaItem, CropNormalizedRect, CropTrigger, AppRelease) async throws -> CropResult)?
+    var testingCropIndexRefresh: (@Sendable (URL, URL, ArchiveIndexWritePolicy) async throws -> Void)?
     private var originalViewingTasks: [UUID: Task<Void, Never>] = [:]
     private var originalViewingOperationIDs: [UUID: UUID] = [:]
 
@@ -1091,8 +1104,12 @@ final class AppState: ObservableObject {
         currentSelectionMediaIDs().count >= 2
     }
 
+    var hasCropInCurrentSession: Bool {
+        currentSession?.mediaItems.contains { cropOperationItemIDs.contains($0.id) } == true
+    }
+
     var canCommitImport: Bool {
-        guard importOperation.isRunning == false else { return false }
+        guard !hasCropInCurrentSession, importOperation.isRunning == false else { return false }
         if case .loading = sourceWorkspaceState { return false }
         return currentSession?.mediaItems.contains {
             $0.selectionState.isIncluded && !$0.lifecycleState.isImportedOrBeyond
@@ -3334,6 +3351,10 @@ final class AppState: ObservableObject {
     }
 
     func confirmWalkCommit() {
+        guard !hasCropInCurrentSession else {
+            statusMessage = "Finish saving the crop before confirming Copy. The reviewed plan is still open."
+            return
+        }
         guard let editor = activeWalkCommitEditor, var session = currentSession else { return }
         session.proposedWalks = editor.walks
         session.confirmedCopyPending = true
@@ -3592,7 +3613,7 @@ final class AppState: ObservableObject {
         let policy = ArchiveByteReadPolicyContext.shared
         let generation = policy.generation
         let operationID = UUID()
-        let nodeID = selectedBrowserNode?.id
+        let origin = ImageOperationContext(self)
         originalViewingOperationIDs[item.id] = operationID
         statusMessage = "Preparing \(item.fileName) for viewing…"
         originalViewingTasks[item.id] = Task { [weak self] in
@@ -3603,20 +3624,26 @@ final class AppState: ObservableObject {
                     self.originalViewingOperationIDs[item.id] = nil
                 }
             }
-            guard policy.generation == generation, self.originalViewingOperationIDs[item.id] == operationID else { return }
+            guard origin.hasCurrentAuthority(self), policy.generation == generation,
+                  !Task.isCancelled, self.originalViewingOperationIDs[item.id] == operationID else { return }
             do {
                 try await service.prepare(item.sourceURL, policy: policy)
-                guard policy.generation == generation, self.originalViewingOperationIDs[item.id] == operationID else { return }
+                guard origin.hasCurrentAuthority(self), policy.generation == generation,
+                  !Task.isCancelled, self.originalViewingOperationIDs[item.id] == operationID else { return }
                 self.originalViewingRevision &+= 1
-                if self.selectedBrowserNode?.id == nodeID { self.previewingMediaItemID = item.id }
+                let ownsPresentation = origin.hasCurrentPresentation(self)
+                if ownsPresentation, origin.compare.isEmpty,
+                   origin.preview == nil || origin.preview == item.id { self.previewingMediaItemID = item.id }
                 self.refreshPresentationState()
                 self.refreshCompareState()
-                self.statusMessage = "Original ready to view: \(item.fileName)."
+                if ownsPresentation { self.statusMessage = "Original ready to view: \(item.fileName)." }
             } catch is CancellationError {
-                guard policy.generation == generation else { return }
+                guard origin.hasCurrentPresentation(self), policy.generation == generation,
+                      self.originalViewingOperationIDs[item.id] == operationID else { return }
                 self.statusMessage = "Original viewing cancelled."
             } catch {
-                guard policy.generation == generation else { return }
+                guard origin.hasCurrentPresentation(self), policy.generation == generation,
+                      self.originalViewingOperationIDs[item.id] == operationID else { return }
                 self.statusMessage = "Could not prepare original: \(error.localizedDescription)"
             }
         }
@@ -4585,50 +4612,81 @@ final class AppState: ObservableObject {
         cropOperationItemIDs.contains(item.id)
     }
 
-    func cropMediaItem(_ item: MediaItem, normalizedRect: CropNormalizedRect, trigger: CropTrigger) {
-        if let currentSession, currentSession.mediaItems.contains(where: { $0.id == item.id }) {
-            guard allowEditingCopyInputs(currentSession) else { return }
+    func canCropMediaItem(_ item: MediaItem) -> Bool {
+        guard backupPersistenceGate.blockedReason == nil, !importOperation.isRunning,
+              !isCropInProgress(for: item), !isArchiveByteReadBlocked(for: item) else { return false }
+        if let currentSession, currentSession.mediaItems.contains(where: {
+            $0.id == item.id && canonicalPath($0.sourceURL) == canonicalPath(item.sourceURL)
+        }) { return !hasRecordedCopy(currentSession) }
+        return true
+    }
+
+    @discardableResult
+    func cropMediaItem(_ item: MediaItem, normalizedRect: CropNormalizedRect, trigger: CropTrigger) -> Bool {
+        if let currentSession, currentSession.mediaItems.contains(where: {
+            $0.id == item.id && canonicalPath($0.sourceURL) == canonicalPath(item.sourceURL)
+        }) {
+            guard allowEditingCopyInputs(currentSession) else { return false }
         }
+        guard canCropMediaItem(item) else { return false }
         guard normalizedRect.isUsableCrop else {
             statusMessage = "Crop area is too small."
-            return
+            return false
         }
         if trigger == .visibleZoom && normalizedRect.isEffectivelyFullFrame {
             statusMessage = "Zoom in or use Drag Crop before saving a crop."
-            return
+            return false
         }
         guard !cropOperationItemIDs.contains(item.id) else {
             statusMessage = "Crop is already saving for \(item.fileName)."
-            return
+            return false
         }
 
         let release = AppRelease.current
+        let origin = ImageOperationContext(self)
+        let operation = testingCropOperation
+        let belongsToSession = currentSession?.mediaItems.contains { $0.id == item.id && canonicalPath($0.sourceURL) == canonicalPath(item.sourceURL) } == true
+        let generation = ArchiveByteReadPolicyContext.shared.generation
         cropOperationItemIDs.insert(item.id)
         statusMessage = "Saving crop from \(item.fileName)..."
 
-        Task {
+        Task { [weak self] in
+            guard let self else { return }
+            defer { cropOperationItemIDs.remove(item.id) }
+            guard origin.hasCurrentAuthority(self), !Task.isCancelled else { return }
             do {
-                let result = try await Task.detached(priority: .userInitiated) {
-                    try CropService().crop(
-                        item: item,
-                        normalizedRect: normalizedRect,
-                        trigger: trigger,
-                        appRelease: release
-                    )
-                }.value
-
-                if let cropItem = recordCropRelationship(for: item, cropURL: result.outputURL, manifestURL: result.manifestURL) {
-                    focusCropOutput(cropItem, replacing: item)
-                    statusMessage = "Saved crop \(result.outputURL.lastPathComponent) and showing cropped version."
+                let result: CropResult
+                if let operation {
+                    result = try await operation(item, normalizedRect, trigger, release)
                 } else {
+                    result = try await Task.detached(priority: .userInitiated) {
+                        try CropService().crop(item: item, normalizedRect: normalizedRect,
+                            trigger: trigger, appRelease: release,
+                            contextIsCurrent: { ArchiveByteReadPolicyContext.shared.generation == generation })
+                    }.value
+                }
+
+                guard origin.hasCurrentAuthority(self), !Task.isCancelled else { return }
+                let ownsPresentation = origin.hasCurrentPresentation(self)
+                let canIntegrate = !belongsToSession || currentSession?.id == origin.sessionID
+                let currentStatus = statusMessage
+                let cropItem = canIntegrate ? recordCropRelationship(for: item, cropURL: result.outputURL, manifestURL: result.manifestURL) : nil
+                if !ownsPresentation { statusMessage = currentStatus }
+                if let cropItem {
+                    if ownsPresentation {
+                        focusCropOutput(cropItem, replacing: item)
+                        statusMessage = "Saved crop \(result.outputURL.lastPathComponent) and showing cropped version."
+                    }
+                } else if ownsPresentation {
                     statusMessage = "Saved crop \(result.outputURL.lastPathComponent). Reload the folder if it is not visible."
                 }
-                refreshArchiveIndexAfterCrop(at: item.sourceURL)
+                refreshArchiveIndexAfterCrop(at: item.sourceURL, origin: ownsPresentation ? ImageOperationContext(self) : origin)
             } catch {
+                guard origin.hasCurrentPresentation(self), !Task.isCancelled else { return }
                 statusMessage = "Crop failed: \(error.localizedDescription)"
             }
-            cropOperationItemIDs.remove(item.id)
         }
+        return true
     }
 
     func openCropLinkedPreview(for itemID: UUID) {
@@ -5012,7 +5070,10 @@ final class AppState: ObservableObject {
     func toggleRawForCurrentMediaSelection() {
         guard canMutateImportSelection else { return }
         guard let currentSession else { return }
-        var updated = sessionMutationCoordinator.sessionByTogglingRawCompanions(currentSession, selectedIDs: currentSelectionMediaIDs())
+        let selectedIDs = comparingMediaItemIDs.isEmpty ? currentSelectionMediaIDs() : currentComparisonSelectionIDs()
+        let editableIDs = editableTriageMediaIDs(from: selectedIDs).filter { mediaItem(for: $0)?.companionFiles.isEmpty == false }
+        guard !editableIDs.isEmpty else { return }
+        var updated = sessionMutationCoordinator.sessionByTogglingRawCompanions(currentSession, selectedIDs: Set(editableIDs))
         updated.proposedWalks = []
         save(updated)
     }
@@ -5261,6 +5322,14 @@ final class AppState: ObservableObject {
             return "\(action) \(editableCount) item(s) \(suffix) \(lockedCount) copied item(s) were left unchanged."
         }
         return "\(action) \(editableCount) item(s) \(suffix)"
+    }
+
+    func canPerformCompareCommand(_ id: AppCommandID) -> Bool {
+        if id == .removeCompareItem { return focusedReviewItemID.map { comparingMediaItemIDs.contains($0) } == true }
+        guard canMutateImportSelection else { return false }
+        let editableIDs = editableTriageMediaIDs(from: currentComparisonSelectionIDs())
+        if id == .toggleRAW { return editableIDs.contains { mediaItem(for: $0)?.companionFiles.isEmpty == false } }
+        return !editableIDs.isEmpty
     }
 
     private func currentComparisonSelectionIDs() -> Set<UUID> {
@@ -6945,30 +7014,42 @@ final class AppState: ObservableObject {
     private func markCurrentComparisonSelectionForImport() {
         guard canMutateImportSelection else { return }
         let selectedIDs = currentComparisonSelectionIDs()
-        guard !selectedIDs.isEmpty else { return }
-        updateTriageState(for: selectedIDs, selectionState: .included)
-        statusMessage = "Selected \(selectedIDs.count) compare item(s) for import."
-        advanceAfterCompareTriageAction(for: selectedIDs)
+        let editableIDs = editableTriageMediaIDs(from: selectedIDs)
+        guard !editableIDs.isEmpty else {
+            statusMessage = "Selected compare item(s) are already copied; S/C/X is locked for them."
+            return
+        }
+        updateTriageState(for: editableIDs, selectionState: .included)
+        statusMessage = triageStatusMessage(action: "Selected", editableCount: editableIDs.count, totalCount: selectedIDs.count, suffix: "for import.")
+        advanceAfterCompareTriageAction(for: editableIDs)
     }
 
     private func markCurrentComparisonSelectionAsCandidate() {
         guard canMutateImportSelection else { return }
         let selectedIDs = currentComparisonSelectionIDs()
-        guard !selectedIDs.isEmpty else { return }
-        updateTriageState(for: selectedIDs, selectionState: .candidate)
-        statusMessage = "Marked \(selectedIDs.count) compare item(s) as candidates."
-        advanceAfterCompareTriageAction(for: selectedIDs)
+        let editableIDs = editableTriageMediaIDs(from: selectedIDs)
+        guard !editableIDs.isEmpty else {
+            statusMessage = "Selected compare item(s) are already copied; S/C/X is locked for them."
+            return
+        }
+        updateTriageState(for: editableIDs, selectionState: .candidate)
+        statusMessage = triageStatusMessage(action: "Marked", editableCount: editableIDs.count, totalCount: selectedIDs.count, suffix: "as candidates.")
+        advanceAfterCompareTriageAction(for: editableIDs)
     }
 
     private func excludeCurrentComparisonSelectionFromImport() {
         guard canMutateImportSelection else { return }
         let selectedIDs = currentComparisonSelectionIDs()
-        guard !selectedIDs.isEmpty else { return }
+        let editableIDs = editableTriageMediaIDs(from: selectedIDs)
+        guard !editableIDs.isEmpty else {
+            statusMessage = "Selected compare item(s) are already copied; S/C/X is locked for them."
+            return
+        }
 
         let originalIDs = comparingMediaItemIDs
         let focusedID = focusedReviewItemID
-        updateTriageState(for: selectedIDs, selectionState: .excluded)
-        comparingMediaItemIDs.removeAll { selectedIDs.contains($0) }
+        updateTriageState(for: editableIDs, selectionState: .excluded)
+        comparingMediaItemIDs.removeAll { editableIDs.contains($0) }
 
         if comparingMediaItemIDs.isEmpty {
             closeComparison()
@@ -6977,19 +7058,23 @@ final class AppState: ObservableObject {
         }
 
         compareGridColumnCount = min(compareGridColumnCount, max(comparingMediaItemIDs.count, 1))
-        if let replacementID = comparisonReplacementID(afterRemoving: selectedIDs, from: originalIDs, preferredCurrentID: focusedID) {
+        if let replacementID = comparisonReplacementID(afterRemoving: editableIDs, from: originalIDs, preferredCurrentID: focusedID) {
             focusComparisonItem(replacementID)
         }
-        statusMessage = "Excluded \(selectedIDs.count) compare item(s) and removed them from compare."
+        statusMessage = triageStatusMessage(action: "Excluded", editableCount: editableIDs.count, totalCount: selectedIDs.count, suffix: "and removed them from compare.")
     }
 
     private func unmarkCurrentComparisonSelectionForImport() {
         guard canMutateImportSelection else { return }
         let selectedIDs = currentComparisonSelectionIDs()
-        guard !selectedIDs.isEmpty else { return }
-        updateTriageState(for: selectedIDs, selectionState: .undecided)
-        statusMessage = "Cleared \(selectedIDs.count) compare item(s) back to undecided."
-        advanceAfterCompareTriageAction(for: selectedIDs)
+        let editableIDs = editableTriageMediaIDs(from: selectedIDs)
+        guard !editableIDs.isEmpty else {
+            statusMessage = "Selected compare item(s) are already copied; S/C/X is locked for them."
+            return
+        }
+        updateTriageState(for: editableIDs, selectionState: .undecided)
+        statusMessage = triageStatusMessage(action: "Cleared", editableCount: editableIDs.count, totalCount: selectedIDs.count, suffix: "back to undecided.")
+        advanceAfterCompareTriageAction(for: editableIDs)
     }
 
     private func removeFocusedComparisonItem() {
@@ -7184,12 +7269,12 @@ final class AppState: ObservableObject {
                 existingCrop.thumbnailCacheKey = cropItem.thumbnailCacheKey
                 existingCrop.cropRelationship = cropRelationship
                 session.mediaItems[cropIndex] = existingCrop
-                save(session, updateKind: .full)
+                guard save(session, updateKind: .full) else { return nil }
                 return existingCrop
             }
 
             session.mediaItems.append(cropItem)
-            save(session, updateKind: .full)
+            guard save(session, updateKind: .full) else { return nil }
             return cropItem
         }
 
@@ -7426,21 +7511,29 @@ final class AppState: ObservableObject {
         }
     }
 
-    private func refreshArchiveIndexAfterCrop(at url: URL) {
-        guard canWriteArchiveIndex,
+    private func refreshArchiveIndexAfterCrop(at url: URL, origin: ImageOperationContext) {
+        guard origin.hasCurrentAuthority(self), canWriteArchiveIndex,
               ArchiveIndexStore.archiveRelativePath(for: url, archiveRoot: settings.archiveRoot) != nil else { return }
         let folder = url.deletingLastPathComponent()
         let archiveRoot = settings.archiveRoot
-        let policy = archiveIndexWritePolicy
-        Task {
+        var policy = archiveIndexWritePolicy
+        let generation = ArchiveByteReadPolicyContext.shared.generation
+        policy.contextIsCurrent = { ArchiveByteReadPolicyContext.shared.generation == generation }
+        let refresh = testingCropIndexRefresh
+        Task { [weak self] in
+            guard let self, origin.hasCurrentAuthority(self), !Task.isCancelled else { return }
             do {
-                if try ArchiveIndexStore().loadWalkManifest(folder: folder, archiveRoot: archiveRoot) != nil {
+                if let refresh {
+                    try await refresh(folder, archiveRoot, policy)
+                } else if try ArchiveIndexStore().loadWalkManifest(folder: folder, archiveRoot: archiveRoot) != nil {
                     try await ArchiveIndexMutationQueue.shared.replaceWalkFolders([folder], archiveRoot: archiveRoot, policy: policy)
                 } else {
                     _ = try await ArchiveIndexMutationQueue.shared.rebuildIndex(archiveRoot: archiveRoot, policy: policy)
                 }
+                guard origin.hasCurrentAuthority(self), !Task.isCancelled else { return }
                 reloadArchiveCatalogue()
             } catch {
+                guard origin.hasCurrentPresentation(self), !Task.isCancelled else { return }
                 statusMessage = "Crop saved, but Archive Index refresh failed: \(error.localizedDescription)"
             }
         }

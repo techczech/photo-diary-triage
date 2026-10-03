@@ -198,9 +198,10 @@ struct ArchiveIndexRebuildResult: Sendable {
 
 struct ArchiveIndexWritePolicy: Sendable {
     var machineRole: ArchiveMachineRole
+    var contextIsCurrent: @Sendable () -> Bool = { true }
 
     var canWriteIndex: Bool {
-        machineRole == .mainArchive
+        contextIsCurrent() && machineRole == .mainArchive
     }
 
     var disabledHelp: String {
@@ -1416,7 +1417,8 @@ actor ArchiveIndexMutationQueue {
         }
 
         let task = Task<ArchiveIndexRebuildResult, Error> {
-            try store.rebuildIndex(archiveRoot: archiveRoot)
+            guard policy.canWriteIndex, !Task.isCancelled else { throw CancellationError() }
+            return try store.rebuildIndex(archiveRoot: archiveRoot)
         }
         rebuildTasks[key] = task
         defer { rebuildTasks[key] = nil }
