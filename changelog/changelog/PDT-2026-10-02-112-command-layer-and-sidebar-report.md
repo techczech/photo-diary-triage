@@ -19,14 +19,16 @@ cross-window focus/triage defects. Settings persistence errors remain visible.
 
 Files: AppCommandRegistry, CommandKeyboardRouting, CommandPaletteView,
 ArchiveSidebarNavigation, ReviewCommandInputView; AppCommands/AppState/Models/UIState;
-Content/Archive/Settings/Google/description/review views; five command test files, GooglePhotosTests and DescriptionTests;
+Content/Archive/Settings/Google/description/review views; five command test files, GooglePhotosTests, DescriptionTests and ImageCompletionTests;
+ImageCommandActions/ImageOperationContext/CropService/ArchiveIndex;
 APP_RELEASE.env and matching tracking. No new dependency.
 
-Full verification: 550 tests / 2 suites, 38.279 s: 76 command-file functions plus 14 new Google
-callback functions and 13 new description functions (103 additions since installed 0.7.15). Native
+Full verification: 574 tests / 2 suites, 44.515 s: 76 command-file functions plus 14 new Google
+callback functions, 13 new description functions and 24 image command/completion functions
+(127 additions since installed 0.7.15). Native
 hidden windows, real NSTextView/NSTextField editor and NSWindow event paths. Distinct
 pre-fix logs plus deliberate sheet/IME guard reversal prove the defects are detected.
-Final run: `/private/tmp/walkfolio-description-command-final-full.log`.
+Final run: `/private/tmp/walkfolio-image-command-final-full.log`.
 
 Not shipped. App target is 0.7.16/152 on `codex/walkfolio-command-layer`; installed
 0.7.15/151 remains closed. No headed/manual UI, live archive, private delivery or real
@@ -79,8 +81,7 @@ Changed: AppCommandRegistry, AppState, CommandKeyboardRouting, CommandLocalSurfa
 CommandPaletteView, ContentAuxiliaryViews, GooglePhotosViews/Delivery, existing command
 and GooglePhotos tests; same target APP_RELEASE.env remains 0.7.16/152.
 
-Remaining: Preview/Compare crop/columns/pan/zoom/original and crop-completion focus;
-review Map; toolbar/Inspector/selection/triage; Source/import actions; browser Back/filter/
+Remaining: review Map; toolbar/Inspector/selection/triage; Source/import actions; browser Back/filter/
 grid/thumbnail controls; native menu/help evidence. The full current inventory is in the spec.
 Final complete review/tests, signed bundle/body verification, closed install and exact-version
 acceptance remain. Original native/real-copy/provider gates stay open.
@@ -119,3 +120,47 @@ acceptance remain. Original native/real-copy/provider gates stay open.
   boundaries and hidden windows; no live data, authorisation or headed interaction.
 - Target remains 0.7.16/152, unbundled/uninstalled; installed 0.7.15/151 verified closed.
   Remaining image/view/toolbar/import/browser/menu/release work above stays active.
+
+## Image commands and completion checkpoint — 2026-10-03
+
+- Full suite: 574 tests / 2 suites, 44.515 s; 127 additions since installed
+  0.7.15. This continuation adds 24 image command/completion functions.
+- Actual containing Preview/Compare surfaces replace the one-point responders.
+  Captured controls cover manual/visible crop, Save/Cancel/Close, navigation, shared
+  zoom, pan lock, column sizing, triage/RAW, linked photo and displayed original download.
+  Compare card actions retain their own photo; keyboard selection and parent Save
+  retain parent intent. Unsupported child actions do not shadow parent commands.
+- Initial attachment may acquire image focus; ordinary draft redraw never does.
+  Native hidden hosting covers actual containers, exact handlers and command inheritance.
+  Preview Inspector requires its current explicit handler in a registered Preview window.
+- Image authority captures Archive/Pictures/role generation before workers start.
+  Presentation revision rejects navigation, close/reopen and selection round trips.
+  Successfully saved crop A is retained without replacing current photo B, focus,
+  Compare membership or status. Index success/error publication respects the origin.
+- Explicit original download retains its displayed photo and request lifetime; Compare
+  download never opens Preview. Travel consent survives current-authority navigation.
+- Native canvas callbacks retain their target and attachment revision. Disposal and
+  replacement invalidate queued crop/zoom/viewport updates; consumed pan commands do
+  not replay. Synchronous interaction ownership makes Cancel/Fit win before redraw.
+  Geometry changes revoke retained Save commands; one drag still publishes its related
+  visible/manual/zoom updates together. Crop manifests verify the current rectangle.
+- Crop availability and backend acceptance share Copy/backup/import/read guards. Refused
+  Save retains its draft. Compare triage filters locked imported members before mutation,
+  removal or advancement; RAW additionally needs an editable companion.
+- Current-session Copy entry and retained confirmation wait for active crops. Manual
+  input also rechecks live eligibility before redraw while saving. Failed session save
+  cannot invent an integrated crop item; on-disk output remains available for reload,
+  and failure cannot replace another presentation's status.
+- Red evidence: initial completion/navigation run (6 functions/39 issues); crop-index
+  status and consumed-pan run (2/2); Copy/lifecycle locks (2/5); pre-redraw timing (2/6);
+  Copy/draft overlap (3/9). An unrelated eager cache-warning assertion was narrowed;
+  retained target/file/selection evidence remains. Corrected 19-function image focused
+  run and 4-function overlap/Inspector run pass. Final full suite:
+  /private/tmp/walkfolio-image-command-final-full.log.
+- Astra reviewed read-only; material findings reproduced and fixed, final focused
+  review clear. Synthetic JPEGs/manifests, delayed fake boundaries and hidden native
+  windows only. No headed interaction, live Archive, real model/provider or delivery.
+- Target 0.7.16/152 remains unbundled/uninstalled. Installed 0.7.15/151 stays closed.
+  Image implementation is complete for this slice. Remaining Map/toolbar/Inspector/
+  import/browser/native-menu inventory and final release work below/above stay active.
+  Original native/real-copy/migration/OneDrive/LM Studio/Google acceptance stays open.

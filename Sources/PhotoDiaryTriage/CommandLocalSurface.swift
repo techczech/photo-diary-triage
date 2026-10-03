@@ -26,13 +26,21 @@ struct LocalCommandHandle {
         authority = coordinator.appState.map(LocalCommandAuthority.init)
         windowRegistrationID = lease?.view?.window.flatMap { coordinator.registration(for: $0)?.instanceID }
     }
-    func run(_ id: AppCommandID) {
+    private func capturedInvocation() -> (CommandKeyboardCoordinator, CommandInvocation)? {
         guard let coordinator, let lease, let window = lease.view?.window,
               let state = coordinator.appState, let owner = coordinator.registration(for: window),
               authority == LocalCommandAuthority(state),
-              (windowRegistrationID ?? lease.firstOwnerRegistrationID) == owner.instanceID else { return }
+              (windowRegistrationID ?? lease.firstOwnerRegistrationID) == owner.instanceID else { return nil }
         let origin = CommandInvocation(window: window, scope: lease.scope, lease: lease, state: state,
             windowRegistrationID: owner.instanceID, requiresFocusedOwner: false, surfaces: surfaces)
+        return (coordinator, origin)
+    }
+    func isEnabled(_ id: AppCommandID) -> Bool {
+        guard let (coordinator, origin) = capturedInvocation() else { return false }
+        return coordinator.unavailableReason(id, invocation: origin) == nil
+    }
+    func run(_ id: AppCommandID) {
+        guard let (coordinator, origin) = capturedInvocation() else { return }
         coordinator.execute(id, invocation: origin)
     }
 }
@@ -46,13 +54,14 @@ struct CommandLocalSurface<Content: View>: NSViewRepresentable {
     let actions: [AppCommandID: SheetCommandAction]
     var ownsWindow = false
     var fillsAvailableHeight = false
+    var focusesOnAttachment = false
     @Environment(\.openSettings) private var openSettings
     @ViewBuilder let content: (LocalCommandHandle) -> Content
 
     func makeNSView(context: Context) -> CommandLocalSurfaceView { CommandLocalSurfaceView() }
     func updateNSView(_ view: CommandLocalSurfaceView, context: Context) {
         view.renderContent = { AnyView(content($0)) }
-        view.configure(coordinator: coordinator, scope: scope, contextKey: contextKey, actions: actions, ownsWindow: ownsWindow, openSettings: { openSettings() })
+        view.configure(coordinator: coordinator, scope: scope, contextKey: contextKey, actions: actions, ownsWindow: ownsWindow, focusesOnAttachment: focusesOnAttachment, openSettings: { openSettings() })
     }
     func sizeThatFits(_ proposal: ProposedViewSize, nsView view: CommandLocalSurfaceView, context: Context) -> CGSize? {
         let measured = view.measure(width: proposal.width.flatMap { $0.isFinite ? $0 : nil })
@@ -70,6 +79,8 @@ final class CommandLocalSurfaceView: NSView {
     private let token = UUID(), windowToken = UUID()
     private weak var registeredWindow: NSWindow?
     private var ownsWindow = false
+    private var focusesOnAttachment = false
+    private weak var focusRequestedWindow: NSWindow?
     private var openSettings: (() -> Void)?
     private var lease: CommandSurfaceLease?
     private var contextKey: String?
@@ -95,9 +106,9 @@ final class CommandLocalSurfaceView: NSView {
 
     @discardableResult
     func configure(coordinator: CommandKeyboardCoordinator, scope: AppCommandScope, contextKey: String,
-                   actions: [AppCommandID: SheetCommandAction], ownsWindow: Bool = false, openSettings: (() -> Void)? = nil) -> LocalCommandHandle {
+                   actions: [AppCommandID: SheetCommandAction], ownsWindow: Bool = false, focusesOnAttachment: Bool = false, openSettings: (() -> Void)? = nil) -> LocalCommandHandle {
         if self.coordinator !== coordinator || self.ownsWindow != ownsWindow { unregister() }
-        self.coordinator = coordinator; self.ownsWindow = ownsWindow; self.openSettings = openSettings
+        self.coordinator = coordinator; self.ownsWindow = ownsWindow; self.focusesOnAttachment = focusesOnAttachment; self.openSettings = openSettings
         registerOwnedWindow(scope: scope)
         let owner = window.flatMap { coordinator.registration(for: $0)?.instanceID }
         if self.scope != scope || self.contextKey != contextKey
@@ -114,6 +125,9 @@ final class CommandLocalSurfaceView: NSView {
         }
         register()
         let handle = LocalCommandHandle(coordinator: coordinator, lease: lease)
+        if focusesOnAttachment, let window, focusRequestedWindow !== window {
+            focusRequestedWindow = window; coordinator.requestFocus(scope: scope, in: window)
+        }
         if let renderContent { hostedContent = renderContent(handle); applyMeasuredWidth(); invalidateIntrinsicContentSize() }
         return handle
     }
@@ -128,12 +142,12 @@ final class CommandLocalSurfaceView: NSView {
     }
     private func unregisterLease() { coordinator?.unregisterSurface(token); lease = nil }
     func unregister() {
-        unregisterLease(); coordinator?.unregisterWindow(windowToken); registeredWindow = nil
+        unregisterLease(); coordinator?.unregisterWindow(windowToken); registeredWindow = nil; focusRequestedWindow = nil
     }
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if window == nil { unregister() } else if let coordinator, let contextKey {
-            configure(coordinator: coordinator, scope: scope, contextKey: contextKey, actions: actions, ownsWindow: ownsWindow, openSettings: openSettings)
+            configure(coordinator: coordinator, scope: scope, contextKey: contextKey, actions: actions, ownsWindow: ownsWindow, focusesOnAttachment: focusesOnAttachment, openSettings: openSettings)
         }
     }
     override func performKeyEquivalent(with event: NSEvent) -> Bool {

@@ -84,11 +84,11 @@ struct WalkCommitEditorSheet: View {
 
     var body: some View {
         let reviewed = editor
-        let contextKey = walkCommitCommandContextKey(reviewed)
+        let contextKey = localCommandContextKey([walkCommitCommandContextKey(reviewed), String(appState.hasCropInCurrentSession)])
         CommandLocalSurface(coordinator: appState.commandCoordinator, scope: .form, contextKey: contextKey,
             actions: [
                 .closeSheet: .init(run: { guard appState.presentationState.snapshot.activeWalkCommitEditor?.id == reviewed.id else { return }; appState.dismissWalkCommitEditor() }),
-                .confirmSheet: .init(enabled: !reviewed.walks.isEmpty && !reviewed.walks.contains { $0.title.nonEmpty == nil || $0.mediaItemIDs.isEmpty }, run: {
+                .confirmSheet: .init(enabled: !appState.hasCropInCurrentSession && !reviewed.walks.isEmpty && !reviewed.walks.contains { $0.title.nonEmpty == nil || $0.mediaItemIDs.isEmpty }, run: {
                     guard appState.presentationState.snapshot.activeWalkCommitEditor?.id == reviewed.id else { return }
                     appState.updateWalkCommitEditor(reviewed); appState.confirmWalkCommit()
                 })
@@ -104,6 +104,7 @@ struct WalkCommitEditorSheet: View {
                 }
                 Spacer()
                 Button("Cancel") { commands.run(.closeSheet) }
+                .disabled(!commands.isEnabled(.closeSheet))
                 .commandShortcutHint(.closeSheet, appState: appState, scope: .form, help: "Cancel this copy plan")
             }
 
@@ -121,7 +122,9 @@ struct WalkCommitEditorSheet: View {
                     .foregroundStyle(.secondary)
                 Spacer()
                 Button("Cancel") { commands.run(.closeSheet) }
+                .disabled(!commands.isEnabled(.closeSheet))
                 Button("Copy To Archive") { commands.run(.confirmSheet) }
+                .disabled(!commands.isEnabled(.confirmSheet))
                 .commandShortcutHint(.confirmSheet, appState: appState, scope: .form, help: "Confirm this reviewed copy plan")
                 .disabled(editor.walks.isEmpty || editor.walks.contains { $0.title.nonEmpty == nil || $0.mediaItemIDs.isEmpty })
             }
@@ -161,10 +164,12 @@ struct WalkCommitEditorSheet: View {
 
             HStack {
                 Button("Merge With Previous") { commands.run(.mergeWalkProposal) }
+                .disabled(!commands.isEnabled(.mergeWalkProposal))
                 .commandShortcutHint(.mergeWalkProposal, appState: appState, scope: .walkProposal, help: "Merge this row with the previous Walk")
                 .disabled(reviewed.walks.first?.id == walkID)
 
                 Button("Split") { commands.run(.splitWalkProposal) }
+                .disabled(!commands.isEnabled(.splitWalkProposal))
                 .commandShortcutHint(.splitWalkProposal, appState: appState, scope: .walkProposal, help: "Split this proposed Walk")
                 .disabled(walk.wrappedValue.mediaItemIDs.count < 2)
 
@@ -536,6 +541,7 @@ struct FullPhotoSheet: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var appState: AppState
     let item: MediaItem
+    @State private var interaction = ImageInteractionContext()
     @State private var zoom: CGFloat = 1
     @State private var viewport = CompareViewport.zero
     @State private var visibleCropRect = CropNormalizedRect.fullFrame
@@ -549,100 +555,11 @@ struct FullPhotoSheet: View {
     var body: some View {
         let displayItem = currentItem
 
+        CommandLocalSurface(coordinator: appState.commandCoordinator, scope: .preview,
+            contextKey: imageCommandContextKey(appState: appState, item: displayItem, visibleRect: visibleCropRect,
+                manualRect: pendingManualCropRect, extras: [String(Double(zoom)), String(interaction.commandRevision)]),
+            actions: commandActions(for: displayItem), ownsWindow: true, fillsAvailableHeight: true, focusesOnAttachment: true) { commands in
         ZStack {
-            ReviewKeyInputView(
-                appState: appState, commandScope: .preview,
-                isFocused: true,
-                onArrow: { dx, dy, extending in
-                    // While a crop is pending, arrows nudge the crop rect; Shift takes a larger step.
-                    if let rect = pendingManualCropRect {
-                        let step = extending ? 0.02 : 0.004
-                        pendingManualCropRect = CropSelectionGeometry.nudgedNormalizedRect(rect, dx: dx, dy: dy, step: step)
-                        return
-                    }
-                    if dx < 0 {
-                        appState.navigatePreview(by: -1)
-                    } else if dx > 0 {
-                        appState.navigatePreview(by: 1)
-                    }
-                },
-                onSectionArrow: { _, _ in },
-                onSectionExpandCollapse: { _ in },
-                onSingleKey: { key in
-                    switch key.uppercased() {
-                    case "S":
-                        appState.markPreviewItemForImport(displayItem.id)
-                    case "C":
-                        appState.markPreviewItemAsCandidate(displayItem.id)
-                    case "X":
-                        appState.excludePreviewItemFromImport(displayItem.id)
-                    case "D":
-                        appState.clearPreviewItemTriageState(displayItem.id)
-                    case "R":
-                        appState.toggleRawForPreviewItem(displayItem.id)
-                    default:
-                        break
-                    }
-                },
-                onPan: { dx, dy in
-                    guard zoom > 1 else { return }
-                    panCommand = ComparePanCommand(
-                        targetItemID: displayItem.id,
-                        dx: dx,
-                        dy: dy,
-                        revision: panCommand.revision &+ 1
-                    )
-                },
-                onSpace: { },
-                onOpen: {
-                    // Return commits a usable pending crop.
-                    if pendingManualCropRect?.isUsableCrop == true {
-                        applyManualCrop(for: displayItem)
-                    }
-                },
-                onCommandOpen: { },
-                onEscape: {
-                    if pendingManualCropRect != nil {
-                        cancelManualCrop()
-                    } else {
-                        dismiss()
-                    }
-                },
-                onSelectAll: {
-                    appState.selectFocusedReviewItemOnly()
-                },
-                onDeselectAll: {
-                    appState.deselectAllVisibleMedia()
-                },
-                onZoomIn: {
-                    zoom = min(4, zoom + 0.25)
-                },
-                onZoomOut: {
-                    zoom = max(0.25, zoom - 0.25)
-                },
-                onZoomReset: {
-                    zoom = 1
-                    viewport = .zero
-                },
-                onCropVisible: {
-                    cropVisibleArea(for: displayItem)
-                },
-                onToggleSidebar: {
-                    appState.toggleSidebarVisibility()
-                },
-                onToggleInspector: {
-                    appState.toggleDetailsInspector()
-                }
-            )
-            .frame(width: 1, height: 1)
-            .onChange(of: displayItem.id) { _, _ in
-                zoom = 1
-                viewport = .zero
-                panCommand = .idle
-                visibleCropRect = .fullFrame
-                pendingManualCropRect = nil
-            }
-
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
@@ -653,38 +570,37 @@ struct FullPhotoSheet: View {
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    previewTriageControls(for: displayItem)
-                    Button("Previous") {
-                        appState.navigatePreview(by: -1)
-                    }
+                    previewTriageControls(for: displayItem, commands: commands)
+                    Button("Previous") { commands.run(.previousPreviewPhoto) }
+                    .disabled(!commands.isEnabled(.previousPreviewPhoto))
                     .disabled(!appState.canNavigatePreviewBackward)
-                    .commandShortcutHint(.moveLeft, appState: appState, scope: .preview, help: "Show the previous visible photo")
+                    .commandShortcutHint(.previousPreviewPhoto, appState: appState, scope: .preview, help: "Show the previous visible photo")
 
-                    Button("Next") {
-                        appState.navigatePreview(by: 1)
-                    }
+                    Button("Next") { commands.run(.nextPreviewPhoto) }
+                    .disabled(!commands.isEnabled(.nextPreviewPhoto))
                     .disabled(!appState.canNavigatePreviewForward)
-                    .commandShortcutHint(.moveRight, appState: appState, scope: .preview, help: "Show the next visible photo")
+                    .commandShortcutHint(.nextPreviewPhoto, appState: appState, scope: .preview, help: "Show the next visible photo")
 
-                    ZoomToolbar(appState: appState, scope: .preview, zoom: $zoom)
-                    cropControls(for: displayItem)
-                    Button("Close") {
-                        dismiss()
-                    }
-                        .commandShortcutHint(.closeSurface, appState: appState, scope: .preview, help: "Close preview")
+                    ZoomToolbar(appState: appState, scope: .preview, zoom: $zoom, commands: commands)
+                    cropControls(for: displayItem, commands: commands)
+                    Button("Close") { commands.run(.closeImageSurface) }
+                    .disabled(!commands.isEnabled(.closeImageSurface))
+                        .commandShortcutHint(.closeImageSurface, appState: appState, scope: .preview, help: "Close preview")
                 }
 
                 FullPhotoPreviewCanvas(
                     appState: appState,
                     item: displayItem,
-                    zoom: $zoom,
-                    viewport: $viewport,
-                    visibleCropRect: $visibleCropRect,
+                    commands: commands,
+                    interaction: interaction,
+                    zoom: imageTrackedBinding($zoom, interaction: interaction),
+                    viewport: imageTrackedBinding($viewport, interaction: interaction),
+                    visibleCropRect: imageTrackedBinding($visibleCropRect, interaction: interaction),
                     panCommand: panCommand,
-                    isCropSelectionEnabled: true,
-                    manualCropRect: $pendingManualCropRect,
+                    isCropSelectionEnabled: appState.canCropMediaItem(displayItem),
+                    manualCropRect: imageManualCropBinding($pendingManualCropRect, appState: appState, item: displayItem, interaction: interaction),
                     onManualCropSelectionChanged: { rect in
-                        pendingManualCropRect = rect
+                        guard appState.canCropMediaItem(displayItem) else { return }
                         if rect != nil {
                             appState.statusMessage = "Crop area selected — drag to adjust, then confirm with “Crop to Selection”."
                         }
@@ -694,9 +610,19 @@ struct FullPhotoSheet: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+            .onChange(of: displayItem.id) { _, _ in
+                interaction.supersedeCanvas()
+                zoom = 1
+                viewport = .zero
+                panCommand = .idle
+                visibleCropRect = .fullFrame
+                pendingManualCropRect = nil
+            }
+        }
         .padding(14)
         .frame(width: preferredSheetSize.width, height: preferredSheetSize.height)
         .onChange(of: item.id) { _, _ in
+            interaction.supersedeCanvas()
             zoom = 1
             viewport = .zero
             panCommand = .idle
@@ -705,13 +631,62 @@ struct FullPhotoSheet: View {
         }
     }
 
+    private func commandActions(for displayItem: MediaItem) -> [AppCommandID: SheetCommandAction] {
+        var actions = imagePhotoCommandActions(appState: appState, item: displayItem)
+        actions.merge(imageCropCommandActions(appState: appState, item: displayItem, visibleRect: visibleCropRect,
+            manualRect: pendingManualCropRect, onManualSaved: {
+                interaction.supersedeCanvas(); pendingManualCropRect = nil
+            }, onCancel: cancelManualCrop)) { _, new in new }
+        func arrow(_ dx: Int, _ dy: Int, _ extending: Bool) {
+            if let rect = pendingManualCropRect {
+                interaction.supersedeCanvas()
+                let step = extending ? 0.02 : 0.004
+                pendingManualCropRect = CropSelectionGeometry.nudgedNormalizedRect(rect, dx: dx, dy: dy, step: step)
+            } else if dx != 0 {
+                appState.navigatePreview(by: dx < 0 ? -1 : 1)
+            }
+        }
+        func pan(_ dx: Int, _ dy: Int) {
+            guard zoom > 1 else { return }
+            interaction.supersedeCanvas()
+            panCommand = ComparePanCommand(targetItemID: displayItem.id, dx: dx, dy: dy, revision: panCommand.revision &+ 1)
+        }
+        actions[.moveLeft] = .init(enabled: pendingManualCropRect != nil || appState.canNavigatePreviewBackward, run: { arrow(-1, 0, false) })
+        actions[.moveRight] = .init(enabled: pendingManualCropRect != nil || appState.canNavigatePreviewForward, run: { arrow(1, 0, false) })
+        actions[.moveUp] = .init(enabled: pendingManualCropRect != nil, run: { arrow(0, -1, false) })
+        actions[.moveDown] = .init(enabled: pendingManualCropRect != nil, run: { arrow(0, 1, false) })
+        actions[.extendLeft] = .init(enabled: pendingManualCropRect != nil || appState.canNavigatePreviewBackward, run: { arrow(-1, 0, true) })
+        actions[.extendRight] = .init(enabled: pendingManualCropRect != nil || appState.canNavigatePreviewForward, run: { arrow(1, 0, true) })
+        actions[.extendUp] = .init(enabled: pendingManualCropRect != nil, run: { arrow(0, -1, true) })
+        actions[.extendDown] = .init(enabled: pendingManualCropRect != nil, run: { arrow(0, 1, true) })
+        actions[.panLeft] = .init(enabled: zoom > 1, run: { pan(-1, 0) })
+        actions[.panRight] = .init(enabled: zoom > 1, run: { pan(1, 0) })
+        actions[.panUp] = .init(enabled: zoom > 1, run: { pan(0, -1) })
+        actions[.panDown] = .init(enabled: zoom > 1, run: { pan(0, 1) })
+        actions[.closeSurface] = .init(run: { if pendingManualCropRect != nil { cancelManualCrop() } else { closePreview() } })
+        actions[.selectAll] = .init(run: { appState.focusedReviewItemID = displayItem.id; appState.selectedMediaItemIDs = [displayItem.id] })
+        actions[.deselectAll] = .init(run: { appState.deselectAllVisibleMedia() })
+        actions[.zoomIn] = .init(enabled: zoom < 4, run: { interaction.supersedeCanvas(); zoom = min(4, zoom + 0.25) })
+        actions[.zoomOut] = .init(enabled: zoom > 0.25, run: { interaction.supersedeCanvas(); zoom = max(0.25, zoom - 0.25) })
+        actions[.zoomReset] = .init(run: { interaction.supersedeCanvas(); zoom = 1; viewport = .zero })
+        actions[.toggleSidebar] = .init(run: { appState.toggleSidebarVisibility() })
+        actions[.toggleInspector] = .init(run: { appState.toggleDetailsInspector() })
+        actions[.activateFocused] = actions[.saveManualCrop]
+        actions[.previousPreviewPhoto] = .init(enabled: appState.canNavigatePreviewBackward, run: { appState.navigatePreview(by: -1) })
+        actions[.nextPreviewPhoto] = .init(enabled: appState.canNavigatePreviewForward, run: { appState.navigatePreview(by: 1) })
+        actions[.closeImageSurface] = .init(run: closePreview)
+        return imageOwnedCommandActions(appState: appState, actions: actions, isCurrent: interaction.commandOwnership())
+    }
+
+    private func closePreview() { appState.previewingMediaItemID = nil; dismiss() }
+
     @ViewBuilder
-    private func cropControls(for item: MediaItem) -> some View {
+    private func cropControls(for item: MediaItem, commands: LocalCommandHandle) -> some View {
         let isSavingCrop = appState.isCropInProgress(for: item)
 
         HStack(spacing: 6) {
             Button {
-                cropVisibleArea(for: item)
+                commands.run(.cropVisible)
             } label: {
                 if isSavingCrop {
                     HStack(spacing: 6) {
@@ -723,6 +698,7 @@ struct FullPhotoSheet: View {
                     Label("Crop Visible", systemImage: "crop")
                 }
             }
+            .disabled(!commands.isEnabled(.cropVisible))
             .buttonStyle(.bordered)
             .controlSize(.small)
             .disabled(isSavingCrop || visibleCropRect.isEffectivelyFullFrame)
@@ -730,49 +706,39 @@ struct FullPhotoSheet: View {
 
             if pendingManualCropRect != nil {
                 Button {
-                    applyManualCrop(for: item)
+                    commands.run(.saveManualCrop)
                 } label: {
                     Label("Crop", systemImage: "crop")
                 }
+                .disabled(!commands.isEnabled(.saveManualCrop))
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
                 .disabled(isSavingCrop || pendingManualCropRect?.isUsableCrop != true)
-                .commandShortcutHint(.activateFocused, appState: appState, scope: .preview, help: "Crop to the selected rectangle")
+                .commandShortcutHint(.saveManualCrop, appState: appState, scope: .preview, help: "Crop to the selected rectangle")
 
                 Button {
-                    cancelManualCrop()
+                    commands.run(.cancelManualCrop)
                 } label: {
                     Image(systemName: "xmark")
                 }
+                .disabled(!commands.isEnabled(.cancelManualCrop))
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .commandShortcutHint(.closeSurface, appState: appState, scope: .preview, help: "Clear the crop selection")
+                .commandShortcutHint(.cancelManualCrop, appState: appState, scope: .preview, help: "Clear the crop selection")
             }
         }
     }
 
-    private func cropVisibleArea(for item: MediaItem) {
-        guard !appState.isCropInProgress(for: item) else { return }
-        appState.cropMediaItem(item, normalizedRect: visibleCropRect, trigger: .visibleZoom)
-    }
 
-    private func applyManualCrop(for item: MediaItem) {
-        guard let rect = pendingManualCropRect, rect.isUsableCrop else {
-            appState.statusMessage = "Select a crop area before saving."
-            return
-        }
-        guard !appState.isCropInProgress(for: item) else { return }
-        appState.cropMediaItem(item, normalizedRect: rect, trigger: .manualDrag)
-        pendingManualCropRect = nil
-    }
 
     private func cancelManualCrop() {
+        interaction.supersedeCanvas()
         pendingManualCropRect = nil
         appState.statusMessage = "Cleared crop selection."
     }
 
     @ViewBuilder
-    private func previewTriageControls(for item: MediaItem) -> some View {
+    private func previewTriageControls(for item: MediaItem, commands: LocalCommandHandle) -> some View {
         let canEdit = appState.canMutateImportSelection && !item.lifecycleState.isImportedOrBeyond
 
         HStack(spacing: 6) {
@@ -785,10 +751,11 @@ struct FullPhotoSheet: View {
 
             if let cropRelationship = item.cropRelationship {
                 Button {
-                    appState.openCropLinkedPreview(for: item.id)
+                    commands.run(.openLinkedPhoto)
                 } label: {
                     Label(cropRelationship.badgeLabel, systemImage: cropRelationship.role == .crop ? "crop" : "photo.badge.plus")
                 }
+                .disabled(!commands.isEnabled(.openLinkedPhoto))
                 .buttonStyle(.borderless)
                 .controlSize(.small)
                 .foregroundStyle(cropRelationship.role == .crop ? Color.purple.opacity(0.95) : Color.teal.opacity(0.95))
@@ -797,24 +764,27 @@ struct FullPhotoSheet: View {
 
             if appState.canMutateImportSelection {
                 Button("S") {
-                    appState.markPreviewItemForImport(item.id)
+                    commands.run(.markIncluded)
                 }
+                .disabled(!commands.isEnabled(.markIncluded))
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .disabled(!canEdit || item.selectionState.isIncluded)
                 .commandShortcutHint(.markIncluded, appState: appState, scope: .preview, help: "Select this photo for import")
 
                 Button("C") {
-                    appState.markPreviewItemAsCandidate(item.id)
+                    commands.run(.markCandidate)
                 }
+                .disabled(!commands.isEnabled(.markCandidate))
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .disabled(!canEdit || item.selectionState.isCandidate)
                 .commandShortcutHint(.markCandidate, appState: appState, scope: .preview, help: "Mark this photo as candidate")
 
                 Button("X") {
-                    appState.excludePreviewItemFromImport(item.id)
+                    commands.run(.markExcluded)
                 }
+                .disabled(!commands.isEnabled(.markExcluded))
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .disabled(!canEdit || item.selectionState.isExcluded)
@@ -822,8 +792,9 @@ struct FullPhotoSheet: View {
 
                 if !item.selectionState.isUndecided {
                     Button("D") {
-                        appState.clearPreviewItemTriageState(item.id)
+                        commands.run(.clearTriage)
                     }
+                    .disabled(!commands.isEnabled(.clearTriage))
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .disabled(!canEdit)
@@ -833,16 +804,18 @@ struct FullPhotoSheet: View {
                 if !item.companionFiles.isEmpty {
                     if item.importRawCompanions {
                         Button("R") {
-                            appState.toggleRawForPreviewItem(item.id)
+                            commands.run(.toggleRAW)
                         }
+                        .disabled(!commands.isEnabled(.toggleRAW))
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
                         .disabled(!canEdit)
                         .commandShortcutHint(.toggleRAW, appState: appState, scope: .preview, help: "Toggle RAW companion import for this photo")
                     } else {
                         Button("R") {
-                            appState.toggleRawForPreviewItem(item.id)
+                            commands.run(.toggleRAW)
                         }
+                        .disabled(!commands.isEnabled(.toggleRAW))
                         .buttonStyle(.bordered)
                         .controlSize(.small)
                         .disabled(!canEdit)
@@ -878,6 +851,8 @@ struct FullPhotoSheet: View {
 struct FullPhotoPreviewCanvas: View {
     @ObservedObject var appState: AppState
     let item: MediaItem
+    let commands: LocalCommandHandle
+    let interaction: ImageInteractionContext
     @Binding var zoom: CGFloat
     @Binding var viewport: CompareViewport
     @Binding var visibleCropRect: CropNormalizedRect
@@ -892,6 +867,8 @@ struct FullPhotoPreviewCanvas: View {
     init(
         appState: AppState,
         item: MediaItem,
+        commands: LocalCommandHandle,
+        interaction: ImageInteractionContext,
         zoom: Binding<CGFloat>,
         viewport: Binding<CompareViewport>,
         visibleCropRect: Binding<CropNormalizedRect>,
@@ -903,6 +880,8 @@ struct FullPhotoPreviewCanvas: View {
     ) {
         self.appState = appState
         self.item = item
+        self.commands = commands
+        self.interaction = interaction
         _zoom = zoom
         _viewport = viewport
         _visibleCropRect = visibleCropRect
@@ -919,6 +898,8 @@ struct FullPhotoPreviewCanvas: View {
             imageURL: item.sourceURL,
             zoom: $zoom,
             itemID: item.id,
+            contextKey: localCommandContextKey([appState.commandImagePresentationContextKey, String(interaction.canvasRevision)]),
+            contextIsCurrent: interaction.canvasOwnership(appState: appState),
             viewport: $viewport,
             visibleCropRect: $visibleCropRect,
             panCommand: panCommand,
@@ -929,7 +910,7 @@ struct FullPhotoPreviewCanvas: View {
             placeholderImage: thumbnailSlot.image,
             isByteReadBlocked: appState.isArchiveByteReadBlocked(for: item),
             downloadToView: {
-                appState.downloadArchiveItemForViewing(item)
+                commands.run(.downloadDisplayedOriginal)
             }
         )
         .task(id: item.id) {
@@ -943,6 +924,7 @@ struct CompareSheet: View {
     let appState: AppState
     @ObservedObject var state: CompareState
     let onClose: () -> Void
+    @State private var interaction = ImageInteractionContext()
     @State private var zoom: CGFloat = 1
     @State private var isPanLocked = true
     @State private var synchronizedViewport = CompareViewport.zero
@@ -955,73 +937,12 @@ struct CompareSheet: View {
         let snapshot = state.snapshot
         let scrollTargetID = snapshot.preferredScrollTargetID
 
+        CommandLocalSurface(coordinator: appState.commandCoordinator, scope: .compare,
+            contextKey: imageCommandContextKey(appState: appState, item: snapshot.items.first { $0.id == snapshot.preferredScrollTargetID }?.item,
+                visibleRect: focusedVisibleCrop(in: snapshot) ?? .fullFrame, manualRect: focusedPendingManualCrop(in: snapshot),
+                extras: [String(Double(zoom)), String(isPanLocked), String(isManualCropEnabled), String(snapshot.gridColumnCount), String(interaction.commandRevision)]),
+            actions: commandActions(snapshot: snapshot), fillsAvailableHeight: true, focusesOnAttachment: true) { commands in
         VStack(alignment: .leading, spacing: 18) {
-            ReviewKeyInputView(
-                appState: appState, commandScope: .compare,
-                isFocused: !snapshot.items.isEmpty,
-                onArrow: { dx, dy, _ in
-                    appState.moveComparisonFocus(dx: dx, dy: dy)
-                },
-                onSectionArrow: { _, _ in },
-                onSectionExpandCollapse: { _ in },
-                onSingleKey: { key in
-                    appState.performCompareShortcut(key)
-                },
-                onPan: { dx, dy in
-                    if isPanLocked {
-                        synchronizedViewport = synchronizedViewport.nudged(dx: dx, dy: dy)
-                    } else if let targetItemID = scrollTargetID {
-                        panCommand = ComparePanCommand(
-                            targetItemID: targetItemID,
-                            dx: dx,
-                            dy: dy,
-                            revision: panCommand.revision &+ 1
-                        )
-                    }
-                },
-                onSpace: {
-                    appState.toggleFocusedReviewItemSelection()
-                },
-                onOpen: {
-                    appState.openFocusedReviewItem()
-                },
-                onCommandOpen: {
-                    appState.openFocusedReviewItem()
-                },
-                onEscape: {
-                    if isManualCropEnabled {
-                        cancelCompareManualCrop()
-                    } else {
-                        onClose()
-                    }
-                },
-                onSelectAll: {
-                    appState.selectAllComparisonItems()
-                },
-                onDeselectAll: {
-                    appState.deselectComparisonItems()
-                },
-                onZoomIn: {
-                    zoom = min(4, zoom + 0.25)
-                },
-                onZoomOut: {
-                    zoom = max(0.25, zoom - 0.25)
-                },
-                onZoomReset: {
-                    zoom = 1
-                },
-                onCropVisible: {
-                    cropFocusedVisibleArea(snapshot: snapshot)
-                },
-                onToggleSidebar: {
-                    appState.toggleSidebarVisibility()
-                },
-                onToggleInspector: {
-                    appState.toggleDetailsInspector()
-                }
-            )
-            .frame(width: 1, height: 1)
-
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(snapshot.title)
@@ -1031,14 +952,14 @@ struct CompareSheet: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                compareColumnControls
-                Toggle("Lock Pan", isOn: $isPanLocked)
+                compareColumnControls(commands: commands)
+                Toggle("Lock Pan", isOn: Binding(get: { isPanLocked }, set: { _ in commands.run(.toggleComparePanLock) }))
                     .toggleStyle(.switch)
                     .controlSize(.small)
                     .help("Keep compare items panned to the same relative detail area")
-                ZoomToolbar(appState: appState, scope: .compare, zoom: $zoom)
+                ZoomToolbar(appState: appState, scope: .compare, zoom: $zoom, commands: commands)
                 Button {
-                    cropFocusedVisibleArea(snapshot: snapshot)
+                    commands.run(.cropVisible)
                 } label: {
                     if focusedCropIsSaving(in: snapshot) {
                         HStack(spacing: 6) {
@@ -1050,12 +971,13 @@ struct CompareSheet: View {
                         Label("Crop Focus", systemImage: "crop")
                     }
                 }
+                .disabled(!commands.isEnabled(.cropVisible))
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
                 .disabled(focusedCropIsSaving(in: snapshot) || (focusedVisibleCrop(in: snapshot)?.isEffectivelyFullFrame ?? true))
                 .commandShortcutHint(.cropVisible, appState: appState, scope: .compare, help: "Save a crop from the focused compare image")
 
-                Toggle(isOn: $isManualCropEnabled) {
+                Toggle(isOn: Binding(get: { isManualCropEnabled }, set: { _ in commands.run(.toggleManualCrop) })) {
                     Label("Drag Crop", systemImage: "selection.pin.in.out")
                 }
                 .toggleStyle(.button)
@@ -1065,29 +987,30 @@ struct CompareSheet: View {
 
                 if isManualCropEnabled || !pendingManualCropRects.isEmpty {
                     Button {
-                        applyFocusedManualCrop(snapshot: snapshot)
+                        commands.run(.saveManualCrop)
                     } label: {
                         Label("Save Crop", systemImage: "checkmark")
                     }
+                    .disabled(!commands.isEnabled(.saveManualCrop))
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                     .disabled(focusedPendingManualCrop(in: snapshot)?.isUsableCrop != true || focusedCropIsSaving(in: snapshot))
                     .help("Save the selected manual crop on the focused compare image")
 
                     Button {
-                        cancelCompareManualCrop()
+                        commands.run(.cancelManualCrop)
                     } label: {
                         Image(systemName: "xmark")
                     }
+                    .disabled(!commands.isEnabled(.cancelManualCrop))
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .help("Cancel pending manual crop selection")
                 }
 
-                Button("Close") {
-                    onClose()
-                }
-                .commandShortcutHint(.closeSurface, appState: appState, scope: .compare, help: "Close compare")
+                Button("Close") { commands.run(.closeImageSurface) }
+                .disabled(!commands.isEnabled(.closeImageSurface))
+                .commandShortcutHint(.closeImageSurface, appState: appState, scope: .compare, help: "Close compare")
             }
 
             if snapshot.items.isEmpty {
@@ -1116,22 +1039,23 @@ struct CompareSheet: View {
                                     CompareItemCard(
                                         appState: appState,
                                         snapshot: itemSnapshot,
-                                        zoom: $zoom,
-                                        synchronizedViewport: $synchronizedViewport,
+                                        interaction: interaction,
+                                        zoom: imageTrackedBinding($zoom, interaction: interaction),
+                                        synchronizedViewport: imageTrackedBinding($synchronizedViewport, interaction: interaction),
                                         panCommand: panCommand,
                                         isPanLocked: isPanLocked,
                                         imageWidth: CGFloat(metrics.imageWidth),
                                         isCropSelectionEnabled: isManualCropEnabled,
                                         visibleCropRect: Binding(
                                             get: { visibleCropRects[itemSnapshot.id] ?? .fullFrame },
-                                            set: { visibleCropRects[itemSnapshot.id] = $0 }
+                                            set: { if visibleCropRects[itemSnapshot.id] != $0 { interaction.geometryChanged(); visibleCropRects[itemSnapshot.id] = $0 } }
                                         ),
                                         manualCropRect: Binding(
                                             get: { pendingManualCropRects[itemSnapshot.id] },
-                                            set: { pendingManualCropRects[itemSnapshot.id] = $0 }
+                                            set: { if appState.canCropMediaItem(itemSnapshot.item), pendingManualCropRects[itemSnapshot.id] != $0 { interaction.geometryChanged(); pendingManualCropRects[itemSnapshot.id] = $0 } }
                                         ),
                                         onManualCropSelectionChanged: { rect in
-                                            pendingManualCropRects[itemSnapshot.id] = rect
+                                            guard appState.canCropMediaItem(itemSnapshot.item) else { return }
                                             appState.focusComparisonItem(itemSnapshot.id)
                                             if rect != nil {
                                                 appState.statusMessage = "Crop area selected on \(itemSnapshot.item.fileName). Adjust it, then Save Crop."
@@ -1161,6 +1085,7 @@ struct CompareSheet: View {
                 }
             }
         }
+        }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor))
@@ -1175,17 +1100,72 @@ struct CompareSheet: View {
         }
     }
 
-    private var compareColumnControls: some View {
+    private func commandActions(snapshot: CompareSnapshot) -> [AppCommandID: SheetCommandAction] {
+        let scrollTargetID = snapshot.preferredScrollTargetID
+        let focusedItem = snapshot.items.first { $0.id == scrollTargetID }?.item
+        var actions = imageCropCommandActions(appState: appState, item: focusedItem,
+            visibleRect: focusedVisibleCrop(in: snapshot) ?? .fullFrame, manualRect: focusedPendingManualCrop(in: snapshot),
+            onManualSaved: { interaction.supersedeCanvas(); if let scrollTargetID { pendingManualCropRects.removeValue(forKey: scrollTargetID) }; isManualCropEnabled = false },
+            onCancel: cancelCompareManualCrop)
+        actions[.cancelManualCrop] = .init(enabled: isManualCropEnabled || !pendingManualCropRects.isEmpty, run: cancelCompareManualCrop)
+        func arrow(_ dx: Int, _ dy: Int, _ extending: Bool) {
+            appState.moveComparisonFocus(dx: dx, dy: dy)
+        }
+        func pan(_ dx: Int, _ dy: Int) {
+            interaction.supersedeCanvas()
+            if isPanLocked { synchronizedViewport = synchronizedViewport.nudged(dx: dx, dy: dy) }
+            else if let targetItemID = scrollTargetID {
+                panCommand = ComparePanCommand(targetItemID: targetItemID, dx: dx, dy: dy, revision: panCommand.revision &+ 1)
+            }
+        }
+        actions[.moveLeft] = .init(enabled: !snapshot.items.isEmpty, run: { arrow(-1, 0, false) })
+        actions[.moveRight] = .init(enabled: !snapshot.items.isEmpty, run: { arrow(1, 0, false) })
+        actions[.moveUp] = .init(enabled: !snapshot.items.isEmpty, run: { arrow(0, -1, false) })
+        actions[.moveDown] = .init(enabled: !snapshot.items.isEmpty, run: { arrow(0, 1, false) })
+        actions[.extendLeft] = .init(enabled: !snapshot.items.isEmpty, run: { arrow(-1, 0, true) })
+        actions[.extendRight] = .init(enabled: !snapshot.items.isEmpty, run: { arrow(1, 0, true) })
+        actions[.extendUp] = .init(enabled: !snapshot.items.isEmpty, run: { arrow(0, -1, true) })
+        actions[.extendDown] = .init(enabled: !snapshot.items.isEmpty, run: { arrow(0, 1, true) })
+        actions[.panLeft] = .init(enabled: zoom > 1, run: { pan(-1, 0) })
+        actions[.panRight] = .init(enabled: zoom > 1, run: { pan(1, 0) })
+        actions[.panUp] = .init(enabled: zoom > 1, run: { pan(0, -1) })
+        actions[.panDown] = .init(enabled: zoom > 1, run: { pan(0, 1) })
+        actions[.closeSurface] = .init(run: { if isManualCropEnabled { cancelCompareManualCrop() } else { onClose() } })
+        actions[.selectAll] = .init(run: { appState.selectAllComparisonItems() })
+        actions[.deselectAll] = .init(run: { appState.deselectComparisonItems() })
+        actions[.zoomIn] = .init(enabled: zoom < 4, run: { interaction.supersedeCanvas(); zoom = min(4, zoom + 0.25) })
+        actions[.zoomOut] = .init(enabled: zoom > 0.25, run: { interaction.supersedeCanvas(); zoom = max(0.25, zoom - 0.25) })
+        actions[.zoomReset] = .init(run: { interaction.supersedeCanvas(); zoom = 1; synchronizedViewport = .zero })
+        actions[.toggleSidebar] = .init(run: { appState.toggleSidebarVisibility() })
+        actions[.toggleInspector] = .init(run: { appState.toggleDetailsInspector() })
+        for (id, key) in [(AppCommandID.markIncluded, "S"), (.markCandidate, "C"), (.markExcluded, "X"), (.clearTriage, "D"), (.toggleRAW, "R"), (.removeCompareItem, "Q")] {
+            actions[id] = .init(enabled: appState.canPerformCompareCommand(id), run: { appState.performCompareShortcut(key) })
+        }
+        actions[.activateFocused] = .init(enabled: focusedItem != nil, run: { appState.openFocusedReviewItem() })
+        actions[.open] = actions[.activateFocused]
+        actions[.toggleSelection] = .init(enabled: focusedItem != nil, run: { appState.toggleFocusedReviewItemSelection() })
+        actions[.closeImageSurface] = .init(run: onClose)
+        actions[.toggleManualCrop] = .init(enabled: !snapshot.items.contains { appState.isCropInProgress(for: $0.item) }, run: { interaction.supersedeCanvas(); isManualCropEnabled.toggle() })
+        actions[.toggleComparePanLock] = .init(run: { interaction.supersedeCanvas(); isPanLocked.toggle() })
+        actions[.fewerCompareColumns] = .init(enabled: snapshot.gridColumnCount > 1, run: { appState.decreaseCompareGridColumnCount() })
+        actions[.moreCompareColumns] = .init(enabled: snapshot.gridColumnCount < max(snapshot.items.count, 1), run: { appState.increaseCompareGridColumnCount() })
+        actions[.resetCompareColumns] = .init(enabled: snapshot.gridColumnCount != CompareGridMetrics.defaultColumnCount(for: snapshot.items.count), run: { appState.resetCompareGridColumnCount() })
+        actions[.viewOriginal] = .init(enabled: focusedItem.map { appState.isArchiveByteReadBlocked(for: $0) } == true, run: { if let focusedItem { appState.downloadArchiveItemForViewing(focusedItem) } })
+        return imageOwnedCommandActions(appState: appState, actions: actions, isCurrent: interaction.commandOwnership())
+    }
+
+    private func compareColumnControls(commands: LocalCommandHandle) -> some View {
         HStack(spacing: 6) {
             Text("Columns")
                 .font(.caption.weight(.medium))
                 .foregroundStyle(.secondary)
 
             Button {
-                appState.decreaseCompareGridColumnCount()
+                commands.run(.fewerCompareColumns)
             } label: {
                 Image(systemName: "minus")
             }
+            .disabled(!commands.isEnabled(.fewerCompareColumns))
             .disabled(state.snapshot.gridColumnCount <= 1)
 
             Text("\(min(state.snapshot.gridColumnCount, max(state.snapshot.items.count, 1)))")
@@ -1193,17 +1173,19 @@ struct CompareSheet: View {
                 .frame(width: 22)
 
             Button {
-                appState.increaseCompareGridColumnCount()
+                commands.run(.moreCompareColumns)
             } label: {
                 Image(systemName: "plus")
             }
+            .disabled(!commands.isEnabled(.moreCompareColumns))
             .disabled(state.snapshot.gridColumnCount >= max(state.snapshot.items.count, 1))
 
             Button {
-                appState.resetCompareGridColumnCount()
+                commands.run(.resetCompareColumns)
             } label: {
                 Image(systemName: "arrow.counterclockwise")
             }
+            .disabled(!commands.isEnabled(.resetCompareColumns))
             .disabled(state.snapshot.gridColumnCount == CompareGridMetrics.defaultColumnCount(for: state.snapshot.items.count))
         }
         .buttonStyle(.bordered)
@@ -1226,29 +1208,10 @@ struct CompareSheet: View {
         return appState.isCropInProgress(for: item)
     }
 
-    private func cropFocusedVisibleArea(snapshot: CompareSnapshot) {
-        guard let focusedID = snapshot.preferredScrollTargetID,
-              let item = snapshot.items.first(where: { $0.id == focusedID })?.item else { return }
-        guard !appState.isCropInProgress(for: item) else { return }
-        let rect = visibleCropRects[focusedID] ?? .fullFrame
-        appState.cropMediaItem(item, normalizedRect: rect, trigger: .visibleZoom)
-    }
 
-    private func applyFocusedManualCrop(snapshot: CompareSnapshot) {
-        guard let focusedID = snapshot.preferredScrollTargetID,
-              let item = snapshot.items.first(where: { $0.id == focusedID })?.item,
-              let rect = pendingManualCropRects[focusedID],
-              rect.isUsableCrop else {
-            appState.statusMessage = "Select a crop area before saving."
-            return
-        }
-        guard !appState.isCropInProgress(for: item) else { return }
-        appState.cropMediaItem(item, normalizedRect: rect, trigger: .manualDrag)
-        pendingManualCropRects.removeValue(forKey: focusedID)
-        isManualCropEnabled = false
-    }
 
     private func cancelCompareManualCrop() {
+        interaction.supersedeCanvas()
         pendingManualCropRects.removeAll()
         isManualCropEnabled = false
         appState.statusMessage = "Cancelled drag crop."
@@ -1258,6 +1221,7 @@ struct CompareSheet: View {
 struct CompareItemCard: View {
     let appState: AppState
     let snapshot: ReviewItemSnapshot
+    let interaction: ImageInteractionContext
     @Binding var zoom: CGFloat
     @Binding var synchronizedViewport: CompareViewport
     let panCommand: ComparePanCommand
@@ -1291,6 +1255,11 @@ struct CompareItemCard: View {
     var body: some View {
         let isSavingCrop = appState.isCropInProgress(for: item)
 
+        CommandLocalSurface(coordinator: appState.commandCoordinator, scope: .compareItem,
+            contextKey: imageCommandContextKey(appState: appState, item: item, visibleRect: visibleCropRect, manualRect: manualCropRect, extras: [String(interaction.commandRevision)]),
+            actions: imageOwnedCommandActions(appState: appState, actions: imagePhotoCommandActions(appState: appState, item: item, compareCard: true)
+                .merging(imageCropCommandActions(appState: appState, item: item, visibleRect: visibleCropRect,
+                    manualRect: nil, compareCard: true)) { _, new in new }, isCurrent: interaction.commandOwnership())) { commands in
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 6) {
                 Text(metadataSummary)
@@ -1307,10 +1276,11 @@ struct CompareItemCard: View {
 
                 if let cropRelationship = item.cropRelationship {
                     Button {
-                        appState.openCropLinkedPreview(for: item.id)
+                        commands.run(.openLinkedPhoto)
                     } label: {
                         Label(cropRelationship.badgeLabel, systemImage: cropRelationship.role == .crop ? "crop" : "photo.badge.plus")
                     }
+                    .disabled(!commands.isEnabled(.openLinkedPhoto))
                     .buttonStyle(.borderless)
                     .controlSize(.mini)
                     .foregroundStyle(cropRelationship.role == .crop ? Color.purple.opacity(0.95) : Color.teal.opacity(0.95))
@@ -1319,59 +1289,65 @@ struct CompareItemCard: View {
 
                 if appState.canMutateImportSelection {
                     Button("S") {
-                        appState.markComparisonItemForImport(item.id)
+                        commands.run(.includeDisplayedPhoto)
                     }
+                    .disabled(!commands.isEnabled(.includeDisplayedPhoto))
                     .buttonStyle(.bordered)
                     .controlSize(.mini)
                     .disabled(item.selectionState.isIncluded)
-                    .commandShortcutHint(.markIncluded, appState: appState, scope: .compare, help: "Select this item for import")
+                    .commandShortcutHint(.includeDisplayedPhoto, appState: appState, scope: .compareItem, help: "Select this item for import")
 
                     Button("C") {
-                        appState.markComparisonItemAsCandidate(item.id)
+                        commands.run(.candidateDisplayedPhoto)
                     }
+                    .disabled(!commands.isEnabled(.candidateDisplayedPhoto))
                     .buttonStyle(.bordered)
                     .controlSize(.mini)
                     .disabled(item.selectionState.isCandidate)
-                    .commandShortcutHint(.markCandidate, appState: appState, scope: .compare, help: "Mark this item as candidate")
+                    .commandShortcutHint(.candidateDisplayedPhoto, appState: appState, scope: .compareItem, help: "Mark this item as candidate")
 
                     Button("X") {
-                        appState.excludeComparisonItemFromImport(item.id)
+                        commands.run(.excludeDisplayedPhoto)
                     }
+                    .disabled(!commands.isEnabled(.excludeDisplayedPhoto))
                     .buttonStyle(.bordered)
                     .controlSize(.mini)
                     .disabled(item.selectionState.isExcluded)
-                    .commandShortcutHint(.markExcluded, appState: appState, scope: .compare, help: "Exclude this item from import")
+                    .commandShortcutHint(.excludeDisplayedPhoto, appState: appState, scope: .compareItem, help: "Exclude this item from import")
 
                     if !item.selectionState.isUndecided {
                         Button("D") {
-                            appState.clearComparisonItemTriageState(item.id)
+                            commands.run(.clearDisplayedPhotoTriage)
                         }
+                        .disabled(!commands.isEnabled(.clearDisplayedPhotoTriage))
                         .buttonStyle(.bordered)
                         .controlSize(.mini)
-                        .commandShortcutHint(.clearTriage, appState: appState, scope: .compare, help: "Clear this item back to undecided")
+                        .commandShortcutHint(.clearDisplayedPhotoTriage, appState: appState, scope: .compareItem, help: "Clear this item back to undecided")
                     }
 
                     if !item.companionFiles.isEmpty {
                         if item.importRawCompanions {
                             Button("R") {
-                                appState.setImportRawCompanions(for: item, enabled: false)
+                                commands.run(.toggleDisplayedPhotoRAW)
                             }
+                            .disabled(!commands.isEnabled(.toggleDisplayedPhotoRAW))
                             .buttonStyle(.borderedProminent)
                             .controlSize(.mini)
-                            .commandShortcutHint(.toggleRAW, appState: appState, scope: .compare, help: "Toggle RAW companions for this compare item")
+                            .commandShortcutHint(.toggleDisplayedPhotoRAW, appState: appState, scope: .compareItem, help: "Toggle RAW companions for this compare item")
                         } else {
                             Button("R") {
-                                appState.setImportRawCompanions(for: item, enabled: true)
+                                commands.run(.toggleDisplayedPhotoRAW)
                             }
+                            .disabled(!commands.isEnabled(.toggleDisplayedPhotoRAW))
                             .buttonStyle(.bordered)
                             .controlSize(.mini)
-                            .commandShortcutHint(.toggleRAW, appState: appState, scope: .compare, help: "Toggle RAW companions for this compare item")
+                            .commandShortcutHint(.toggleDisplayedPhotoRAW, appState: appState, scope: .compareItem, help: "Toggle RAW companions for this compare item")
                         }
                     }
                 }
 
                 Button {
-                    appState.cropMediaItem(item, normalizedRect: visibleCropRect, trigger: .visibleZoom)
+                    commands.run(.cropDisplayedPhoto)
                 } label: {
                     if isSavingCrop {
                         ProgressView()
@@ -1380,31 +1356,35 @@ struct CompareItemCard: View {
                         Image(systemName: "crop")
                     }
                 }
+                .disabled(!commands.isEnabled(.cropDisplayedPhoto))
                 .buttonStyle(.bordered)
                 .controlSize(.mini)
                 .disabled(isSavingCrop || visibleCropRect.isEffectivelyFullFrame)
-                .commandShortcutHint(.cropVisible, appState: appState, scope: .compare, help: "Crop the visible zoomed area when this item is focused")
+                .commandShortcutHint(.cropDisplayedPhoto, appState: appState, scope: .compareItem, help: "Crop the visible zoomed area when this item is focused")
 
                 Button {
-                    appState.removeItemFromComparison(item.id)
+                    commands.run(.removeDisplayedComparePhoto)
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                 }
+                .disabled(!commands.isEnabled(.removeDisplayedComparePhoto))
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .help("Remove this item from compare")
-                .commandShortcutHint(.removeCompareItem, appState: appState, scope: .compare, help: "Remove this item from compare (Q)", alignment: .topLeading)
+                .commandShortcutHint(.removeDisplayedComparePhoto, appState: appState, scope: .compareItem, help: "Remove this displayed item from compare", alignment: .topLeading)
             }
 
             LoadedLockedCompareImageCanvas(
                 appState: appState,
                 item: item,
+                commands: commands,
+                interaction: interaction,
                 zoom: $zoom,
                 synchronizedViewport: $synchronizedViewport,
                 panCommand: panCommand,
                 isPanLocked: isPanLocked,
                 visibleCropRect: $visibleCropRect,
-                isCropSelectionEnabled: isCropSelectionEnabled,
+                isCropSelectionEnabled: isCropSelectionEnabled && appState.canCropMediaItem(item),
                 manualCropRect: $manualCropRect,
                 onManualCropSelectionChanged: onManualCropSelectionChanged,
                 onManualCropRejected: onManualCropRejected
@@ -1430,6 +1410,7 @@ struct CompareItemCard: View {
                     .stroke(Color.accentColor, lineWidth: snapshot.isSelected ? 3 : 2)
             }
         }
+        }
     }
 
     private func statusBadgeColor(for selectionState: SelectionState) -> Color {
@@ -1450,22 +1431,26 @@ struct ZoomToolbar: View {
     let appState: AppState
     let scope: AppCommandScope
     @Binding var zoom: CGFloat
+    let commands: LocalCommandHandle
 
     var body: some View {
         HStack(spacing: 8) {
             Button("−") {
-                zoom = max(0.25, zoom - 0.25)
+                commands.run(.zoomOut)
             }
+            .disabled(!commands.isEnabled(.zoomOut))
             .commandShortcutHint(.zoomOut, appState: appState, scope: scope, help: "Zoom out")
 
             Button("Fit") {
-                zoom = 1
+                commands.run(.zoomReset)
             }
+            .disabled(!commands.isEnabled(.zoomReset))
             .commandShortcutHint(.zoomReset, appState: appState, scope: scope, help: "Fit image to container")
 
             Button("+") {
-                zoom = min(4, zoom + 0.25)
+                commands.run(.zoomIn)
             }
+            .disabled(!commands.isEnabled(.zoomIn))
             .commandShortcutHint(.zoomIn, appState: appState, scope: scope, help: "Zoom in")
 
             Text("\(Int((zoom * 100).rounded()))%")
@@ -1480,6 +1465,8 @@ struct ZoomableImageCanvas: View {
     let imageURL: URL
     @Binding var zoom: CGFloat
     let itemID: UUID
+    var contextKey: String = ""
+    var contextIsCurrent: () -> Bool = { true }
     @Binding var viewport: CompareViewport
     @Binding var visibleCropRect: CropNormalizedRect
     let panCommand: ComparePanCommand
@@ -1497,6 +1484,8 @@ struct ZoomableImageCanvas: View {
             if let image = imageModel.image, !isByteReadBlocked {
                 LockedCompareImageCanvas(
                     itemID: itemID,
+                    contextKey: contextKey,
+                    contextIsCurrent: contextIsCurrent,
                     image: image,
                     zoom: $zoom,
                     synchronizedViewport: $viewport,
@@ -1565,6 +1554,8 @@ struct ZoomableImageCanvas: View {
 struct LoadedLockedCompareImageCanvas: View {
     @ObservedObject var appState: AppState
     let item: MediaItem
+    let commands: LocalCommandHandle
+    let interaction: ImageInteractionContext
     @Binding var zoom: CGFloat
     @Binding var synchronizedViewport: CompareViewport
     let panCommand: ComparePanCommand
@@ -1580,6 +1571,8 @@ struct LoadedLockedCompareImageCanvas: View {
     init(
         appState: AppState,
         item: MediaItem,
+        commands: LocalCommandHandle,
+        interaction: ImageInteractionContext,
         zoom: Binding<CGFloat>,
         synchronizedViewport: Binding<CompareViewport>,
         panCommand: ComparePanCommand,
@@ -1592,6 +1585,8 @@ struct LoadedLockedCompareImageCanvas: View {
     ) {
         self.appState = appState
         self.item = item
+        self.commands = commands
+        self.interaction = interaction
         _zoom = zoom
         _synchronizedViewport = synchronizedViewport
         self.panCommand = panCommand
@@ -1609,6 +1604,8 @@ struct LoadedLockedCompareImageCanvas: View {
             if let image = imageModel.image, !appState.isArchiveByteReadBlocked(for: item) {
                 LockedCompareImageCanvas(
                     itemID: item.id,
+                    contextKey: localCommandContextKey([appState.commandImagePresentationContextKey, String(interaction.canvasRevision)]),
+                    contextIsCurrent: interaction.canvasOwnership(appState: appState),
                     image: image,
                     zoom: $zoom,
                     synchronizedViewport: $synchronizedViewport,
@@ -1622,7 +1619,7 @@ struct LoadedLockedCompareImageCanvas: View {
                 )
             } else if appState.isArchiveByteReadBlocked(for: item) {
                 CompareImagePlaceholder(image: thumbnailSlot.image, downloadToView: {
-                    appState.downloadArchiveItemForViewing(item)
+                    commands.run(.downloadDisplayedOriginal)
                 })
             } else {
                 CompareImagePlaceholder(image: thumbnailSlot.image)
@@ -1674,6 +1671,8 @@ struct CompareImagePlaceholder: View {
 
 struct LockedCompareImageCanvas: NSViewRepresentable {
     let itemID: UUID
+    var contextKey: String = ""
+    var contextIsCurrent: () -> Bool = { true }
     let image: NSImage
     @Binding var zoom: CGFloat
     @Binding var synchronizedViewport: CompareViewport
@@ -1706,7 +1705,10 @@ struct LockedCompareImageCanvas: NSViewRepresentable {
         nsView.onManualCropSelectionChanged = { rect in
             context.coordinator.updateManualCropSelection(rect)
         }
-        nsView.onManualCropRejected = onManualCropRejected
+        nsView.onManualCropRejected = {
+            guard self.contextIsCurrent() else { return }
+            self.onManualCropRejected()
+        }
         nsView.onZoomChanged = { nextZoom in
             context.coordinator.updateZoom(nextZoom)
         }
@@ -1714,8 +1716,23 @@ struct LockedCompareImageCanvas: NSViewRepresentable {
         context.coordinator.applyPanCommandIfNeeded()
     }
 
+    static func dismantleNSView(_ view: LockedCompareCanvasView, coordinator: Coordinator) {
+        coordinator.detach()
+        view.onVisibleCropChanged = nil; view.onManualCropSelectionChanged = nil
+        view.onZoomChanged = nil; view.onManualCropRejected = nil
+    }
+
     final class Coordinator: NSObject {
-        var parent: LockedCompareImageCanvas
+        var parent: LockedCompareImageCanvas {
+            didSet {
+                if parent.itemID != oldValue.itemID || parent.contextKey != oldValue.contextKey
+                    || parent.image !== oldValue.image || parent.isCropSelectionEnabled != oldValue.isCropSelectionEnabled {
+                    invalidatePendingCallbacks()
+                }
+            }
+        }
+        private var callbackRevision = 0
+        private var isAttached = true
         weak var scrollView: LockedCompareCanvasView?
         private var boundsObserver: NSObjectProtocol?
         private var isApplyingSynchronizedViewport = false
@@ -1735,7 +1752,28 @@ struct LockedCompareImageCanvas: NSViewRepresentable {
             }
         }
 
+        private func invalidatePendingCallbacks() {
+            callbackRevision &+= 1
+            lastAppliedViewport = .zero; lastAppliedDocumentSize = .zero
+            lastVisibleCropRect = .fullFrame; lastManualCropRect = nil
+        }
+
+        func detach() {
+            invalidatePendingCallbacks(); isAttached = false
+            if let boundsObserver { NotificationCenter.default.removeObserver(boundsObserver) }
+            boundsObserver = nil; scrollView = nil
+        }
+
+        private func publish(_ update: @escaping (LockedCompareImageCanvas) -> Void) {
+            let revision = callbackRevision, target = parent
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.isAttached, self.callbackRevision == revision, target.contextIsCurrent() else { return }
+                update(target)
+            }
+        }
+
         func attach(to scrollView: LockedCompareCanvasView) {
+            detach(); isAttached = true
             self.scrollView = scrollView
             scrollView.contentView.postsBoundsChangedNotifications = true
             boundsObserver = NotificationCenter.default.addObserver(
@@ -1774,24 +1812,20 @@ struct LockedCompareImageCanvas: NSViewRepresentable {
         func updateVisibleCrop(_ rect: CropNormalizedRect) {
             guard rect != lastVisibleCropRect else { return }
             lastVisibleCropRect = rect
-            DispatchQueue.main.async {
-                self.parent.visibleCropRect = rect
-            }
+            publish { target in target.visibleCropRect = rect }
         }
 
         func updateZoom(_ nextZoom: CGFloat) {
             guard abs(parent.zoom - nextZoom) > 0.0001 else { return }
-            DispatchQueue.main.async {
-                self.parent.zoom = nextZoom
-            }
+            publish { target in target.zoom = nextZoom }
         }
 
         func updateManualCropSelection(_ rect: CropNormalizedRect?) {
             guard rect != lastManualCropRect else { return }
             lastManualCropRect = rect
-            DispatchQueue.main.async {
-                self.parent.manualCropRect = rect
-                self.parent.onManualCropSelectionChanged(rect)
+            publish { target in
+                target.manualCropRect = rect
+                target.onManualCropSelectionChanged(rect)
             }
         }
 
@@ -1803,9 +1837,7 @@ struct LockedCompareImageCanvas: NSViewRepresentable {
             let viewport = scrollView.currentSynchronizedViewport()
             guard viewport != parent.synchronizedViewport else { return }
             lastAppliedViewport = viewport
-            DispatchQueue.main.async {
-                self.parent.synchronizedViewport = viewport
-            }
+            publish { target in target.synchronizedViewport = viewport }
         }
     }
 }
