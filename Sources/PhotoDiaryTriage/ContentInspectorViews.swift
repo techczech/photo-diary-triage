@@ -7,7 +7,7 @@ struct InspectorCollapsedRail: View {
     var body: some View {
         VStack(spacing: 12) {
             Button {
-                appState.toggleDetailsInspector()
+                appState.commandCoordinator.executeWindowControl(.toggleInspector)
             } label: {
                 Image(systemName: "sidebar.right")
                     .font(.headline)
@@ -54,7 +54,7 @@ struct DetailsInspectorView: View {
                                 .font(.title3.weight(.semibold))
                             Spacer()
                             Button {
-                                appState.toggleDetailsInspector()
+                                appState.commandCoordinator.executeWindowControl(.toggleInspector)
                             } label: {
                                 Image(systemName: "xmark.circle.fill")
                             }

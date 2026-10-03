@@ -67,7 +67,7 @@ struct AppShortcutOverride: Codable, Hashable, Sendable {
 
 enum AppCommandScope: String, CaseIterable, Hashable, Sendable {
     case main, settings, editor, review, preview, compare, archiveCards, archiveSidebar, sourceSidebar, commandPanel, helpPanel, shortcutCapture, form, formEditor, information, settingsEditor
-    case compareItem
+    case compareItem, sessionWorkflow
     case logDetails, logDetailsEditor, location, locationEditor, tripLabel, tripLabelEditor, photoLogActions, walkProposal, walkProposalEditor, googleJob, googleJobEditor, googleAlbum, googleAlbumEditor, googleAccount, googleAccountEditor
 
     var isTextEditing: Bool {
@@ -159,6 +159,7 @@ enum AppCommandID: String, CaseIterable, Codable, Hashable, Sendable {
     case newPhotoLog
     case compare
     case open
+    case openFocusedPhoto, clearArchiveFilters, deselectReviewPhotos
     case viewOriginal
     case goUp
     case deselectAll
@@ -266,6 +267,8 @@ struct AppCommandDefinition: Identifiable {
 @MainActor
 struct AppCommandRegistry {
     static let mainScopes: Set<AppCommandScope> = [.main, .review, .archiveCards, .archiveSidebar, .sourceSidebar]
+    static let sessionWorkflowIDs: Set<AppCommandID> = [.newPhotoLog, .copyIncluded, .openDestination, .confirmBackup, .cleanupSource]
+    static let sessionWorkflowScopes = mainScopes.union([.sessionWorkflow])
     static let imageScopes: Set<AppCommandScope> = [.review, .preview, .compare]
     static let allScopes = Set(AppCommandScope.allCases)
     static let reserved: [AppShortcut: AppCommandID] = [
@@ -332,17 +335,20 @@ struct AppCommandRegistry {
             .init(id: .clearTriage, title: "Clear selected photos to undecided", task: "Triage", scopes: mainScopes.union(imageScopes), defaults: [.init(.init(key: "i", modifiers: [.command, .shift]), scopes: mainScopes.union(imageScopes))], enabled: { s in s.canUnmarkSelectionForImport }, run: { s in s.unmarkCurrentSelectionForImport() }, needsSurfaceHandler: false),
             .init(id: .toggleRAW, title: "Toggle RAW companion import", task: "Triage", scopes: mainScopes.union(imageScopes), defaults: [.init(.init(key: "r", modifiers: [.command, .option]), scopes: mainScopes.union(imageScopes))], enabled: { s in s.canToggleRawForSelection }, run: { s in s.toggleRawForCurrentMediaSelection() }, needsSurfaceHandler: false),
             .init(id: .createPhotoLog, title: "Create Photo Log…", task: "Sources", scopes: mainScopes, defaults: [.init(.init(key: "w", modifiers: [.command, .shift]), scopes: mainScopes)], enabled: { s in s.canPresentPhotoLogCreation }, run: { s in s.presentPhotoLogCreation() }, needsSurfaceHandler: false),
-            .init(id: .newPhotoLog, title: "Start new Photo Log", task: "Sources", scopes: mainScopes, defaults: [], enabled: { s in s.canStartNewPhotoLogSession }, run: { s in s.startNewPhotoLogSession() }, needsSurfaceHandler: false),
+            .init(id: .newPhotoLog, title: "Start new Photo Log", task: "Sources", scopes: Self.sessionWorkflowScopes, defaults: [], enabled: { s in s.canStartNewPhotoLogSession }, run: { s in s.startNewPhotoLogSession() }, needsSurfaceHandler: false),
             .init(id: .compare, title: "Compare selected photos", task: "Review", scopes: mainScopes, defaults: [.init(.init(key: "c", modifiers: [.command, .shift]), scopes: mainScopes)], enabled: { s in s.canOpenComparison }, run: { s in s.openComparisonForCurrentSelection() }, needsSurfaceHandler: false),
             .init(id: .open, title: "Open current selection", task: "Navigation", scopes: mainScopes.union([.compare]), defaults: [.init(.init(key: "return", modifiers: [.command]), scopes: mainScopes.union([.compare]))], enabled: { s in s.canOpenCurrentSelection }, run: { s in s.openCurrentSelection() }, needsSurfaceHandler: false),
+            .init(id: .openFocusedPhoto, title: "Open focused photo preview", task: "Review", scopes: mainScopes, defaults: [], enabled: { s in s.focusedReviewItemID.map { !s.orderedMediaItems(for: [$0]).isEmpty } ?? false }, run: { s in s.openFocusedReviewItem() }),
+            .init(id: .clearArchiveFilters, title: "Clear Archive search and filters", task: "Archive", scopes: mainScopes, defaults: [], enabled: { s in s.workspaceMode == .archiveView }, run: { s in s.updateArchiveSearch(""); s.setArchiveKindFilter(.all); s.setArchiveYearFilter(nil) }),
             .init(id: .viewOriginal, title: "Download selected Archive photo to view", task: "Archive", scopes: mainScopes.union([.preview, .compare]), defaults: [.init(.init(key: "d", modifiers: [.command, .shift]), scopes: mainScopes.union([.preview, .compare]))], enabled: { s in s.canDownloadBlockedArchiveSelectionToView }, run: { s in s.downloadBlockedArchiveSelectionToView() }, needsSurfaceHandler: false),
             .init(id: .goUp, title: "Go to parent", task: "Navigation", scopes: mainScopes, defaults: [.init(.init(key: "u", modifiers: [.command, .option]), scopes: mainScopes)], enabled: { s in s.canNavigateToParent }, run: { s in s.navigateToParent() }, needsSurfaceHandler: false),
+            .init(id: .deselectReviewPhotos, title: "Deselect photos in review", task: "Review", scopes: mainScopes, defaults: [], enabled: { s in !s.selectedMediaItemIDs.isEmpty }, run: { s in s.deselectAllVisibleMedia() }),
             .init(id: .deselectAll, title: "Deselect all photos", task: "Review", scopes: mainScopes.union(imageScopes), defaults: [.init(.init(key: "a", modifiers: [.command, .shift]), scopes: mainScopes.union(imageScopes))], enabled: { s in s.canClearCurrentSelection }, run: { s in s.clearCurrentSelection() }, needsSurfaceHandler: false),
-            .init(id: .copyIncluded, title: "Copy included files into Archive", task: "Import", scopes: mainScopes, defaults: [.init(.init(key: "m", modifiers: [.command, .shift]), scopes: mainScopes)], enabled: { s in s.canCommitImport }, run: { s in s.commitImport() }, needsSurfaceHandler: false),
-            .init(id: .openDestination, title: "Open copied Archive folder", task: "Import", scopes: mainScopes, defaults: [], enabled: { s in s.canOpenArchiveDestination }, run: { s in s.openArchiveDestinationForCurrentSession() }, needsSurfaceHandler: false),
+            .init(id: .copyIncluded, title: "Copy included files into Archive", task: "Import", scopes: Self.sessionWorkflowScopes, defaults: [.init(.init(key: "m", modifiers: [.command, .shift]), scopes: Self.sessionWorkflowScopes)], enabled: { s in s.canCommitImport }, run: { s in s.commitImport() }, needsSurfaceHandler: false),
+            .init(id: .openDestination, title: "Open copied Archive folder", task: "Import", scopes: Self.sessionWorkflowScopes, defaults: [], enabled: { s in s.canOpenArchiveDestination }, run: { s in s.openArchiveDestinationForCurrentSession() }, needsSurfaceHandler: false),
             .init(id: .moveWalk, title: "Move selected Walk to Trip…", task: "Archive", scopes: mainScopes, defaults: [.init(.init(key: "t", modifiers: [.command, .shift]), scopes: mainScopes)], enabled: { s in s.canMoveSelectedArchiveWalkToTrip }, run: { s in s.moveSelectedArchiveWalkToTrip() }, needsSurfaceHandler: false),
-            .init(id: .confirmBackup, title: "Confirm backup and enable cleanup", task: "Recovery", scopes: mainScopes, defaults: [.init(.init(key: "b", modifiers: [.command, .shift]), scopes: mainScopes)], enabled: { s in s.canConfirmBackup }, run: { s in s.markBackupConfirmed() }, needsSurfaceHandler: false),
-            .init(id: .cleanupSource, title: "Clean imported files from source SSD", task: "Recovery", scopes: mainScopes, defaults: [.init(.init(key: "k", modifiers: [.command, .option]), scopes: mainScopes)], enabled: { s in s.canCleanupImportedSources }, run: { s in s.cleanupImportedSources() }, needsSurfaceHandler: false),
+            .init(id: .confirmBackup, title: "Confirm backup and enable cleanup", task: "Recovery", scopes: Self.sessionWorkflowScopes, defaults: [.init(.init(key: "b", modifiers: [.command, .shift]), scopes: Self.sessionWorkflowScopes)], enabled: { s in s.canConfirmBackup }, run: { s in s.markBackupConfirmed() }, needsSurfaceHandler: false),
+            .init(id: .cleanupSource, title: "Clean imported files from source SSD", task: "Recovery", scopes: Self.sessionWorkflowScopes, defaults: [.init(.init(key: "k", modifiers: [.command, .option]), scopes: Self.sessionWorkflowScopes)], enabled: { s in s.canCleanupImportedSources }, run: { s in s.cleanupImportedSources() }, needsSurfaceHandler: false),
             .init(id: .toggleSidebar, title: "Show or hide sidebar", task: "View", scopes: allScopes, defaults: [.init(.init(key: "s", modifiers: [.command, .option]), scopes: allScopes)], enabled: { _ in true }, run: { s in s.toggleSidebarVisibility() }, needsSurfaceHandler: false),
             .init(id: .selectAll, title: "Select all visible photos", task: "Review", scopes: mainScopes.union(imageScopes), defaults: [.init(.init(key: "a", modifiers: [.command]), scopes: mainScopes.union(imageScopes))], enabled: { s in s.canFocusReviewSurface }, run: { s in s.selectAllVisibleMedia() }, needsSurfaceHandler: false),
             .init(id: .find, title: "Find in current view", task: "Find", scopes: mainScopes, defaults: [.init(.init(key: "f", modifiers: [.command]), scopes: mainScopes)], enabled: { _ in true }, run: { _ in }, needsSurfaceHandler: true),

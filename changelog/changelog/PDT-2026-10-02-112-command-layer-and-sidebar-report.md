@@ -19,16 +19,16 @@ cross-window focus/triage defects. Settings persistence errors remain visible.
 
 Files: AppCommandRegistry, CommandKeyboardRouting, CommandPaletteView,
 ArchiveSidebarNavigation, ReviewCommandInputView; AppCommands/AppState/Models/UIState;
-Content/Archive/Settings/Google/description/review views; five command test files, GooglePhotosTests, DescriptionTests and ImageCompletionTests;
-ImageCommandActions/ImageOperationContext/CropService/ArchiveIndex;
+Content/Archive/Settings/Google/description/review views; command test files, SessionWorkflowCommandTests, GooglePhotosTests, DescriptionTests and ImageCompletionTests;
+ImageCommandActions/ImageOperationContext/CropService/ArchiveIndex/SessionWorkflowCommands;
 APP_RELEASE.env and matching tracking. No new dependency.
 
-Full verification: 574 tests / 2 suites, 44.515 s: 76 command-file functions plus 14 new Google
+Full verification: 586 tests / 2 suites, 47.825 s: 88 command-file functions plus 14 new Google
 callback functions, 13 new description functions and 24 image command/completion functions
-(127 additions since installed 0.7.15). Native
+(139 additions since installed 0.7.15). Native
 hidden windows, real NSTextView/NSTextField editor and NSWindow event paths. Distinct
 pre-fix logs plus deliberate sheet/IME guard reversal prove the defects are detected.
-Final run: `/private/tmp/walkfolio-image-command-final-full.log`.
+Final run: `/private/tmp/walkfolio-session-controls-final-full.log`.
 
 Not shipped. App target is 0.7.16/152 on `codex/walkfolio-command-layer`; installed
 0.7.15/151 remains closed. No headed/manual UI, live archive, private delivery or real
@@ -164,3 +164,40 @@ acceptance remain. Original native/real-copy/provider gates stay open.
   Image implementation is complete for this slice. Remaining Map/toolbar/Inspector/
   import/browser/native-menu inventory and final release work below/above stay active.
   Original native/real-copy/migration/OneDrive/LM Studio/Google acceptance stays open.
+
+
+## Captured workflow and window controls
+
+Session workflow controls in Sidebar and Inspector capture a monotonic Log assignment
+revision and Archive/Pictures/role generation. Copy, backup, destination, cleanup and
+New Log recheck their live eligibility before the backend. Retained A controls cannot
+follow B, same-UUID replacement or ABA before redraw. Inbox creation also captures its
+folder/review scope; replacing the containing lease rejects an old handle after redraw.
+Current-session assignment and folder-selection invalidation are O(1), without a full
+Log equality comparison. Ordinary keyboard text selection/copy remains native.
+
+Main toolbar/Inspector and header/browser controls now use the registered route, including
+Back/Return, thumbnail Prepare/Cancel and Clear Archive filters. Keyless focused-photo
+Open and photo-only Deselect preserve distinct toolbar intent while the generic current-
+selection keyboard commands keep their existing defaults. An initial Deselect mapping
+followed the focused pane and cleared folders; source review and a four-issue regression
+caught it. Explicit layout inside the hosting boundary corrects non-compact vertical
+stacking; one measured-layout issue reproduced. Three assertions reproduced retained
+inbox creation following a different folder, including ABA and borrowing a new action.
+
+Published cleanup busy state disables duplicate cleanup. The candidate predicate shared
+by eligibility and the backend retains originals with crops. Both prior eligibility
+failures reproduced two issues each. The initial unguarded current-session prototype
+reproduced five issues in four functions; capture/live checks correct them. These are
+synthetic fixtures and hidden native windows, with no destructive dialog or live delivery.
+
+Twelve new functions pass in 3.039s; final complete suite 586/2 suites in 47.825s. Actual
+hosted Sidebar/Inspector Cmd-Shift-M opens the correct Copy plan. Field-editor and Compare
+fixtures protect text and underlying controls; layout measurements cover 280/1000pt.
+Native NSButton/AX traversal omitted hidden SwiftUI controls, so no pixel/position or
+headed visual acceptance is claimed. Astra's final scoped source review is clear.
+
+Remaining: actual containing Review Map/group/filter/layout/grid/selection actions;
+photo rows/groups/Inspector crop versions; native menu refresh/inherited bindings; final
+whole-inventory review/full tests and signed closed installation. Original native/real-
+copy/migration/OneDrive/model/Google acceptance stays open. Not bundled or installed.

@@ -273,7 +273,7 @@ struct ImportCoordinator: ImportCoordinating {
         var validatedHistoricalRoots: Set<URL> = []
         for item in session.mediaItems where item.lifecycleState == .sourceCleanupPending {
             guard item.recognisedArchiveCopy != true else { throw ArchiveFileVerification.failure("A recognised previous archive copy does not authorise source cleanup.") }
-            if item.cropRelationship?.role == .original && item.cropRelationship?.hasCrops == true { continue }
+            guard item.isSourceCleanupCandidate else { continue }
             guard let destination = item.destinationURL else {
                 throw ArchiveFileVerification.failure("The archived copy is missing for \(item.fileName). No sources were removed.")
             }

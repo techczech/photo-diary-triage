@@ -865,6 +865,10 @@ struct CropRelationship: Codable, Hashable, Sendable {
 }
 
 struct MediaItem: Identifiable, Codable, Hashable, Sendable {
+    var isSourceCleanupCandidate: Bool {
+        lifecycleState == .sourceCleanupPending && !(cropRelationship?.role == .original && cropRelationship?.hasCrops == true)
+    }
+
     let id: UUID
     var sourceURL: URL
     var relativePath: String

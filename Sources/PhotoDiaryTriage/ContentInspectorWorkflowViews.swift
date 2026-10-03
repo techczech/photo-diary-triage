@@ -219,53 +219,55 @@ struct ArchiveFolderLinkRow: View {
 }
 
 struct InspectorWorkflowActions: View {
-    let appState: AppState
+    @ObservedObject var appState: AppState
     let readiness: ImportReadinessSnapshot?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if readiness?.hasFilesToCopy == true || appState.canCommitImport {
-                Button("Copy To Archive") {
-                    appState.commitImport()
+        SessionWorkflowCommandSurface(appState: appState) { commands in
+            VStack(alignment: .leading, spacing: 8) {
+                if readiness?.hasFilesToCopy == true || appState.canCommitImport {
+                    Button("Copy To Archive") {
+                        commands.run(.copyIncluded)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .disabled(!commands.isEnabled(.copyIncluded))
+                    .help(readiness?.copyButtonHelp ?? "Copy included files into the archive.")
                 }
-                .buttonStyle(.borderedProminent)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .disabled(!appState.canCommitImport)
-                .help(readiness?.copyButtonHelp ?? "Copy included files into the archive.")
-            }
 
-            if readiness?.destinationPath != nil {
-                Button("Open Archive Folder") {
-                    appState.openArchiveDestinationForCurrentSession()
+                if readiness?.destinationPath != nil {
+                    Button("Open Archive Folder") {
+                        commands.run(.openDestination)
+                    }
+                    .buttonStyle(.bordered)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .disabled(!commands.isEnabled(.openDestination))
+                    .help("Open the copied archive folder in Finder.")
                 }
-                .buttonStyle(.bordered)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .disabled(!appState.canOpenArchiveDestination)
-                .help("Open the copied archive folder in Finder.")
-            }
 
-            if appState.canConfirmBackup || readiness?.needsArchiveReviewBeforeBackupConfirmation == true {
-                Button("Confirm Backup") {
-                    appState.markBackupConfirmed()
+                if appState.canConfirmBackup || readiness?.needsArchiveReviewBeforeBackupConfirmation == true {
+                    Button("Confirm Backup") {
+                        commands.run(.confirmBackup)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .disabled(!commands.isEnabled(.confirmBackup))
+                    .help(readiness?.confirmBackupButtonHelp ?? "Confirm backup after copy verification.")
                 }
-                .buttonStyle(.borderedProminent)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .disabled(!appState.canConfirmBackup)
-                .help(readiness?.confirmBackupButtonHelp ?? "Confirm backup after copy verification.")
-            }
 
-            if appState.canCleanupImportedSources || (readiness?.cleanupPendingItems ?? 0) > 0 {
-                Button("Clean Source SSD") {
-                    appState.cleanupImportedSources()
+                if appState.canCleanupImportedSources || (readiness?.cleanupPendingItems ?? 0) > 0 {
+                    Button("Clean Source SSD") {
+                        commands.run(.cleanupSource)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .disabled(!commands.isEnabled(.cleanupSource))
+                    .help(readiness?.cleanupButtonHelp ?? "Clean copied source files from the SSD when allowed.")
                 }
-                .buttonStyle(.bordered)
-                .tint(.red)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .disabled(!appState.canCleanupImportedSources)
-                .help(readiness?.cleanupButtonHelp ?? "Clean copied source files from the SSD when allowed.")
             }
+            .controlSize(.small)
         }
-        .controlSize(.small)
     }
 }
 
